@@ -4463,7 +4463,7 @@ class App {
 
           <div class="form-group" style="margin-bottom: 1rem;">
             <label class="form-label" for="joinEmailInput">Email Address <span class="req">*</span></label>
-            <input type="email" id="joinEmailInput" class="form-control" placeholder="e.g. rajesh@example.com" value="${escapeAttr(defaultEmail)}" required />
+            <input type="email" id="joinEmailInput" class="form-control" placeholder="e.g. rajesh@company.com" value="${escapeAttr(defaultEmail)}" required />
           </div>
 
           <div class="form-group" style="margin-bottom: 1rem;">
