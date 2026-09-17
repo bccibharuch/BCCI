@@ -1762,6 +1762,10 @@ class App {
 
     this.currentView = viewId;
 
+    // The admin entry pages are a walled garden: no public navigation,
+    // no apply/sign-in calls to action — just the brand mark (home link).
+    document.body.classList.toggle('admin-area', viewId === 'signin' || viewId === 'admin');
+
     // Give the view a real address, so it can be shared and the browser's
     // back button behaves the way people expect.
     if (updateHistory) {

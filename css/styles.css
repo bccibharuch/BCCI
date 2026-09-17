@@ -326,6 +326,17 @@ small, .mono {
 
 .nav-logo { height: 36px; width: auto; object-fit: contain; }
 
+/* Admin entry pages (signin + portal): hide every public nav option and
+   call to action. Only the brand mark stays, as the way back. */
+body.admin-area .nav-links,
+body.admin-area .nav-actions,
+body.admin-area .mobile-menu-btn,
+body.admin-area .mobile-bottom-nav,
+body.admin-area .mobile-drawer,
+body.admin-area .mobile-drawer-backdrop {
+  display: none !important;
+}
+
 .nav-links {
   display: flex;
   align-items: center;
