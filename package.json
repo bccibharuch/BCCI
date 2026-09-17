@@ -19,6 +19,7 @@
     "test:auth": "node tests/applicant-auth.test.mjs",
     "test:events": "node tests/events-redis.test.mjs && node tests/events-api.test.mjs",
     "test:postgres": "node tests/postgres.test.mjs",
+    "test:browser": "node scripts/site-browser-test.mjs",
     "check": "for f in api/*.js api/_lib/*.js js/*.js; do node --check \"$f\" || exit 1; done && echo 'syntax OK'",
     "typecheck": "echo 'No TypeScript configured — vanilla JS project'",
     "test:purge": "node tests/purge.test.mjs",
@@ -33,5 +34,8 @@
   },
   "engines": {
     "node": "24.x"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }
