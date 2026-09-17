@@ -1763,8 +1763,34 @@ class App {
     this.currentView = viewId;
 
     // The admin entry pages are a walled garden: no public navigation,
-    // no apply/sign-in calls to action — just the brand mark (home link).
-    document.body.classList.toggle('admin-area', viewId === 'signin' || viewId === 'admin');
+    // no apply/sign-in calls to action — just the brand mark, with its
+    // home link disabled so there is no way out except signing in/out.
+    const adminArea = viewId === 'signin' || viewId === 'admin';
+    document.body.classList.toggle('admin-area', adminArea);
+    const brand = document.querySelector('.nav-brand');
+    if (brand) {
+      if (adminArea) {
+        if (brand.hasAttribute('data-view-nav')) {
+          brand.dataset.savedNav = brand.getAttribute('data-view-nav') || 'home';
+          brand.removeAttribute('data-view-nav');
+        }
+        if (brand.hasAttribute('href')) {
+          brand.dataset.savedHref = brand.getAttribute('href') || '#';
+          brand.removeAttribute('href');
+        }
+        brand.setAttribute('aria-disabled', 'true');
+      } else {
+        if (brand.dataset.savedNav) {
+          brand.setAttribute('data-view-nav', brand.dataset.savedNav);
+          delete brand.dataset.savedNav;
+        }
+        if (brand.dataset.savedHref) {
+          brand.setAttribute('href', brand.dataset.savedHref);
+          delete brand.dataset.savedHref;
+        }
+        brand.removeAttribute('aria-disabled');
+      }
+    }
 
     // Give the view a real address, so it can be shared and the browser's
     // back button behaves the way people expect.

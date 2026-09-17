@@ -336,6 +336,10 @@ body.admin-area .mobile-drawer,
 body.admin-area .mobile-drawer-backdrop {
   display: none !important;
 }
+body.admin-area .nav-brand {
+  cursor: default;
+  pointer-events: none;
+}
 
 .nav-links {
   display: flex;
