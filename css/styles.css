@@ -340,6 +340,14 @@ body.admin-area .nav-brand {
   cursor: default;
   pointer-events: none;
 }
+/* No footer links on admin pages either — only columns that actually contain
+   links go (plus their headings). The contact block and copyright stay. */
+body.admin-area footer .footer-links:has(a) {
+  display: none !important;
+}
+body.admin-area footer .footer-grid > div:has(a) h4 {
+  display: none !important;
+}
 
 .nav-links {
   display: flex;
