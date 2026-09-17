@@ -3,7 +3,8 @@
 // and OTP-driven password reset.
 
 import crypto from 'crypto';
-import { redis, KEYS, withRetry, getApplicationByEmail } from './_lib/redis.js';
+import { redis, KEYS, withRetry } from './_lib/redis.js';
+import { getApplicationByEmail } from './_lib/records.js';
 import { getAccount, saveAccount, verifyPassword, verifyPasswordAsync } from './_lib/accounts.js';
 import { sendRaw } from './_lib/email.js';
 import {

@@ -2,7 +2,7 @@
 // Contact enquiries — public create, admin-only list.
 
 import crypto from 'crypto';
-import { listEnquiries, putEnquiry, trimEnquiries } from './_lib/redis.js';
+import { listEnquiries, putEnquiry, trimEnquiries } from './_lib/records.js';
 import {
   applyCors,
   handlePreflight,

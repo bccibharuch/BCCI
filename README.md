@@ -9,7 +9,7 @@ Runs as serverless functions on Vercel, or as a single Node process on any VPS. 
 ## What it does
 
 **For a prospective member**
-Verify an email address with a one-time code, fill in an 18-field application with company details, GSTIN, PAN and a payment receipt, then track its status. The form saves itself as you type, so a closed tab or a dropped connection does not cost you the work.
+Verify an email address with a one-time code, fill in an application with company details, GSTIN/PAN with certificate uploads, representative details and a payment receipt, then track its status. The form saves itself as you type, so a closed tab or a dropped connection does not cost you the work.
 
 **For the secretariat**
 Review pending applications, inspect submitted documents and payment receipts, approve or decline with a reason. Every decision emails the applicant automatically. Export the register as CSV.

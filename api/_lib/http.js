@@ -112,47 +112,6 @@ export async function requireAdmin(req, res) {
   return email;
 }
 
-/** Returns the employee session object, or null. */
-export async function getEmployeeSession(req) {
-  const token = bearerToken(req);
-  if (!token) return null;
-  const raw = await withRetry(() => redis.get(`bcci:employee_session:${token}`));
-  if (!raw) return null;
-  const session = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  if (!session || !session.employeeId) return null;
-
-  // Revalidate employee status in database
-  let emp = null;
-  if (session.id) {
-    const rawEmp = await withRetry(() => redis.get(`bcci:emp:${session.id}`));
-    if (rawEmp) emp = typeof rawEmp === 'string' ? JSON.parse(rawEmp) : rawEmp;
-  }
-  if (!emp && session.employeeId) {
-    const empId = await withRetry(() => redis.get(`bcci:emp_code:${session.employeeId.toUpperCase()}`));
-    if (empId) {
-      const rawEmp = await withRetry(() => redis.get(`bcci:emp:${empId}`));
-      if (rawEmp) emp = typeof rawEmp === 'string' ? JSON.parse(rawEmp) : rawEmp;
-    }
-  }
-
-  if (emp && emp.status === 'inactive') {
-    await redis.del(`bcci:employee_session:${token}`).catch(() => {});
-    return null;
-  }
-
-  return session;
-}
-
-/** Writes a 401 and returns null when there is no valid employee session. */
-export async function requireEmployee(req, res) {
-  const session = await getEmployeeSession(req);
-  if (!session || !session.employeeId) {
-    res.status(401).json({ success: false, error: 'Employee authentication required.' });
-    return null;
-  }
-  return session;
-}
-
 // ── Rate limiting ──────────────────────────────────────────────────
 
 export function clientIp(req) {

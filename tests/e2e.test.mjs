@@ -116,14 +116,21 @@ r = await req('/api/verify-otp', { method: 'POST', body: { email: MEMBER, code, 
 ck('OTP verified, session issued', r.status === 200 && !!r.json?.session?.token, JSON.stringify(r.json));
 const memberToken = r.json?.session?.token;
 
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 const application = {
-  repName: 'Priya Shah', repDesignation: 'Director',
+  fullName: 'Priya Shah', subject: 'BCCI Membership Form', city: 'Ankleshwar', state: 'Gujarat',
+  repName: 'Priya Shah', repDesignation: 'Director', repMobile: '9825012346', repEmail: 'rep@sunrise.example',
   company: 'Sunrise Chemicals Pvt Ltd', legalStatus: 'Private Limited',
   enterpriseType: 'Medium', businessServices: 'Chemicals & Petrochemicals',
+  primaryBusiness: 'Sunrise Chemicals', businessDescription: 'Manufacturing specialty chemicals for a decade.',
+  website: 'https://sunrise.example', feedback: 'Glad to apply.',
+  membershipPlan: 'Medium - ₹1,000 / Year', paymentMode: 'UPI',
   annualTurnover: '75000000', employees: '85', cin: 'U24100GJ2015PTC012345',
   phone: '9825012345', address: 'Plot 42, GIDC Estate, Ankleshwar',
   district: 'Bharuch', pincode: '393002',
   gstNo: '24AABCS1234F1Z5', panNo: 'AABCS1234F',
+  gstCertProof: TINY_PNG, panCertProof: TINY_PNG,
   paymentRef: 'UPI/428193042818',
 };
 

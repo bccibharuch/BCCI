@@ -472,3 +472,36 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
   });
 }
 
+// ── Cooperative locks ────────────────────────────────────────────
+// Token-checked: release only deletes the key when the token still matches,
+// so a slow holder can never delete the next holder's lock after its own
+// TTL expired. Returns the token, or null when the lock stayed busy.
+
+export async function acquireLock(name, ttlSeconds = 5, waits = 25, waitMs = 40) {
+  const key = `bcci:lock:${name}`;
+  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  for (let i = 0; i < waits; i++) {
+    const ok = await redis.set(key, token, { nx: true, ex: ttlSeconds });
+    if (ok) return token;
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return null;
+}
+
+export async function releaseLock(name, token) {
+  const key = `bcci:lock:${name}`;
+  try {
+    if (token) {
+      await redis.eval(
+        'if redis.call("get",KEYS[1])==ARGV[1] then return redis.call("del",KEYS[1]) else return 0 end',
+        [key],
+        [token]
+      );
+    } else {
+      await redis.del(key);
+    }
+  } catch {
+    await redis.del(key).catch(() => {});
+  }
+}
+

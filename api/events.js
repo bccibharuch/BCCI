@@ -11,7 +11,7 @@ import {
   getEventAttendees,
   registerForEvent,
   confirmEventPayment,
-} from './_lib/redis.js';
+} from './_lib/records.js';
 import {
   applyCors,
   handlePreflight,

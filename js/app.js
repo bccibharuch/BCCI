@@ -59,8 +59,7 @@ const VIEW_PATHS = {
   membership: '/membership',
   card: '/card',
   signin: '/signin',
-  admin: '/admin',
-  employee: '/employee',
+  admin: '/admin-bcci',
   verify: '/verify',
 };
 
@@ -80,7 +79,6 @@ const PAGE_TITLES = {
   card: 'Digital Membership Card — BCCI Bharuch',
   signin: 'Secretariat Sign In — BCCI Bharuch',
   admin: 'Admin Portal — BCCI Bharuch',
-  employee: 'Employee Expense Portal — BCCI Bharuch',
   verify: 'Member Verification — BCCI Bharuch',
 };
 
@@ -89,7 +87,6 @@ function viewFromLocation() {
   const hash = (window.location.hash || '').toLowerCase().replace(/^#/, '');
   if (hash === 'admin' || hash === 'secret-admin') return 'admin';
   if (hash === 'signin' || hash === 'login') return 'signin';
-  if (hash === 'employee' || hash === 'expenses') return 'employee';
   if (hash === 'qr') return 'qrcode';
   if (hash === 'verify') return 'verify';
   if (hash && VIEW_PATHS[hash]) return hash;
@@ -106,6 +103,7 @@ class App {
     this.adminAuthed = this.store.isAdminAuthed();
     this.currentPaymentProofBase64 = null;
     this.currentPaymentProofFile = null;
+    this.docFiles = {};
     this.init();
   }
 
@@ -117,13 +115,11 @@ class App {
     this.renderView(viewFromLocation(), { updateHistory: false });
     this.updateApplicantAuthUI();
     this.setupSecretAccessHandlers();
-    this.setupUnifiedSignInTabs();
     this.setupApplicantAuthHandlers();
     this.setupFileUploadHandlers();
+    this.setupDocUploads();
     this.setupFormValidation();
     this.setupFormHandlers();
-    this.setupExpenseFileUploadHandlers();
-    this.setupExpenseFormHandlers();
     this.setupAdminEventForm();
     this.setupPublicEventsHandlers();
     this.setupModalEvents();
@@ -1126,6 +1122,13 @@ class App {
     const companyName = escapeHtml(app.company || 'BCCI Member');
     const appId = escapeHtml(app.id || 'N/A');
     const isApproved = app.status === 'Approved';
+    const rejectionNotice = (app.status === 'Rejected' && app.rejectionReason) ? `
+        <div style="margin-bottom: 1rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 1rem;">
+          <h5 style="color: #991B1B; font-size: 0.92rem; margin: 0 0 0.5rem 0; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-times-circle"></i> Reason for Rejection
+          </h5>
+          <p style="margin: 0; font-size: 0.9rem; color: #7F1D1D; line-height: 1.6;">${escapeHtml(app.rejectionReason)}</p>
+        </div>` : '';
 
     const content = `
       <div style="font-size: 0.88rem; line-height: 1.6; max-height: 75vh; overflow-y: auto; padding-right: 4px;">
@@ -1150,6 +1153,8 @@ class App {
           </div>
         </div>
 
+        ${rejectionNotice}
+
         <!-- 1. Enterprise Profile -->
         <div style="margin-bottom: 1rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 1rem;">
           <h5 style="color: var(--primary); font-size: 0.92rem; margin: 0 0 0.75rem 0; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #CBD5E1; padding-bottom: 0.4rem;">
@@ -1160,6 +1165,8 @@ class App {
             ${field('Legal Status', app.legalStatus)}
             ${field('Enterprise Category', app.enterpriseType)}
             ${field('Primary Business Sector', app.businessServices || app.membershipType)}
+            ${app.primaryBusiness ? field('Primary Business Name', app.primaryBusiness) : ''}
+            ${app.website ? field('Website', app.website) : ''}
             ${field('Annual Turnover (INR)', formattedTurnover)}
             ${field('Total Employees', app.employees)}
             ${field('GSTIN Number', app.gstNo || app.gstin)}
@@ -1173,12 +1180,14 @@ class App {
           <h5 style="color: var(--primary); font-size: 0.92rem; margin: 0 0 0.75rem 0; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid #CBD5E1; padding-bottom: 0.4rem;">
             <i class="fas fa-user-tie" style="color: var(--accent-gold-dark);"></i> Authorized Representative
           </h5>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem;">
-            ${field('Representative Name', app.repName || app.applicantName)}
-            ${field('Designation', app.repDesignation || 'Managing Director / CEO')}
-            ${field('Official Email ID', app.email)}
-            ${field('Mobile Number', app.phone)}
-          </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem;">
+              ${field('Representative Name', app.repName || app.applicantName)}
+              ${field('Designation', app.repDesignation || 'Managing Director / CEO')}
+              ${field('Official Email ID', app.email)}
+              ${field('Mobile Number', app.phone)}
+              ${app.repMobile ? field('Representative Mobile', app.repMobile) : ''}
+              ${app.repEmail ? field('Representative Email', app.repEmail) : ''}
+            </div>
         </div>
 
         <!-- 3. Registered Address & Location -->
@@ -1190,6 +1199,7 @@ class App {
             <div style="grid-column: 1 / -1;">
               ${field('Office / Plant Address', app.address)}
             </div>
+            ${field('City', app.city || 'N/A')}
             ${field('District', app.district || 'Bharuch')}
             ${field('State', app.state || 'Gujarat')}
             ${field('Postal Pincode', app.pincode)}
@@ -1207,6 +1217,8 @@ class App {
             ${isApproved ? field('Approved Date', formatDate(app.approvedAt || app.submittedAt)) : ''}
             ${isApproved ? field('Valid Until', validity ? validity.validUntilDate : 'Active') : ''}
             ${app.paymentRef ? field('Payment Ref / UTR', app.paymentRef) : ''}
+            ${app.membershipPlan ? field('Membership Plan', app.membershipPlan) : ''}
+            ${app.paymentMode ? field('Payment Mode', app.paymentMode) : ''}
             ${app.renewalYears ? field('Validity Term', `${app.renewalYears} Year(s)`) : ''}
             ${app.lastRenewedAt ? field('Last Renewed', formatDate(app.lastRenewedAt)) : ''}
           </div>
@@ -1321,71 +1333,6 @@ class App {
      ADMIN AUTHENTICATION — Server-backed sessions
      ════════════════════════════════════════════════════════════════════ */
 
-  setupUnifiedSignInTabs() {
-    const tabAdmin = document.getElementById('signinTabAdmin');
-    const tabEmp = document.getElementById('signinTabEmployee');
-    const paneAdmin = document.getElementById('formAdminSignIn');
-    const paneEmp = document.getElementById('formEmployeeSignIn');
-    const formEmp = document.getElementById('empSignInForm');
-    const btnEmpSignIn = document.getElementById('btnEmpSignIn');
-
-    if (tabAdmin && tabEmp) {
-      tabAdmin.addEventListener('click', () => {
-        tabAdmin.classList.add('active');
-        tabAdmin.setAttribute('aria-selected', 'true');
-        tabEmp.classList.remove('active');
-        tabEmp.setAttribute('aria-selected', 'false');
-        if (paneAdmin) paneAdmin.style.display = 'block';
-        if (paneEmp) paneEmp.style.display = 'none';
-      });
-
-      tabEmp.addEventListener('click', () => {
-        tabEmp.classList.add('active');
-        tabEmp.setAttribute('aria-selected', 'true');
-        tabAdmin.classList.remove('active');
-        tabAdmin.setAttribute('aria-selected', 'false');
-        if (paneEmp) paneEmp.style.display = 'block';
-        if (paneAdmin) paneAdmin.style.display = 'none';
-      });
-    }
-
-    const formToWire = formEmp || paneEmp;
-    if (formToWire) {
-      formToWire.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const empId = document.getElementById('empUsernameInput')?.value || document.getElementById('employeeUsername')?.value;
-        const empPass = document.getElementById('empPasswordInput')?.value || document.getElementById('employeePassword')?.value;
-        
-        if (btnEmpSignIn) {
-          btnEmpSignIn.disabled = true;
-          btnEmpSignIn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing In...';
-        }
-
-        try {
-          const res = await this.store.employeeLogin(empId, empPass);
-
-          if (res.success) {
-            this.showToast('Employee signed in', 'success');
-            if (formEmp && typeof formEmp.reset === 'function') {
-              formEmp.reset();
-            } else if (typeof formToWire.reset === 'function') {
-              formToWire.reset();
-            }
-            this.renderView('employee');
-          } else {
-            this.showToast(res.error || 'Login failed', 'error');
-          }
-        } catch (err) {
-          this.showToast(err?.message || 'Network error during login. Please try again.', 'error');
-        } finally {
-          if (btnEmpSignIn) {
-            btnEmpSignIn.disabled = false;
-            btnEmpSignIn.innerHTML = 'Sign In';
-          }
-        }
-      });
-    }
-  }
 
   setupSecretAccessHandlers() {
     // Back / forward through the real URLs.
@@ -1866,20 +1813,6 @@ class App {
     if (viewId === 'card') this.renderMembershipCard();
     if (viewId === 'verify') await this.renderVerificationView();
     if (viewId === 'admin') await this.renderAdminPortal();
-    if (viewId === 'employee') {
-      if (!this.store.isEmployeeAuthed()) {
-        const employeeAuthGate = document.getElementById('employeeAuthGate');
-        const employeePortalContent = document.getElementById('employeePortalContent');
-        if (employeeAuthGate) employeeAuthGate.style.display = 'flex';
-        if (employeePortalContent) employeePortalContent.style.display = 'none';
-      } else {
-        const employeeAuthGate = document.getElementById('employeeAuthGate');
-        const employeePortalContent = document.getElementById('employeePortalContent');
-        if (employeeAuthGate) employeeAuthGate.style.display = 'none';
-        if (employeePortalContent) employeePortalContent.style.display = 'block';
-        await this.renderEmployeePortal();
-      }
-    }
   }
 
   renderLeadership() {
@@ -2751,6 +2684,112 @@ class App {
     }
   }
 
+  /**
+   * Generic handler for the smaller supporting-document uploads on the
+   * membership form (registration, GST and PAN certificates, representative
+   * attachment). Images are compressed to ~350KB; PDFs are accepted as-is up
+   * to ~700KB so the whole submission stays inside the request budget.
+   * Values land in this.docFiles keyed by input name.
+   */
+  setupDocUploads() {
+    const inputs = document.querySelectorAll('#membershipForm input[type="file"][data-doc]');
+    inputs.forEach((input) => {
+      let status = input.parentNode.querySelector('.doc-file-status');
+      if (!status) {
+        status = document.createElement('div');
+        status.className = 'doc-file-status';
+        status.style.cssText = 'font-size: 0.8rem; margin-top: 0.35rem; display: none; align-items: center; gap: 0.5rem;';
+        input.after(status);
+      }
+      const showStatus = (fileName) => {
+        if (!fileName) {
+          status.style.display = 'none';
+          status.innerHTML = '';
+          return;
+        }
+        status.style.display = 'flex';
+        status.innerHTML = `<i class="fas fa-paperclip" style="color: var(--success);"></i>
+          <span style="font-weight: 600; color: var(--primary); word-break: break-all;">${escapeHtml(fileName)}</span>
+          <button type="button" class="doc-file-clear" style="background: transparent; border: none; color: #DC2626; cursor: pointer; font-size: 0.8rem; padding: 0.1rem 0.3rem;" aria-label="Remove file">✕</button>`;
+        status.querySelector('.doc-file-clear')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          input.value = '';
+          delete this.docFiles[input.name];
+          showStatus(null);
+          this.validateField(input);
+          this._updateFormProgress(document.getElementById('membershipForm'));
+        }, { once: true });
+        void status.offsetWidth;
+      };
+
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        delete this.docFiles[input.name];
+        if (!file) { showStatus(null); return; }
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        const isImage = file.type.startsWith('image/');
+        if (!isPdf && !isImage) {
+          this.showToast('Please select a PDF or image file (PDF, PNG, JPG, WEBP).', 'warning');
+          input.value = '';
+          return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          this.showToast('File size exceeds 10MB limit.', 'warning');
+          input.value = '';
+          return;
+        }
+        if (isPdf) {
+          if (file.size > 700 * 1024) {
+            this.showToast('PDF must be under 700KB. Please compress it and retry.', 'warning');
+            input.value = '';
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            this.docFiles[input.name] = e.target.result;
+            showStatus(file.name);
+            this.validateField(input);
+            this._updateFormProgress(document.getElementById('membershipForm'));
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const maxDim = 900;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            const BUDGET_BYTES = 350 * 1024;
+            let quality = 0.8;
+            let encoded = canvas.toDataURL('image/jpeg', quality);
+            while (encoded.length > BUDGET_BYTES && quality > 0.35) {
+              quality -= 0.08;
+              encoded = canvas.toDataURL('image/jpeg', quality);
+            }
+            this.docFiles[input.name] = encoded;
+            showStatus(file.name);
+            this.validateField(input);
+            this._updateFormProgress(document.getElementById('membershipForm'));
+          };
+          img.onerror = () => {
+            this.showToast('That image could not be processed. Please try a different file.', 'error');
+            input.value = '';
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+  }
+
   /* ════════════════════════════════════════════════════════════════════
      FORM VALIDATION
      ════════════════════════════════════════════════════════════════════ */
@@ -2865,6 +2904,11 @@ class App {
         dropzone.classList.toggle('is-invalid', !isValid);
         dropzone.classList.toggle('is-valid', isValid && !!this.currentPaymentProofBase64);
       }
+    } else if (input.type === 'file' && input.hasAttribute('data-doc')) {
+      if (input.hasAttribute('required') && !this.docFiles[name]) {
+        isValid = false;
+        errorMsg = 'Please attach the required document.';
+      }
     } else if (input.validity && input.validity.badInput) {
       isValid = false;
       errorMsg = 'Enter valid numbers only.';
@@ -2875,6 +2919,29 @@ class App {
         case 'phone':
           if (!/^[6-9]\d{9}$/.test(val.replace(/\D/g, '').slice(-10))) { isValid = false; errorMsg = 'Enter a valid 10-digit mobile number (6-9).'; }
           break;
+        case 'repMobile':
+          if (!/^[6-9]\d{9}$/.test(val.replace(/\D/g, '').slice(-10))) { isValid = false; errorMsg = 'Enter a valid 10-digit mobile number (6-9).'; }
+          break;
+        case 'repEmail':
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { isValid = false; errorMsg = 'Invalid email address.'; }
+          break;
+        case 'website':
+          if (!/^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/\S*)?$/i.test(val)) { isValid = false; errorMsg = 'Enter a valid website URL (e.g. example.com).'; }
+          break;
+        case 'businessDescription':
+          if (val.length < 10) { isValid = false; errorMsg = 'Please describe operations in at least 10 characters.'; }
+          break;
+        case 'feedback':
+          if (val.length < 5) { isValid = false; errorMsg = 'Must be at least 5 characters.'; }
+          break;
+        case 'regDate': {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) { isValid = false; errorMsg = 'Enter a valid date.'; break; }
+          const [ry, rm, rd] = val.split('-').map(Number);
+          const d = new Date(Date.UTC(ry, rm - 1, rd));
+          if (d.getUTCFullYear() !== ry || d.getUTCMonth() !== rm - 1 || d.getUTCDate() !== rd) { isValid = false; errorMsg = 'Enter a valid calendar date.'; }
+          else if (d > new Date()) { isValid = false; errorMsg = 'Registration date cannot be in the future.'; }
+          break;
+        }
         case 'panNo':
           if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(val.toUpperCase())) { isValid = false; errorMsg = 'Invalid PAN (e.g. ABCDE1234F).'; }
           break;
@@ -2891,6 +2958,7 @@ class App {
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { isValid = false; errorMsg = 'Invalid email address.'; }
           break;
         case 'company': case 'repName': case 'name': case 'repDesignation': case 'subject': case 'message':
+        case 'fullName': case 'city': case 'state': case 'primaryBusiness':
           if (val.length < 2) { isValid = false; errorMsg = 'Must be at least 2 characters.'; }
           break;
         case 'address':
@@ -2987,6 +3055,9 @@ class App {
           const formData = new FormData(membershipForm);
           const data = Object.fromEntries(formData.entries());
           data.paymentProof = this.currentPaymentProofBase64 || '';
+          for (const [key, value] of Object.entries(this.docFiles)) {
+            data[key] = value;
+          }
 
           // The server sends both the applicant confirmation and the admin
           // alert as part of this request, so they go out even if the
@@ -3000,6 +3071,12 @@ class App {
           membershipForm.reset();
           this.currentPaymentProofBase64 = null;
           this.currentPaymentProofFile = null;
+          this.docFiles = {};
+          membershipForm.querySelectorAll('input[type="file"][data-doc]').forEach((fi) => {
+            fi.value = '';
+            const st = fi.parentNode.querySelector('.doc-file-status');
+            if (st) { st.style.display = 'none'; st.innerHTML = ''; }
+          });
           const preview = document.getElementById('paymentProofPreview');
           const placeholder = document.getElementById('paymentProofPlaceholder');
           const dropzone = document.getElementById('paymentProofDropzone');
@@ -3150,132 +3227,12 @@ class App {
   /* ════════════════════════════════════════════════════════════════════
      ADMIN PORTAL — Server-backed data
      ════════════════════════════════════════════════════════════════════ */
-  async renderEmployeePortal() {
-    const session = this.store.getEmployeeSession();
-    if (!session) return;
-    
-    const nameDisplay = document.getElementById('employeeNameDisplay');
-    const idBadge = document.getElementById('employeeIdBadge');
-    if (nameDisplay) nameDisplay.textContent = session.name || session.id;
-    if (idBadge) idBadge.textContent = session.id;
-    
-    const btnSignOut = document.getElementById('btnEmployeeSignOut');
-    if (btnSignOut) {
-      btnSignOut.onclick = () => {
-        this._clearDraft();
-        this.store.employeeLogout();
-        this.showToast('Signed out successfully', 'success');
-        this.renderView('signin');
-      };
-    }
-    
-    const claims = await this.store.getEmployeeExpenses();
-    
-    let claimed = 0, approved = 0, pending = 0, rejected = 0;
-    claims.forEach(c => {
-      claimed += (c.claimedAmount || 0);
-      const st = String(c.status || '').toLowerCase().trim();
-      if (st === 'approved' || st === 'partially approved' || st === 'partially_approved' || st === 'partially_approve' || st === 'partial') {
-        approved += (c.approvedAmount || 0);
-      } else if (st === 'rejected') {
-        rejected++;
-      } else {
-        pending++;
-      }
-    });
-    
-    const setMetric = (id, val) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = val;
-    };
-    
-    setMetric('metricEmpClaimed', `₹${claimed.toLocaleString('en-IN')}`);
-    setMetric('metricEmpApproved', `₹${approved.toLocaleString('en-IN')}`);
-    setMetric('metricEmpPending', pending);
-    setMetric('metricEmpRejected', rejected);
-    
-    const tbody = document.getElementById('employeeExpensesBody');
-    const cards = document.getElementById('employeeExpensesCards');
-    
-    const getStatusBadge = (status) => {
-      const st = String(status || '').toLowerCase().trim();
-      if (st === 'approved') return '<span class="status-badge status-approved"><i class="fas fa-check"></i> Approved</span>';
-      if (st === 'partially approved' || st === 'partially_approved' || st === 'partially_approve' || st === 'partial') {
-        return '<span class="status-badge status-approved" style="background:#fef08a;color:#854d0e;"><i class="fas fa-check-double"></i> Partial</span>';
-      }
-      if (st === 'rejected') return '<span class="status-badge status-rejected"><i class="fas fa-times"></i> Rejected</span>';
-      return '<span class="status-badge status-pending"><i class="fas fa-clock"></i> Pending</span>';
-    };
-    
-    if (claims.length === 0) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><i class="fas fa-receipt"></i><p>No expenses claimed yet.</p></td></tr>`;
-      if (cards) cards.innerHTML = `<div class="empty-state"><i class="fas fa-receipt"></i><p>No expenses claimed yet.</p></div>`;
-    } else {
-      let htmlRows = '';
-      let htmlCards = '';
-      claims.forEach(c => {
-        const claimDate = c.expenseDate || c.date;
-        const trHtml = `
-          <tr>
-            <td>${escapeHtml(c.id)}</td>
-            <td>${escapeHtml(formatDate(claimDate))}</td>
-            <td>${escapeHtml(c.category)}</td>
-            <td>${escapeHtml(c.description)}</td>
-            <td>₹${(c.claimedAmount || 0).toLocaleString('en-IN')}</td>
-            <td>₹${(c.approvedAmount || 0).toLocaleString('en-IN')}</td>
-            <td>${getStatusBadge(c.status)}</td>
-            <td>${escapeHtml(c.adminRemark || '-')}</td>
-            <td>
-              <button class="btn-icon" data-view-receipt-id="${escapeAttr(c.id)}" title="View Receipt"><i class="fas fa-file-invoice"></i></button>
-            </td>
-          </tr>
-        `;
-        htmlRows += trHtml;
-        
-        const cardHtml = `
-          <div class="admin-mobile-card">
-            <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-              <strong>${escapeHtml(c.id)}</strong>
-              ${getStatusBadge(c.status)}
-            </div>
-            <div><strong>Date:</strong> ${escapeHtml(formatDate(claimDate))}</div>
-            <div><strong>Category:</strong> ${escapeHtml(c.category)}</div>
-            <div><strong>Amount:</strong> ₹${(c.claimedAmount || 0).toLocaleString('en-IN')}</div>
-            <div style="margin-top:10px;text-align:right;">
-              <button class="btn-secondary" data-view-receipt-id="${escapeAttr(c.id)}">View Receipt</button>
-            </div>
-          </div>
-        `;
-        htmlCards += cardHtml;
-      });
-      
-      if (tbody) tbody.innerHTML = htmlRows;
-      if (cards) cards.innerHTML = htmlCards;
-      
-      // Wire view receipt buttons
-      document.querySelectorAll('[data-view-receipt-id]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this.openReceiptViewer(btn.getAttribute('data-view-receipt-id'));
-        });
-      });
-    }
-  }
-  /** Placeholder rows shown while data is in flight. */
-  _skeletonRows(rows, cols) {
-    return Array.from({ length: rows }, () =>
-      `<tr>${Array.from({ length: cols }, () => '<td><span class="skeleton-bar"></span></td>').join('')}</tr>`
-    ).join('');
-  }
 
   _showAdminLoading() {
-    const specs = [
-      ['pendingAppsBody', 'pendingAppsCards', 7],
-      ['approvedAppsBody', 'approvedAppsCards', 6],
-      ['enquiriesBody', 'enquiriesCards', 5],
-    ];
-    specs.forEach(([bodyId, cardsId, cols]) => {
+    const skeletonRow = (cols) => `<tr><td colspan="${cols}"><span class="skeleton-bar" style="width:40%"></span><span class="skeleton-bar"></span><span class="skeleton-bar" style="width:70%"></span></td></tr>`;
+    [['pendingAppsBody', 7, 'pendingAppsCards'], ['approvedAppsBody', 7, 'approvedAppsCards'], ['rejectedAppsBody', 7, 'rejectedAppsCards'], ['enquiriesBody', 5, 'enquiriesCards']].forEach(([bodyId, cols, cardsId]) => {
       const body = document.getElementById(bodyId);
-      if (body) body.innerHTML = this._skeletonRows(3, cols);
+      if (body) body.innerHTML = skeletonRow(cols);
       const cards = document.getElementById(cardsId);
       if (cards) {
         cards.innerHTML = Array.from({ length: 2 }, () =>
@@ -3346,23 +3303,6 @@ class App {
     setMetric('metricApproved', approvedApps.length);
     setMetric('metricRejected', rejectedApps.length);
     setMetric('metricEnquiries', enquiries.length);
-    
-    const expStats = stats?.expenses || stats?.stats?.expenses;
-    if (expStats) {
-      setMetric('metricExpensesTotal', expStats.totalExpenses ?? 0);
-      setMetric('metricExpensesClaimed', '₹' + (expStats.totalClaimed ?? 0).toLocaleString('en-IN'));
-      setMetric('metricExpensesApproved', '₹' + (expStats.totalApproved ?? 0).toLocaleString('en-IN'));
-      setMetric('metricExpensesPending', expStats.pendingApprovals ?? 0);
-      setMetric('metricExpensesEmployees', expStats.totalEmployees ?? 0);
-    } else if (stats && stats.success) {
-      setMetric('metricExpensesTotal', stats.expensesTotal ?? 0);
-      setMetric('metricExpensesClaimed', '₹' + (stats.expensesClaimedAmount || 0));
-      setMetric('metricExpensesApproved', '₹' + (stats.expensesApprovedAmount || 0));
-      setMetric('metricExpensesPending', stats.expensesPending ?? 0);
-      setMetric('metricExpensesEmployees', stats.employeesCount ?? 0);
-    }
-
-    this.populateEmployeeDropdowns?.();
 
     const emptyState = (icon, text) =>
       `<div style="text-align: center; color: #94A3B8; padding: 2rem;"><i class="fas ${icon}" style="font-size: 1.8rem; margin-bottom: 0.5rem; display: block;"></i>${escapeHtml(text)}</div>`;
@@ -3468,20 +3408,28 @@ class App {
     fill(
       'rejectedAppsBody',
       'rejectedAppsCards',
-      rejectedApps.map(app => `
+      rejectedApps.map(app => {
+        const reasonHtml = app.rejectionReason
+          ? `<br/><small style="color: #991B1B;">Reason: ${escapeHtml(app.rejectionReason)}</small>`
+          : '';
+        return `
         <tr>
           <td><strong>${escapeHtml(app.id)}</strong></td>
           <td><div style="font-weight: 600; color: #DC2626;">${escapeHtml(app.company)}</div><small style="color: #64748B;">${escapeHtml(app.legalStatus || '')} &bull; ${escapeHtml(app.enterpriseType || '')}</small></td>
           <td>${escapeHtml(app.repName)}<br/><small style="color: #64748B;">${escapeHtml(app.repDesignation || 'Applicant')}</small></td>
           <td>${escapeHtml(app.businessServices || '')}</td>
           <td><span class="badge-status badge-rejected"><i class="fas fa-times-circle"></i> Rejected</span></td>
-          <td>${escapeHtml(formatDate(app.submittedAt))}</td>
+          <td>${escapeHtml(formatDate(app.submittedAt))}${reasonHtml}</td>
           <td>
             <button class="btn-secondary" data-inspect-id="${escapeAttr(app.id)}" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" aria-label="Inspect application ${escapeAttr(app.id)}"><i class="fas fa-eye"></i> Full Info</button>
           </td>
         </tr>
-      `),
-      rejectedApps.map(app => `
+      `;}),
+      rejectedApps.map(app => {
+        const reasonRow = app.rejectionReason
+          ? `<div><strong>Reason:</strong> ${escapeHtml(app.rejectionReason)}</div>`
+          : '';
+        return `
         <div class="admin-mobile-card">
           <div class="admin-card-header">
             <div><div class="admin-card-company">${escapeHtml(app.company)}</div><small style="color: #64748B;">${escapeHtml(app.legalStatus || '')} &bull; ${escapeHtml(app.enterpriseType || '')}</small></div>
@@ -3492,12 +3440,13 @@ class App {
             <div><strong>Sector:</strong> ${escapeHtml(app.businessServices || 'N/A')}</div>
             <div><strong>Status:</strong> <span class="badge-status badge-rejected"><i class="fas fa-times-circle"></i> Rejected</span></div>
             <div><strong>Date:</strong> ${escapeHtml(formatDate(app.submittedAt))}</div>
+            ${reasonRow}
           </div>
           <div class="admin-card-actions" style="margin-top: 0.75rem;">
             <button class="btn-secondary" data-inspect-id="${escapeAttr(app.id)}" style="width: 100%; justify-content: center;"><i class="fas fa-eye"></i> Full Info</button>
           </div>
         </div>
-      `),
+      `;}),
       7,
       'fa-times-circle',
       'No rejected applications.'
@@ -3591,7 +3540,7 @@ class App {
             <strong>Company:</strong> ${escapeHtml(app.company)} (${escapeHtml(app.id)})
           </div>
           <div class="form-group" style="margin-bottom: 1.25rem;">
-            <label class="form-label" for="rejectionReasonInput">Reason (optional — included in the email)</label>
+            <label class="form-label" for="rejectionReasonInput">Reason (optional — saved and included in the email)</label>
             <textarea id="rejectionReasonInput" class="form-control" rows="3" maxlength="1000" placeholder="e.g. Incomplete documentation, invalid GSTIN, payment not verified"></textarea>
           </div>
           <div style="display: flex; gap: 0.75rem;">
@@ -3646,6 +3595,22 @@ class App {
     } catch (err) {
       this.showToast(err.message || 'Could not reject membership renewal.', 'error');
     }
+  }
+
+  /**
+   * Renders a stored supporting document (GST/PAN/registration certificate,
+   * representative attachment) as a download link. Accepts inline image or
+   * PDF data URIs only — any other scheme is refused.
+   */
+  _docLinkHtml(label, doc) {
+    if (typeof doc !== 'string' || !doc) return '';
+    const m = doc.match(/^data:(image\/(?:png|jpe?g|webp|gif)|application\/pdf);base64,[A-Za-z0-9+/=\s]+$/);
+    if (!m) return '';
+    const isPdf = m[1] === 'application/pdf';
+    const ext = isPdf ? 'pdf' : 'png';
+    return `<a href="${escapeAttr(doc)}" download="${escapeAttr(label)}.${ext}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.82rem; font-weight: 600; color: var(--primary); text-decoration: none;">
+      <i class="fas ${isPdf ? 'fa-file-pdf' : 'fa-file-image'}" style="color: ${isPdf ? '#DC2626' : 'var(--accent-gold-dark)'};"></i> ${escapeHtml(label)}
+    </a>`;
   }
 
   /**
@@ -3708,7 +3673,14 @@ class App {
         const termField = app.renewalYears ? field('Membership Term', `${app.renewalYears} Year(s)`) : '';
         const lastRenewedField = app.lastRenewedAt ? field('Last Renewal', formatDate(app.lastRenewedAt)) : '';
         const rejectedField = (app.status === 'Rejected' && app.reviewedAt) ? field('Decision Date', formatDate(app.reviewedAt)) : '';
+        const rejectionReasonField = (app.status === 'Rejected' && app.rejectionReason) ? field('Rejection Reason', app.rejectionReason) : '';
         const receiptHtml = this._paymentProofHtml(app.paymentProof);
+        const docsHtml = [
+          ['GST Certificate', app.gstCertProof],
+          ['PAN Certificate', app.panCertProof],
+          ['Registration Certificate', app.regCertProof],
+          ['Representative Attachment', app.repAttachment],
+        ].map(([label, doc]) => this._docLinkHtml(label, doc)).join('');
         const modalTitle = `Application Full Dossier — ${escapeHtml(app.id)}`;
         const companyName = escapeHtml(app.company);
         const appId = escapeHtml(app.id);
@@ -3746,6 +3718,8 @@ class App {
                   ${field('Legal Status', app.legalStatus)}
                   ${field('Enterprise Category', app.enterpriseType)}
                   ${field('Primary Business Sector', app.businessServices || app.membershipType)}
+                  ${app.primaryBusiness ? field('Primary Business Name', app.primaryBusiness) : ''}
+                  ${app.website ? field('Website', app.website) : ''}
                   ${field('Annual Turnover (INR)', formattedTurnover)}
                   ${field('Total Employees', app.employees)}
                   ${field('GSTIN Number', app.gstNo || app.gstin)}
@@ -3763,6 +3737,7 @@ class App {
                   <div style="grid-column: 1 / -1;">
                     ${field('Office / Plant Address', app.address)}
                   </div>
+                  ${field('City', app.city || 'N/A')}
                   ${field('District', app.district || 'Bharuch')}
                   ${field('State', app.state || 'Gujarat')}
                   ${field('Postal Pincode', app.pincode)}
@@ -3779,6 +3754,8 @@ class App {
                   ${field('Designation', app.repDesignation || 'Managing Director / CEO')}
                   ${field('Official Email ID', app.email)}
                   ${field('Mobile Number', app.phone)}
+                  ${app.repMobile ? field('Representative Mobile', app.repMobile) : ''}
+                  ${app.repEmail ? field('Representative Email', app.repEmail) : ''}
                 </div>
               </div>
 
@@ -3794,10 +3771,18 @@ class App {
                   ${approvedField}
                   ${reviewerField}
                   ${termField}
+                  ${app.membershipPlan ? field('Membership Plan', app.membershipPlan) : ''}
+                  ${app.paymentMode ? field('Payment Mode', app.paymentMode) : ''}
                   ${lastRenewedField}
                   ${rejectedField}
+                  ${rejectionReasonField}
                   ${receiptHtml}
                 </div>
+                ${docsHtml ? `
+                <div style="margin-top: 0.75rem;">
+                  <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #64748B; margin-bottom: 0.4rem;">Supporting Documents</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">${docsHtml}</div>
+                </div>` : ''}
               </div>
 
               ${app.renewalStatus === 'Pending Verification' ? `
@@ -3860,9 +3845,6 @@ class App {
         targetPane.style.display = 'block';
         targetPane.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
       }
-      if (tabName === 'expenses') this.renderAdminExpensesTab();
-      if (tabName === 'employees') this.renderAdminEmployeesTab();
-      if (tabName === 'expense-reports') this.renderMonthlyExpenseReports();
     };
 
     document.querySelectorAll('.admin-menu-item').forEach(item => {
@@ -3909,18 +3891,22 @@ class App {
     };
 
     const headers = [
-      'Application ID', 'Company Name', 'Legal Status', 'Enterprise Scale', 'Business Services',
-      'Annual Turnover (INR)', 'Employees', 'GSTIN', 'PAN', 'CIN',
-      'Address', 'District', 'State', 'Pincode',
-      'Representative Name', 'Designation', 'Official Email', 'Mobile Number',
-      'Payment Ref (UTR)', 'Status', 'Submitted At', 'Approved At', 'Reviewed By', 'Renewal Years'
+      'Application ID', 'Full Name', 'Company Name', 'Legal Status', 'Enterprise Scale', 'Business Services',
+      'Primary Business', 'Website', 'Annual Turnover (INR)', 'Employees', 'GSTIN', 'PAN', 'CIN',
+      'Reg Number', 'Reg Date', 'Reg Place',
+      'Address', 'City', 'District', 'State', 'Pincode',
+      'Representative Name', 'Designation', 'Official Email', 'Mobile Number', 'Rep Mobile', 'Rep Email',
+      'Membership Plan', 'Payment Mode', 'Payment Ref (UTR)', 'Status', 'Submitted At', 'Approved At', 'Reviewed By', 'Renewal Years'
     ];
 
     const rows = apps.map(a => [
-      a.id, a.company, a.legalStatus, a.enterpriseType, a.businessServices || a.membershipType,
+      a.id, a.fullName || 'N/A', a.company, a.legalStatus, a.enterpriseType, a.businessServices || a.membershipType,
+      a.primaryBusiness || 'N/A', a.website || 'N/A',
       a.annualTurnover, a.employees, a.gstNo || a.gstin, a.panNo || a.pan, a.cin || 'N/A',
-      a.address, a.district, a.state || 'Gujarat', a.pincode,
-      a.repName || a.applicantName, a.repDesignation, a.email, a.phone,
+      a.regNumber || 'N/A', a.regDate || 'N/A', a.regPlace || 'N/A',
+      a.address, a.city || 'N/A', a.district, a.state || 'Gujarat', a.pincode,
+      a.repName || a.applicantName, a.repDesignation, a.email, a.phone, a.repMobile || 'N/A', a.repEmail || 'N/A',
+      a.membershipPlan || 'N/A', a.paymentMode || 'N/A',
       a.paymentRef || 'N/A', a.status, a.submittedAt, a.approvedAt || 'N/A', a.reviewedBy || 'N/A', a.renewalYears || 1
     ].map(cell));
 
@@ -4885,9 +4871,11 @@ class App {
     }
 
     const required = [...form.querySelectorAll('[required]')];
-    const done = required.filter((el) =>
-      el.type === 'file' ? !!this.currentPaymentProofBase64 : !!(el.value || '').trim()
-    ).length;
+    const done = required.filter((el) => {
+      if (el.name === 'paymentProof') return !!this.currentPaymentProofBase64;
+      if (el.type === 'file') return !!this.docFiles[el.name];
+      return !!(el.value || '').trim();
+    }).length;
     const pct = required.length ? Math.round((done / required.length) * 100) : 0;
 
     bar.querySelector('.form-progress-fill').style.width = `${pct}%`;
@@ -4956,17 +4944,6 @@ class App {
   }
 
   setupModalEvents() {
-    ['expenseReviewModal', 'addEmployeeModal', 'employeeHistoryModal', 'receiptViewModal'].forEach(id => {
-      const m = document.getElementById(id);
-      if (m) {
-        m.addEventListener('click', (e) => {
-          if (e.target === m || e.target.closest('.close-modal-btn') || e.target.id === ('close' + id.charAt(0).toUpperCase() + id.slice(1) + 'Btn')) {
-            m.style.display = 'none';
-            m.classList.remove('show');
-          }
-        });
-      }
-    });
     const backdrop = document.getElementById('modalBackdrop');
     if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) this.closeModal(); });
 
@@ -4974,13 +4951,6 @@ class App {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.closeModal();
-        ['expenseReviewModal', 'addEmployeeModal', 'employeeHistoryModal', 'receiptViewModal'].forEach(id => {
-          const m = document.getElementById(id);
-          if (m) {
-            m.style.display = 'none';
-            m.classList.remove('show');
-          }
-        });
         document.querySelectorAll('.nav-profile-dropdown.open').forEach(d => d.classList.remove('open'));
         this.closeMobileDrawer();
       }
@@ -5047,755 +5017,6 @@ class App {
     });
   }
 
-  setupExpenseFileUploadHandlers() {
-    const dropzone = document.getElementById('expenseReceiptDropzone');
-    const input = document.getElementById('expenseReceiptInput');
-    const preview = document.getElementById('expenseReceiptPreview');
-    const fileName = document.getElementById('expenseReceiptFileName');
-    const fileSize = document.getElementById('expenseReceiptFileSize');
-    const placeholder = document.getElementById('expenseReceiptPlaceholder');
-    const removeBtn = document.getElementById('removeExpenseReceiptBtn');
-    
-    if (!dropzone || !input) return;
-    
-    this.currentExpenseFileBase64 = null;
-    this.currentExpenseFileType = null;
-
-    dropzone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropzone.classList.add('dragover');
-    });
-    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-    dropzone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropzone.classList.remove('dragover');
-      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-    });
-    dropzone.addEventListener('click', () => input.click());
-    input.addEventListener('change', (e) => {
-      if (e.target.files.length) handleFile(e.target.files[0]);
-    });
-    
-    const handleFile = (file) => {
-      if (file.size > 1.5 * 1024 * 1024) {
-        this.showToast('File size must be <= 1.5MB', 'warning');
-        return;
-      }
-      if (!['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
-        this.showToast('Only PDF, PNG, JPG allowed', 'warning');
-        return;
-      }
-      
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        this.currentExpenseFileBase64 = e.target.result;
-        this.currentExpenseFileType = file.type;
-        this.currentExpenseFileName = file.name;
-        
-        if(fileName) fileName.textContent = file.name;
-        if(fileSize) fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
-        
-        if (file.type === 'application/pdf') {
-          if (preview.querySelector('img')) preview.querySelector('img').style.display = 'none';
-          if (preview.querySelector('.pdf-icon')) preview.querySelector('.pdf-icon').style.display = 'block';
-        } else {
-          if (preview.querySelector('img')) {
-            preview.querySelector('img').src = e.target.result;
-            preview.querySelector('img').style.display = 'block';
-          }
-          if (preview.querySelector('.pdf-icon')) preview.querySelector('.pdf-icon').style.display = 'none';
-        }
-        
-        if(placeholder) placeholder.style.display = 'none';
-        if(preview) preview.style.display = 'flex';
-      };
-      reader.readAsDataURL(file);
-    };
-    
-    if (removeBtn) {
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.currentExpenseFileBase64 = null;
-        this.currentExpenseFileType = null;
-        this.currentExpenseFileName = null;
-        input.value = '';
-        if(placeholder) placeholder.style.display = 'flex';
-        if(preview) preview.style.display = 'none';
-      });
-    }
-  }
-
-  setupExpenseFormHandlers() {
-    const form = document.getElementById('employeeExpenseForm');
-    if (!form) return;
-    const submitBtn = form.querySelector('button[type="submit"]');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (form._submitting) return;
-
-      const amount = parseFloat(document.getElementById('expenseClaimedAmountInput').value);
-      const date = document.getElementById('expenseDateInput').value;
-      const category = document.getElementById('expenseCategorySelect').value;
-      const desc = document.getElementById('expenseDescriptionInput').value;
-      
-      if (!this.currentExpenseFileBase64) {
-        this.showToast('Please attach a receipt', 'warning');
-        return;
-      }
-
-      form._submitting = true;
-      let prevBtnHtml = '';
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        prevBtnHtml = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-      }
-
-      try {
-        const res = await this.store.submitExpense({
-          claimedAmount: amount,
-          expenseDate: date,
-          category,
-          description: desc,
-          docData: this.currentExpenseFileBase64,
-          docName: this.currentExpenseFileName || 'receipt',
-          docMime: this.currentExpenseFileType || 'application/octet-stream'
-        });
-
-        if (res.success) {
-          this.showToast('Expense submitted successfully', 'success');
-          form.reset();
-          document.getElementById('removeExpenseReceiptBtn')?.click();
-          this.renderEmployeePortal();
-        } else {
-          this.showToast(res.error || 'Failed to submit', 'error');
-        }
-      } catch (err) {
-        this.showToast(err?.message || 'Network error while submitting expense. Please try again.', 'error');
-      } finally {
-        form._submitting = false;
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = prevBtnHtml || 'Submit Expense';
-        }
-      }
-    });
-  }
-
-  async populateEmployeeDropdowns() {
-    try {
-      const res = await this.store.getAdminEmployees();
-      const employees = Array.isArray(res) ? res : (res?.employees || []);
-      const selects = [
-        document.getElementById('adminExpenseFilterEmp'),
-        document.getElementById('reportEmpSelect'),
-      ];
-      selects.forEach(sel => {
-        if (!sel) return;
-        const currentVal = sel.value;
-        const defaultOption = sel.querySelector('option[value=""]') || sel.firstElementChild;
-        sel.innerHTML = '';
-        if (defaultOption) {
-          sel.appendChild(defaultOption);
-        } else {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = 'All Employees';
-          sel.appendChild(opt);
-        }
-        employees.forEach(e => {
-          const opt = document.createElement('option');
-          opt.value = e.employeeId;
-          opt.textContent = `${e.name} (${e.employeeId})`;
-          sel.appendChild(opt);
-        });
-        if (currentVal) sel.value = currentVal;
-      });
-    } catch (err) {
-      console.error('Failed to populate employee dropdowns:', err);
-    }
-  }
-
-  async renderAdminExpensesTab() {
-    const empSelect = document.getElementById('adminExpenseFilterEmp');
-    if (empSelect && empSelect.options.length <= 1) {
-      await this.populateEmployeeDropdowns();
-    }
-    const status = document.getElementById('adminExpenseFilterStatus')?.value;
-    const emp = document.getElementById('adminExpenseFilterEmp')?.value;
-    const cat = document.getElementById('adminExpenseFilterCat')?.value;
-    
-    // Wire change listeners once if not already wired
-    if (!this._expenseFiltersWired) {
-      this._expenseFiltersWired = true;
-      ['adminExpenseFilterStatus', 'adminExpenseFilterEmp', 'adminExpenseFilterCat'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('change', () => this.renderAdminExpensesTab());
-      });
-    }
-
-    const filters = { status, employeeId: emp, category: cat };
-    const expenses = await this.store.getAdminExpenses(filters);
-    
-    const tbody = document.getElementById('adminExpensesBody');
-    const cards = document.getElementById('adminExpensesCards');
-    
-    const getStatusBadge = (s) => {
-      const st = String(s || '').toLowerCase().trim();
-      if (st === 'approved') return '<span class="status-badge status-approved"><i class="fas fa-check"></i> Approved</span>';
-      if (st === 'partially approved' || st === 'partially_approved' || st === 'partially_approve' || st === 'partial') {
-        return '<span class="status-badge status-approved" style="background:#fef08a;color:#854d0e;"><i class="fas fa-check-double"></i> Partial</span>';
-      }
-      if (st === 'rejected') return '<span class="status-badge status-rejected"><i class="fas fa-times"></i> Rejected</span>';
-      return '<span class="status-badge status-pending"><i class="fas fa-clock"></i> Pending</span>';
-    };
-
-    if (expenses.length === 0) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No expenses found</td></tr>';
-      if (cards) cards.innerHTML = '<div class="empty-state">No expenses found</div>';
-    } else {
-      let html = '';
-      let htmlCards = '';
-      expenses.forEach(e => {
-        const approvedDisplay = (e.status === 'approved' || e.status === 'partially_approved') && e.approvedAmount != null
-          ? `₹${(Number(e.approvedAmount) || 0).toLocaleString('en-IN')}`
-          : (e.status === 'rejected' ? '₹0' : '—');
-        const hasReceipt = Boolean(e.hasReceipt || e.documentId || e.receiptUrl || e.id);
-        const receiptCell = hasReceipt
-          ? `<button class="btn-ghost btn-sm" data-view-receipt-id="${escapeAttr(e.id)}" title="View Receipt" style="padding:0.25rem 0.5rem;font-size:0.8rem;"><i class="fas fa-paperclip"></i> View</button>`
-          : '<span style="color:var(--text-muted);font-size:0.8rem;">None</span>';
-        const row = `
-          <tr>
-            <td>${escapeHtml(e.id)}</td>
-            <td>${escapeHtml(e.employeeName)} (${escapeHtml(e.employeeId)})</td>
-            <td>${escapeHtml(formatDate(e.expenseDate || e.date))}</td>
-            <td>${escapeHtml(e.category)}</td>
-            <td>₹${(e.claimedAmount || 0).toLocaleString('en-IN')}</td>
-            <td>${approvedDisplay}</td>
-            <td>${getStatusBadge(e.status)}</td>
-            <td>${receiptCell}</td>
-            <td>
-              <button class="btn-secondary" data-review-expense-id="${escapeAttr(e.id)}">Review</button>
-            </td>
-          </tr>
-        `;
-        html += row;
-        htmlCards += `
-          <div class="admin-mobile-card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
-              <strong>${escapeHtml(e.id)}</strong>
-              ${getStatusBadge(e.status)}
-            </div>
-            <div>${escapeHtml(e.employeeName)} (${escapeHtml(e.employeeId)})</div>
-            <div style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(formatDate(e.expenseDate || e.date))} &bull; ${escapeHtml(e.category)}</div>
-            <div style="font-weight:600;margin:0.25rem 0;">Claimed: ₹${(e.claimedAmount || 0).toLocaleString('en-IN')} | Approved: ${approvedDisplay}</div>
-            <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
-              ${hasReceipt ? `<button class="btn-ghost btn-sm" data-view-receipt-id="${escapeAttr(e.id)}" style="flex:1;"><i class="fas fa-paperclip"></i> Receipt</button>` : ''}
-              <button class="btn-secondary btn-sm" data-review-expense-id="${escapeAttr(e.id)}" style="flex:1;">Review</button>
-            </div>
-          </div>
-        `;
-      });
-      if (tbody) tbody.innerHTML = html;
-      if (cards) cards.innerHTML = htmlCards;
-      
-      document.querySelectorAll('[data-review-expense-id]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this.openExpenseReviewModal(btn.getAttribute('data-review-expense-id'));
-        });
-      });
-
-      document.querySelectorAll('[data-view-receipt-id]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this.openReceiptViewer(btn.getAttribute('data-view-receipt-id'));
-        });
-      });
-    }
-  }
-
-  async openExpenseReviewModal(id) {
-    const modal = document.getElementById('expenseReviewModal');
-    if (!modal) return;
-    
-    modal.style.display = 'flex';
-    modal.classList.add('show');
-    
-    const closeBtn = modal.querySelector('.close-modal-btn') || document.getElementById('close' + modal.id.charAt(0).toUpperCase() + modal.id.slice(1) + 'Btn');
-    if (closeBtn) closeBtn.onclick = () => {
-      modal.style.display = 'none';
-      modal.classList.remove('show');
-    };
-    
-    const expenses = await this.store.getAdminExpenses({});
-    const expense = expenses.find(e => e.id === id);
-    if (expense) {
-      const dossier = document.getElementById('reviewClaimDossier');
-      if (dossier) {
-        dossier.innerHTML = `
-          <p><strong>Claim ID:</strong> ${escapeHtml(expense.id)}</p>
-          <p><strong>Employee:</strong> ${escapeHtml(expense.employeeName)} (${escapeHtml(expense.employeeId)})</p>
-          <p><strong>Date:</strong> ${escapeHtml(formatDate(expense.date))}</p>
-          <p><strong>Category:</strong> ${escapeHtml(expense.category)}</p>
-          <p><strong>Description:</strong> ${escapeHtml(expense.description)}</p>
-          <p><strong>Claimed Amount:</strong> ₹${(expense.claimedAmount || 0).toLocaleString('en-IN')}</p>
-        `;
-      }
-      this._currentReviewExpenseClaimed = expense.claimedAmount || 0;
-    }
-    
-    const approvedInput = document.getElementById('reviewApprovedAmountInput');
-    if (approvedInput) approvedInput.value = ''; // Enforce CRITICAL AMOUNT RULE
-    const remarkInput = document.getElementById('reviewAdminRemarkInput');
-    if (remarkInput) remarkInput.value = '';
-    
-    const doc = await this.store.getExpenseDocument(id);
-    const container = document.getElementById('expenseDocPreviewContainer'); // Corrected ID
-    const newTabLink = document.getElementById('expenseDocNewTabLink');
-    if (container && doc && doc.docData) {
-      const isPdf = doc.mimeType === 'application/pdf' || doc.docMime === 'application/pdf' || doc.docType === 'application/pdf' || (doc.fileName && doc.fileName.endsWith('.pdf')) || (doc.docData && doc.docData.startsWith('data:application/pdf'));
-      const safeData = escapeAttr(doc.docData);
-      const safeName = escapeHtml(doc.docName || (isPdf ? 'receipt.pdf' : 'receipt.png'));
-      if (newTabLink) {
-        newTabLink.href = doc.docData;
-        newTabLink.setAttribute('rel', 'noopener noreferrer');
-        if (doc.docName) newTabLink.setAttribute('download', doc.docName);
-      }
-      if (isPdf) {
-        container.innerHTML = `
-          <iframe src="${safeData}" sandbox="allow-downloads allow-popups" title="Receipt Preview" style="width:100%; height:480px; border:1px solid var(--border-color); border-radius:6px; background:#fff;"></iframe>
-        `;
-      } else {
-        container.innerHTML = `
-          <div style="text-align:center;padding:1rem;background:#f8fafc;border:1px solid var(--border-color);border-radius:6px;max-height:480px;overflow:auto;">
-            <img src="${safeData}" alt="${safeName}" style="max-width:100%;max-height:440px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,0.1);" />
-          </div>
-        `;
-      }
-    } else if (container) {
-      container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">No receipt attached</p>';
-      if (newTabLink) newTabLink.removeAttribute('href');
-    }
-    
-    const btnApprove = document.getElementById('btnReviewApprove');
-    const btnPartial = document.getElementById('btnReviewPartial');
-    const btnReject = document.getElementById('btnReviewReject');
-    
-    if (btnApprove) btnApprove.onclick = () => this.handleReviewExpense(id, 'approve');
-    if (btnPartial) btnPartial.onclick = () => this.handleReviewExpense(id, 'partially_approve');
-    if (btnReject) btnReject.onclick = () => this.handleReviewExpense(id, 'reject');
-  }
-
-  async handleReviewExpense(id, decision) {
-    const approvedStr = document.getElementById('reviewApprovedAmountInput')?.value;
-    const remark = document.getElementById('reviewAdminRemarkInput')?.value || '';
-    const claimed = this._currentReviewExpenseClaimed || 0;
-    
-    let approvedAmount = parseFloat(approvedStr);
-    
-    if (decision === 'reject') {
-      approvedAmount = 0;
-      if (!remark.trim()) {
-        this.showToast('Remark required for rejection', 'warning');
-        return;
-      }
-    } else {
-      if (isNaN(approvedAmount) || approvedAmount < 0 || approvedAmount > claimed) {
-        this.showToast('Please enter a valid approved amount between 0 and ' + claimed, 'warning');
-        return;
-      }
-    }
-    
-    const res = await this.store.reviewExpense(id, { decision, approvedAmount, remark });
-    if (res.success) {
-      this.showToast('Expense reviewed', 'success');
-      const modal = document.getElementById('expenseReviewModal');
-      if (modal) {
-        modal.style.display = 'none';
-        modal.classList.remove('show');
-      }
-      this.renderAdminExpensesTab();
-    } else {
-      this.showToast(res.error || 'Failed', 'error');
-    }
-  }
-
-  async renderAdminEmployeesTab() {
-    const employees = await this.store.getAdminEmployees();
-    const tbody = document.getElementById('adminEmployeesBody');
-    const cards = document.getElementById('adminEmployeesCards');
-    
-    let html = '';
-    let htmlCards = '';
-    
-    employees.forEach(e => {
-      const claimsCount = e.totalClaims != null ? e.totalClaims : (e.stats?.totalClaims || 0);
-      const approvedTotal = e.totalApprovedAmount != null ? e.totalApprovedAmount : (e.stats?.approvedAmount || 0);
-      html += `
-        <tr>
-          <td>${escapeHtml(e.employeeId)}</td>
-          <td>${escapeHtml(e.name)}</td>
-          <td>${escapeHtml(e.username || '—')}</td>
-          <td>${escapeHtml(e.email || '—')}</td>
-          <td>${e.status === 'active' ? '<span class="status-badge status-approved">Active</span>' : '<span class="status-badge status-rejected">Inactive</span>'}</td>
-          <td>${claimsCount}</td>
-          <td>₹${approvedTotal.toLocaleString('en-IN')}</td>
-          <td>
-            <button class="btn-icon" data-emp-history-id="${escapeAttr(e.employeeId)}" title="View History"><i class="fas fa-history"></i></button>
-            <button class="btn-icon" data-emp-toggle-status-id="${escapeAttr(e.employeeId)}" title="${e.status === 'active' ? 'Deactivate' : 'Activate'}"><i class="fas fa-power-off"></i></button>
-          </td>
-        </tr>
-      `;
-      htmlCards += `
-        <div class="admin-mobile-card">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <strong>${escapeHtml(e.employeeId)}</strong>
-            ${e.status === 'active' ? '<span class="status-badge status-approved">Active</span>' : '<span class="status-badge status-rejected">Inactive</span>'}
-          </div>
-          <div><strong>Name:</strong> ${escapeHtml(e.name)}</div>
-          <div><strong>Username:</strong> ${escapeHtml(e.username || '—')}</div>
-          <div><strong>Email:</strong> ${escapeHtml(e.email || '—')}</div>
-          <div><strong>Total Claims:</strong> ${claimsCount}</div>
-          <div><strong>Total Approved:</strong> ₹${approvedTotal.toLocaleString('en-IN')}</div>
-          <div style="margin-top:10px;display:flex;gap:0.5rem;justify-content:flex-end;">
-            <button class="btn-secondary" data-emp-history-id="${escapeAttr(e.employeeId)}">History</button>
-            <button class="btn-secondary" data-emp-toggle-status-id="${escapeAttr(e.employeeId)}">${e.status === 'active' ? 'Deactivate' : 'Activate'}</button>
-          </div>
-        </div>
-      `;
-    });
-    
-    if (tbody) tbody.innerHTML = html || '<tr><td colspan="8">No employees found</td></tr>';
-    if (cards) cards.innerHTML = htmlCards;
-    
-    document.querySelectorAll('[data-emp-history-id]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.openEmployeeHistoryModal(btn.getAttribute('data-emp-history-id'));
-      });
-    });
-    document.querySelectorAll('[data-emp-toggle-status-id]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.handleToggleEmployeeStatus(btn.getAttribute('data-emp-toggle-status-id'));
-      });
-    });
-    
-    const btnAdd = document.getElementById('btnAddEmployee');
-    if (btnAdd) {
-      btnAdd.onclick = () => {
-        const m = document.getElementById('addEmployeeModal');
-        if (m) {
-          m.style.display = 'flex';
-          m.classList.add('show');
-        }
-      };
-    }
-    
-    const cancelBtn = document.getElementById('btnCancelAddEmp');
-    if (cancelBtn) cancelBtn.onclick = () => {
-      const m = document.getElementById('addEmployeeModal');
-      if (m) {
-        m.style.display = 'none';
-        m.classList.remove('show');
-      }
-    };
-    
-    const addForm = document.getElementById('addEmployeeForm');
-    if (addForm) {
-      addForm.onsubmit = async (ev) => {
-        ev.preventDefault();
-        this.handleAddEmployee();
-      };
-    }
-  }
-
-  async handleAddEmployee() {
-    const addForm = document.getElementById('addEmployeeForm');
-    const submitBtn = addForm?.querySelector('button[type="submit"]');
-    if (addForm?._submitting) return;
-
-    const employeeId = document.getElementById('addEmpIdInput')?.value;
-    const name = document.getElementById('addEmpNameInput')?.value;
-    const username = document.getElementById('addEmpUsernameInput')?.value;
-    const password = document.getElementById('addEmpPasswordInput')?.value;
-    const email = document.getElementById('addEmpEmailInput')?.value;
-    const status = document.getElementById('addEmpStatusSelect')?.value || 'active';
-    
-    if (!employeeId || !name || !username || !password || !email) {
-      this.showToast('All fields are required', 'warning');
-      return;
-    }
-
-    let prevBtnHtml = '';
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      prevBtnHtml = submitBtn.innerHTML;
-      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    }
-    if (addForm) addForm._submitting = true;
-
-    try {
-      const empData = { employeeId, name, username, password, email, status, department: 'General' };
-      const res = await this.store.createEmployee(empData);
-      if (res.success) {
-        this.showToast('Employee created', 'success');
-        if (addForm) addForm.reset();
-        const m = document.getElementById('addEmployeeModal');
-        if (m) {
-          m.style.display = 'none';
-          m.classList.remove('show');
-        }
-        await this.populateEmployeeDropdowns();
-        this.renderAdminEmployeesTab();
-      } else {
-        this.showToast(res.error || 'Failed to create employee', 'error');
-      }
-    } catch (err) {
-      this.showToast(err?.message || 'Network error while creating employee.', 'error');
-    } finally {
-      if (addForm) addForm._submitting = false;
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = prevBtnHtml || 'Save Employee';
-      }
-    }
-  }
-  
-  async openEmployeeHistoryModal(employeeId) {
-    const modal = document.getElementById('employeeHistoryModal');
-    if (!modal) return;
-    modal.style.display = 'flex';
-    modal.classList.add('show');
-    
-    const closeBtn = modal.querySelector('.close-modal-btn') || document.getElementById('close' + modal.id.charAt(0).toUpperCase() + modal.id.slice(1) + 'Btn');
-    if (closeBtn) closeBtn.onclick = () => {
-      modal.style.display = 'none';
-      modal.classList.remove('show');
-    };
-    
-    const details = await this.store.getEmployeeDetails(employeeId);
-    if (!details) {
-      this.showToast('Failed to load employee details', 'error');
-      return;
-    }
-    
-    const nameDisplay = document.getElementById('empHistoryNameDisplay');
-    if (nameDisplay) nameDisplay.textContent = details.employee.name;
-    
-    let claimsTotal = 0;
-    let claimsTotalAmount = 0;
-    let approvedTotal = 0;
-    
-    let html = '';
-    let htmlCards = '';
-    details.history.forEach(c => {
-      claimsTotal++;
-      claimsTotalAmount += (c.claimedAmount || 0);
-      const st = String(c.status || '').toLowerCase().trim();
-      if (st === 'approved' || st === 'partially approved' || st === 'partially_approved' || st === 'partially_approve' || st === 'partial') {
-        approvedTotal += (c.approvedAmount || 0);
-      }
-      
-      const getStatusBadge = (s) => {
-        const str = String(s || '').toLowerCase().trim();
-        if (str === 'approved') return '<span class="status-badge status-approved"><i class="fas fa-check"></i> Approved</span>';
-        if (str === 'partially approved' || str === 'partially_approved' || str === 'partially_approve' || str === 'partial') {
-          return '<span class="status-badge status-approved" style="background:#fef08a;color:#854d0e;"><i class="fas fa-check-double"></i> Partial</span>';
-        }
-        if (str === 'rejected') return '<span class="status-badge status-rejected"><i class="fas fa-times"></i> Rejected</span>';
-        return '<span class="status-badge status-pending"><i class="fas fa-clock"></i> Pending</span>';
-      };
-      
-      html += `
-        <tr>
-          <td>${escapeHtml(c.id)}</td>
-          <td>${escapeHtml(formatDate(c.expenseDate || c.date))}</td>
-          <td>${escapeHtml(c.category)}</td>
-          <td>₹${(c.claimedAmount || 0).toLocaleString('en-IN')}</td>
-          <td>₹${(c.approvedAmount || 0).toLocaleString('en-IN')}</td>
-          <td>${getStatusBadge(c.status)}</td>
-          <td>${escapeHtml(c.adminRemark || '-')}</td>
-        </tr>
-      `;
-
-      htmlCards += `
-        <div class="admin-mobile-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
-            <strong>${escapeHtml(c.id)}</strong>
-            ${getStatusBadge(c.status)}
-          </div>
-          <div style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(formatDate(c.expenseDate || c.date))} &bull; ${escapeHtml(c.category)}</div>
-          <div style="font-weight:600;margin:0.25rem 0;">Claimed: ₹${(c.claimedAmount || 0).toLocaleString('en-IN')} | Approved: ₹${(c.approvedAmount || 0).toLocaleString('en-IN')}</div>
-          ${c.adminRemark ? `<div style="font-size:0.85rem;color:var(--text-muted);">Remark: ${escapeHtml(c.adminRemark)}</div>` : ''}
-        </div>
-      `;
-    });
-    
-    const totalClaimsEl = document.getElementById('empHistoryClaimedAmount');
-    if (totalClaimsEl) totalClaimsEl.textContent = '₹' + claimsTotalAmount.toLocaleString('en-IN');
-    const countClaimsEl = document.getElementById('empHistoryTotalClaims');
-    if (countClaimsEl) countClaimsEl.textContent = claimsTotal;
-    
-    const totalApprovedEl = document.getElementById('empHistoryApprovedAmount');
-    if (totalApprovedEl) totalApprovedEl.textContent = '₹' + approvedTotal.toLocaleString('en-IN');
-    
-    const tbody = document.getElementById('empHistoryTableBody');
-    if (tbody) tbody.innerHTML = html || '<tr><td colspan="7">No history found</td></tr>';
-    const cards = document.getElementById('empHistoryCards');
-    if (cards) cards.innerHTML = htmlCards || '<p style="color:var(--text-muted);text-align:center;padding:1rem;">No history found</p>';
-  }
-
-  async handleToggleEmployeeStatus(employeeId) {
-    if (confirm('Are you sure you want to deactivate/activate this employee? Historical expense records and audit logs will be retained.')) {
-      const employees = await this.store.getAdminEmployees();
-      const emp = employees.find(e => e.employeeId === employeeId);
-      if (emp) {
-        const newStatus = emp.status === 'active' ? 'inactive' : 'active';
-        const res = await this.store.updateEmployeeStatus(employeeId, newStatus);
-        if (res.success) {
-          this.showToast('Employee status updated', 'success');
-          this.renderAdminEmployeesTab();
-        } else {
-          this.showToast(res.error || 'Failed to update status', 'error');
-        }
-      }
-    }
-  }
-
-  async renderMonthlyExpenseReports() {
-    const empSelect = document.getElementById('reportEmpSelect');
-    if (empSelect && empSelect.options.length <= 1) {
-      await this.populateEmployeeDropdowns();
-    }
-    // Wire change listeners
-    if (!this._reportFiltersWired) {
-      this._reportFiltersWired = true;
-      ['reportMonthSelect', 'reportYearSelect', 'reportEmpSelect', 'reportCatSelect', 'reportStatusSelect'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('change', () => this.renderMonthlyExpenseReports());
-      });
-    }
-    
-    const month = document.getElementById('reportMonthSelect')?.value;
-    const year = document.getElementById('reportYearSelect')?.value;
-    const employeeId = document.getElementById('reportEmpSelect')?.value;
-    const category = document.getElementById('reportCatSelect')?.value;
-    const status = document.getElementById('reportStatusSelect')?.value;
-    
-    const expenses = await this.store.getAdminExpenses({ month, year, employeeId, category, status });
-    
-    let claimed = 0, approved = 0, rejected = 0, pending = 0;
-    expenses.forEach(e => {
-      claimed += (e.claimedAmount || 0);
-      const st = String(e.status || '').toLowerCase().trim();
-      if (st === 'approved' || st === 'partially approved' || st === 'partially_approved' || st === 'partially_approve' || st === 'partial') {
-        approved += (e.approvedAmount || 0);
-      } else if (st === 'rejected') {
-        rejected += (e.claimedAmount || 0);
-      } else {
-        pending += (e.claimedAmount || 0);
-      }
-    });
-    
-    const s = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    s('reportTotalClaims', expenses.length);
-    s('reportClaimedAmount', '₹' + claimed.toLocaleString('en-IN'));
-    s('reportApprovedAmount', '₹' + approved.toLocaleString('en-IN'));
-    s('reportRejectedAmount', '₹' + rejected.toLocaleString('en-IN'));
-    s('reportPendingAmount', '₹' + pending.toLocaleString('en-IN'));
-    
-    const getStatusBadge = (st) => {
-      const s = String(st || '').toLowerCase().trim();
-      if (s === 'approved') return '<span class="status-badge status-approved"><i class="fas fa-check"></i> Approved</span>';
-      if (s === 'partially approved' || s === 'partially_approved' || s === 'partially_approve' || s === 'partial') {
-        return '<span class="status-badge status-approved" style="background:#fef08a;color:#854d0e;"><i class="fas fa-check-double"></i> Partial</span>';
-      }
-      if (s === 'rejected') return '<span class="status-badge status-rejected"><i class="fas fa-times"></i> Rejected</span>';
-      return '<span class="status-badge status-pending"><i class="fas fa-clock"></i> Pending</span>';
-    };
-    
-    const tbody = document.getElementById('reportsTableBody');
-    if (tbody) {
-      tbody.innerHTML = expenses.map(e => `
-        <tr>
-          <td>${escapeHtml(e.id)}</td>
-          <td>${escapeHtml(e.employeeName)}</td>
-          <td>${escapeHtml(formatDate(e.expenseDate || e.date))}</td>
-          <td>${escapeHtml(e.category)}</td>
-          <td>₹${(e.claimedAmount || 0).toLocaleString('en-IN')}</td>
-          <td>₹${(e.approvedAmount || 0).toLocaleString('en-IN')}</td>
-          <td>${getStatusBadge(e.status)}</td>
-          <td>${escapeHtml(e.adminRemark || '-')}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="8">No records found</td></tr>';
-    }
-
-    const cards = document.getElementById('reportsCards');
-    if (cards) {
-      cards.innerHTML = expenses.map(e => `
-        <div class="admin-mobile-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
-            <strong>${escapeHtml(e.id)}</strong>
-            ${getStatusBadge(e.status)}
-          </div>
-          <div>${escapeHtml(e.employeeName || '')}</div>
-          <div style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(formatDate(e.expenseDate || e.date))} &bull; ${escapeHtml(e.category)}</div>
-          <div style="font-weight:600;margin:0.25rem 0;">Claimed: ₹${(e.claimedAmount || 0).toLocaleString('en-IN')} | Approved: ₹${(e.approvedAmount || 0).toLocaleString('en-IN')}</div>
-          ${e.adminRemark ? `<div style="font-size:0.85rem;color:var(--text-muted);">Remark: ${escapeHtml(e.adminRemark)}</div>` : ''}
-        </div>
-      `).join('') || '<p style="color:var(--text-muted);text-align:center;padding:1rem;">No records found</p>';
-    }
-  }
-
-  async openReceiptViewer(expenseId) {
-    const modal = document.getElementById('receiptViewModal');
-    if (!modal) return;
-    modal.style.display = 'flex';
-    modal.classList.add('show');
-    
-    const closeBtn = modal.querySelector('.close-modal-btn') || document.getElementById('close' + modal.id.charAt(0).toUpperCase() + modal.id.slice(1) + 'Btn');
-    if (closeBtn) closeBtn.onclick = () => {
-      modal.style.display = 'none';
-      modal.classList.remove('show');
-    };
-    
-    const doc = await this.store.getExpenseDocument(expenseId);
-    const content = document.getElementById('receiptModalContent');
-    const newTabLink = document.getElementById('receiptModalOpenNewTab');
-    
-    if (doc && doc.docData) {
-      if (newTabLink) {
-        newTabLink.href = doc.docData;
-        newTabLink.setAttribute('rel', 'noopener noreferrer');
-        if (doc.docName) newTabLink.setAttribute('download', doc.docName);
-      }
-      
-      if (content) {
-        const isPdf = doc.mimeType === 'application/pdf' || doc.docMime === 'application/pdf' || doc.docType === 'application/pdf' || (doc.fileName && doc.fileName.endsWith('.pdf')) || (doc.docData && doc.docData.startsWith('data:application/pdf'));
-        const safeName = escapeHtml(doc.docName || (isPdf ? 'receipt.pdf' : 'receipt.png'));
-        const safeData = escapeAttr(doc.docData);
-        if (isPdf) {
-          content.innerHTML = `<div class="receipt-dossier" style="margin-bottom:0.75rem;padding:0.75rem;background:var(--gray-50);border:1px solid var(--border-color);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">
-            <div>
-              <strong style="color:var(--primary);font-size:0.9rem;"><i class="fas fa-file-pdf" style="color:#DC2626;margin-right:0.4rem;"></i>${safeName}</strong>
-              <span style="font-size:0.75rem;color:var(--text-muted);display:block;margin-top:0.2rem;">PDF Document &bull; Isolated Preview</span>
-            </div>
-            <a href="${safeData}" download="${safeName}" class="btn-secondary" style="font-size:0.8rem;padding:0.35rem 0.75rem;text-decoration:none;"><i class="fas fa-download"></i> Download</a>
-          </div>
-          <iframe src="${safeData}" sandbox="allow-downloads allow-popups" title="Receipt Preview" style="width:100%; height:480px; border:1px solid var(--border-color); border-radius:6px; background:#fff;"></iframe>`;
-        } else {
-          content.innerHTML = `<div class="receipt-dossier" style="margin-bottom:0.75rem;padding:0.75rem;background:var(--gray-50);border:1px solid var(--border-color);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">
-            <div>
-              <strong style="color:var(--primary);font-size:0.9rem;"><i class="fas fa-file-image" style="color:var(--accent-gold);margin-right:0.4rem;"></i>${safeName}</strong>
-              <span style="font-size:0.75rem;color:var(--text-muted);display:block;margin-top:0.2rem;">Image Receipt &bull; Isolated View</span>
-            </div>
-            <a href="${safeData}" download="${safeName}" class="btn-secondary" style="font-size:0.8rem;padding:0.35rem 0.75rem;text-decoration:none;"><i class="fas fa-download"></i> Download</a>
-          </div>
-          <div style="text-align:center;padding:1rem;background:#f8fafc;border:1px solid var(--border-color);border-radius:6px;max-height:480px;overflow:auto;">
-            <img src="${safeData}" alt="Receipt Document" style="max-width:100%;max-height:440px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,0.1);" />
-          </div>`;
-        }
-      }
-    }
-  }
 }
 
 // Bootstrap

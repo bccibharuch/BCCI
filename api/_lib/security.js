@@ -54,8 +54,8 @@ export function applySecurityHeaders(res, { https = false } = {}) {
 // ── Startup configuration check ────────────────────────────────────
 
 const REQUIRED = [
-  ['UPSTASH_REDIS_REST_URL', 'Redis storage — applications and sessions cannot be saved'],
-  ['UPSTASH_REDIS_REST_TOKEN', 'Redis storage — applications and sessions cannot be saved'],
+  ['UPSTASH_REDIS_REST_URL', 'Redis — OTP codes, sessions and rate limits cannot be saved'],
+  ['UPSTASH_REDIS_REST_TOKEN', 'Redis — OTP codes, sessions and rate limits cannot be saved'],
   ['ADMIN_PASSWORD', 'admin sign-in is disabled'],
 ];
 
@@ -77,6 +77,11 @@ export function checkConfig(env = process.env) {
 
   for (const [key, why] of REQUIRED) {
     if (!env[key]) errors.push(`${key} is not set — ${why}.`);
+  }
+  // Postgres holds the durable records on the VPS (docker-compose). Redis
+  // alone still covers everything on serverless.
+  if ((env.STORAGE_BACKEND || 'redis').trim().toLowerCase() === 'postgres' && !env.DATABASE_URL) {
+    errors.push('DATABASE_URL is not set — STORAGE_BACKEND=postgres has nowhere to save records.');
   }
   for (const [key, why] of RECOMMENDED) {
     const fallback = key === 'SMTP_USER' ? env.GMAIL_USER

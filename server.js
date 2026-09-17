@@ -20,6 +20,7 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { applySecurityHeaders, reportConfig } from './api/_lib/security.js';
+import { STORAGE_BACKEND, initStorage } from './api/_lib/records.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -49,7 +50,7 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
-const MAX_BODY = 2 * 1024 * 1024; // 2MB — receipts are capped well below this
+const MAX_BODY = 5 * 1024 * 1024; // 5MB — multi-document applications run ~2-3MB
 
 // ── Adapt Node's req/res to the handler API the routes expect ──────
 
@@ -234,11 +235,22 @@ const server = http.createServer(async (req, res) => {
 
 console.log('\nBCCI Bharuch portal');
 console.log('───────────────────');
+console.log(`  storage backend: ${STORAGE_BACKEND}`);
 const configOk = reportConfig();
 if (!configOk && process.env.ALLOW_INCOMPLETE_CONFIG !== '1') {
   console.error('\nRefusing to start with missing required settings.');
   console.error('Fix the errors above, or set ALLOW_INCOMPLETE_CONFIG=1 to start anyway.\n');
   process.exit(1);
+}
+
+if (STORAGE_BACKEND === 'postgres') {
+  try {
+    await initStorage();
+    console.log('  [storage] postgres schema ready');
+  } catch (err) {
+    console.error('  [storage] ERROR: could not reach Postgres:', err?.message || err);
+    if (process.env.ALLOW_INCOMPLETE_CONFIG !== '1') process.exit(1);
+  }
 }
 
 if (!TRUST_PROXY) {

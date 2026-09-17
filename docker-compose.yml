@@ -1,0 +1,50 @@
+# BCCI Bharuch portal — app + Postgres on any VPS with Docker.
+# Redis (Upstash) is still required for OTP codes, sessions and rate limits.
+#
+#   cp .env.example .env        # fill in Upstash + SMTP + admin secrets
+#   docker compose up -d --build
+#   docker compose exec app npm run migrate:pg   # one-time copy from Redis
+#
+# Data survives restarts in the pgdata volume. Back up with:
+#   docker compose exec db pg_dump -U bcci bcci > backup.sql
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bcci
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: bcci
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bcci -d bcci']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      STORAGE_BACKEND: postgres
+      DATABASE_URL: postgresql://bcci:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/bcci
+      TRUST_PROXY: 1
+      PORT: 3000
+      HOST: 0.0.0.0
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'node -e "fetch(`http://localhost:3000/api/health`).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  pgdata:

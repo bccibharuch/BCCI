@@ -3,15 +3,16 @@
 
 import crypto from 'crypto';
 import {
-  redis,
   listApplications,
   getApplication,
   getApplicationByEmail,
   putApplication,
   updateApplication,
+  acquireLock,
+  releaseLock,
   STATUS,
   normalizeStatus,
-} from './_lib/redis.js';
+} from './_lib/records.js';
 import {
   applyCors,
   handlePreflight,
@@ -30,7 +31,7 @@ import { validateFileSignature } from './_lib/validation.js';
 import adminStatsHandler from './_lib/admin-stats.js';
 
 // A receipt is base64 in the JSON body, so the cap has to leave room for it.
-const MAX_BODY_SIZE = 900 * 1024;
+const MAX_BODY_SIZE = 3.5 * 1024 * 1024;
 
 function newApplicationId() {
   return `BCCI-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
@@ -101,7 +102,17 @@ async function handler(req, res) {
         return res.status(401).json({ error: 'Admin authentication required.' });
       }
       const applications = await listApplications();
-      return res.status(200).json({ applications, total: applications.length });
+      // Document scans stay out of the list payload (each is hundreds of KB);
+      // the dossier and CSV fetch single records that include them.
+      const slim = applications.map((a) => ({
+        ...a,
+        paymentProof: a.paymentProof ? '[document]' : '',
+        gstCertProof: a.gstCertProof ? '[document]' : '',
+        panCertProof: a.panCertProof ? '[document]' : '',
+        regCertProof: a.regCertProof ? '[document]' : '',
+        repAttachment: a.repAttachment ? '[document]' : '',
+      }));
+      return res.status(200).json({ applications: slim, total: slim.length });
     }
 
     // Single record: the owner, or an admin.
@@ -144,11 +155,15 @@ async function handler(req, res) {
 
     const repName = str(body.repName, 120);
     const repDesignation = str(body.repDesignation, 120);
+    const repMobile = cleanPhone(body.repMobile);
+    const repEmail = str(body.repEmail, 254).toLowerCase();
     const company = str(body.company, 200);
     const phone = cleanPhone(body.phone);
     const membershipType = str(body.businessServices, 120);
     const applicantAddress = str(body.address, 500);
+    const city = str(body.city, 120);
     const district = str(body.district, 120);
+    const state = str(body.state, 120) || 'Gujarat';
     const pincode = str(body.pincode, 10);
     const legalStatus = str(body.legalStatus, 80);
     const enterpriseType = str(body.enterpriseType, 80);
@@ -156,12 +171,41 @@ async function handler(req, res) {
     const employees = str(body.employees, 30);
     const paymentRef = str(body.paymentRef, 80);
     const paymentProofRaw = typeof body.paymentProof === 'string' ? body.paymentProof.trim() : '';
+    const fullName = str(body.fullName, 120);
+    const subject = str(body.subject, 200);
+    const website = str(body.website, 200);
+    const primaryBusiness = str(body.primaryBusiness, 200);
+    const businessDescription = str(body.businessDescription, 4000);
+    const internationalOps = str(body.internationalOps, 2000);
+    const regNumber = str(body.regNumber, 60);
+    const regDate = str(body.regDate, 10);
+    const regPlace = str(body.regPlace, 120);
+    const otherAssociations = str(body.otherAssociations, 300);
+    const feedback = str(body.feedback, 4000);
+    const membershipPlan = str(body.membershipPlan, 80);
+    const paymentMode = str(body.paymentMode, 40);
+
+    if (!fullName || fullName.length < 2) {
+      return res.status(400).json({ error: 'Full name is required (minimum 2 characters).' });
+    }
+    if (!subject || subject.length < 2) {
+      return res.status(400).json({ error: 'Subject is required (minimum 2 characters).' });
+    }
+    if (!city || city.length < 2) {
+      return res.status(400).json({ error: 'City is required (minimum 2 characters).' });
+    }
 
     if (!repName || repName.length < 2) {
       return res.status(400).json({ error: 'Representative name is required (minimum 2 characters).' });
     }
     if (!repDesignation || repDesignation.length < 2) {
       return res.status(400).json({ error: 'Representative designation is required (minimum 2 characters).' });
+    }
+    if (!repMobile || !/^[6-9]\d{9}$/.test(repMobile)) {
+      return res.status(400).json({ error: 'Enter a valid 10-digit representative mobile number.' });
+    }
+    if (!repEmail || !isEmail(repEmail)) {
+      return res.status(400).json({ error: 'Enter a valid representative email address.' });
     }
     if (!company || company.length < 2) {
       return res.status(400).json({ error: 'Company or organization name is required (minimum 2 characters).' });
@@ -174,6 +218,39 @@ async function handler(req, res) {
     }
     if (!membershipType || membershipType.length < 2) {
       return res.status(400).json({ error: 'Primary business sector / service is required.' });
+    }
+    if (!primaryBusiness || primaryBusiness.length < 2) {
+      return res.status(400).json({ error: 'Primary business name is required (minimum 2 characters).' });
+    }
+    if (!businessDescription || businessDescription.length < 10) {
+      return res.status(400).json({ error: 'Brief description of operations is required (minimum 10 characters).' });
+    }
+    if (website && !/^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/\S*)?$/i.test(website)) {
+      return res.status(400).json({ error: 'Enter a valid website URL (e.g. example.com).' });
+    }
+    if (!feedback || feedback.length < 5) {
+      return res.status(400).json({ error: 'Feedback or questions are required (minimum 5 characters).' });
+    }
+    const MEMBERSHIP_PLANS = ['Micro & Small - ₹500 / Year', 'Medium - ₹1,000 / Year', 'Large - ₹2,500 / Year'];
+    if (!MEMBERSHIP_PLANS.includes(membershipPlan)) {
+      return res.status(400).json({ error: 'Select a valid membership type.' });
+    }
+    const PAYMENT_MODES = ['Cash', 'UPI', 'Bank Transfer'];
+    if (!PAYMENT_MODES.includes(paymentMode)) {
+      return res.status(400).json({ error: 'Select a valid payment mode (Cash, UPI or Bank Transfer).' });
+    }
+    if (regDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(regDate)) {
+        return res.status(400).json({ error: 'Date of registration must be YYYY-MM-DD.' });
+      }
+      const [ry, rm, rd] = regDate.split('-').map(Number);
+      const d = new Date(Date.UTC(ry, rm - 1, rd));
+      if (d.getUTCFullYear() !== ry || d.getUTCMonth() !== rm - 1 || d.getUTCDate() !== rd) {
+        return res.status(400).json({ error: 'Date of registration is not a valid calendar date.' });
+      }
+      if (d > new Date()) {
+        return res.status(400).json({ error: 'Date of registration cannot be in the future.' });
+      }
     }
     if (!legalStatus || legalStatus.length < 2) {
       return res.status(400).json({ error: 'Legal status is required.' });
@@ -229,6 +306,35 @@ async function handler(req, res) {
       paymentProof = paymentProofRaw;
     }
 
+    // Supporting documents: GST + PAN certificates required, registration
+    // certificate and representative attachment optional. Images and PDFs.
+    const DOC_MIMES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];
+    const readDoc = (key, label, required) => {
+      const raw = typeof body[key] === 'string' ? body[key].trim() : '';
+      if (!raw) {
+        if (required) return { error: `${label} is required. Please attach the document.` };
+        return { value: '' };
+      }
+      const sigCheck = validateFileSignature(raw, DOC_MIMES);
+      if (!sigCheck.ok) {
+        return { error: `${label} validation failed: ${sigCheck.error}` };
+      }
+      return { value: raw };
+    };
+    const docs = {};
+    for (const [key, label, required] of [
+      ['gstCertProof', 'GST certificate', true],
+      ['panCertProof', 'PAN certificate', true],
+      ['regCertProof', 'Registration certificate', false],
+      ['repAttachment', 'Representative attachment', false],
+    ]) {
+      const checked = readDoc(key, label, required);
+      if (checked.error) {
+        return res.status(400).json({ error: checked.error });
+      }
+      docs[key] = checked.value;
+    }
+
     if (paymentRef && (paymentRef.length < 6 || !/^[A-Za-z0-9_\-\/]{6,80}$/.test(paymentRef))) {
       return res.status(400).json({ error: 'Payment reference / UTR must be at least 6 alphanumeric characters.' });
     }
@@ -245,15 +351,31 @@ async function handler(req, res) {
     const application = {
       id: newApplicationId(),
       applicantName: repName,
+      fullName,
+      subject,
       repName,
       repDesignation: str(body.repDesignation, 120),
+      repMobile,
+      repEmail,
       company,
       email: applicantEmail,
       phone,
       address: applicantAddress,
-      state: district,
-      city: district,
+      city,
+      state,
       district,
+      pincode: str(body.pincode, 10),
+      website,
+      primaryBusiness,
+      businessDescription,
+      internationalOps,
+      regNumber,
+      regDate,
+      regPlace,
+      otherAssociations,
+      feedback,
+      membershipPlan,
+      paymentMode,
       pincode: str(body.pincode, 10),
       gstin: str(body.gstNo, 20),
       gstNo: str(body.gstNo, 20),
@@ -267,6 +389,10 @@ async function handler(req, res) {
       cin: str(body.cin, 30),
       membershipType,
       paymentProof,
+      gstCertProof: docs.gstCertProof,
+      panCertProof: docs.panCertProof,
+      regCertProof: docs.regCertProof,
+      repAttachment: docs.repAttachment,
       paymentAmount: '',
       paymentRef: str(body.paymentRef, 80),
       status: STATUS.PENDING,
@@ -441,17 +567,9 @@ async function handler(req, res) {
         return res.status(400).json({ error: 'A valid payment UTR reference is required to approve renewal.' });
       }
 
-      const lockKey = `bcci:lock:renewal:${id}`;
-      let lockAcquired = false;
-      for (let attempt = 0; attempt < 25; attempt++) {
-        const res = await redis.set(lockKey, '1', { nx: true, ex: 5 });
-        if (res) {
-          lockAcquired = true;
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 40));
-      }
-      if (!lockAcquired) {
+      const lockKey = `renewal:${id}`;
+      const lockToken = await acquireLock(lockKey, 5, 25, 40);
+      if (!lockToken) {
         return res.status(409).json({ error: 'Renewal approval in progress. Please retry.' });
       }
 
@@ -515,7 +633,7 @@ async function handler(req, res) {
           message: 'Membership renewal approved and tenure extended by +1 year.',
         });
       } finally {
-        await redis.del(lockKey).catch(() => {});
+        await releaseLock(lockKey, lockToken);
       }
     }
 
@@ -569,10 +687,16 @@ async function handler(req, res) {
     if (!status) return res.status(400).json({ error: 'No changes supplied.' });
 
     const nextStatus = normalizeStatus(status);
+    const reason = str(req.body.reason, 1000);
     const updated = await updateApplication(id, (app) => {
       const next = { ...app, status: nextStatus, reviewedAt: new Date().toISOString(), reviewedBy: adminEmail };
       if (nextStatus === STATUS.APPROVED && !app.approvedAt) {
         next.approvedAt = new Date().toISOString();
+      }
+      if (nextStatus === STATUS.REJECTED) {
+        if (reason) next.rejectionReason = reason;
+      } else {
+        delete next.rejectionReason;
       }
       return next;
     });
@@ -599,7 +723,7 @@ async function handler(req, res) {
           appId: updated.id,
           company: updated.company,
           repName: updated.repName,
-          reason: str(req.body.reason, 1000),
+          reason,
         },
       });
     }

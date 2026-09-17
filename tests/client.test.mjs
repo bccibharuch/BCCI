@@ -126,7 +126,8 @@ ck('the card page has a loading state', SRC.includes('card-skeleton'));
 ck('metrics show a placeholder, not a misleading 0', /metricTotal[\s\S]{0,160}textContent = '—'/.test(SRC));
 
 ck('the long form reports progress', SRC.includes('_updateFormProgress') && SRC.includes('required fields complete'));
-ck('progress counts the payment receipt too', /type === 'file' \? !!this.currentPaymentProofBase64/.test(SRC));
+ck('progress counts the payment receipt too', SRC.includes("el.name === 'paymentProof'") && SRC.includes('this.currentPaymentProofBase64'));
+ck('progress counts supporting-document uploads too', SRC.includes("el.type === 'file'") && SRC.includes('this.docFiles[el.name]'));
 ck('progress updates on upload and removal', (SRC.match(/_updateFormProgress\(/g) || []).length >= 5);
 ck('progress resets after a successful submit', /_updateFormProgress\(membershipForm\)/.test(SRC));
 
@@ -1471,10 +1472,6 @@ ck('renderVerificationView handles verifyResetBtn', SRC.includes('verifyResetBtn
 
 console.log('\nUX-01 / UX-02  Mobile Layout, Responsive Cards & Grid Constraints');
 console.log('─────────────────────────────────────────────────────────────────');
-ck('index.html contains reportsCards container for mobile cards', indexHtml.includes('id="reportsCards"'));
-ck('index.html contains empHistoryCards container for mobile cards', indexHtml.includes('id="empHistoryCards"'));
-ck('app.js populates reportsCards in renderMonthlyExpenseReports', SRC.includes("document.getElementById('reportsCards')"));
-ck('app.js populates empHistoryCards in openEmployeeHistoryModal', SRC.includes("document.getElementById('empHistoryCards')"));
 ck('styles.css constrains .admin-layout min-width: 0 and max-width: 100%', cssContent.includes('.admin-layout {') && cssContent.includes('min-width: 0;') && cssContent.includes('max-width: 100%;'));
 ck('styles.css defines .admin-content min-width: 0', cssContent.includes('.admin-content {') && cssContent.includes('min-width: 0;'));
 ck('styles.css enforces single column on .admin-metrics-grid at <= 480px', /@media\s*\(max-width:\s*480px\)[\s\S]*?\.admin-metrics-grid\s*\{\s*grid-template-columns:\s*1fr;/m.test(cssContent));

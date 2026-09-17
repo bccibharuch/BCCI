@@ -36,7 +36,7 @@ process.env.EMAIL_FROM = `BCCI Bharuch <${ADMIN_EMAIL}>`;
 process.env.PORT = process.env.PORT || '3000';
 
 // ── Seed data, so the admin panel is not empty ─────────────────────
-const { putApplication, putEnquiry } = await import('../api/_lib/redis.js');
+const { putApplication, putEnquiry } = await import('../api/_lib/records.js');
 
 const samples = [
   { company: 'Sunrise Chemicals Pvt Ltd', repName: 'Priya Shah', email: 'priya@sunrise.example', status: 'Pending', enterpriseType: 'Medium' },
@@ -103,7 +103,7 @@ setTimeout(() => {
   ╰──────────────────────────────────────────────────────────╯
 
     Site        http://localhost:${port}
-    Admin       http://localhost:${port}/admin
+    Admin       http://localhost:${port}/admin-bcci
     Health      http://localhost:${port}/api/health
 
     Admin sign-in

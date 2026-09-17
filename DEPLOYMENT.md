@@ -143,7 +143,7 @@ server {
     ssl_certificate     /etc/letsencrypt/live/bccibharuch.in/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/bccibharuch.in/privkey.pem;
 
-    client_max_body_size 2m;   # payment receipts
+    client_max_body_size 5m;   # multi-document applications run ~2-3MB
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -164,13 +164,30 @@ server {
 
 The app sets its own security headers, so don't duplicate them here — two `Content-Security-Policy` headers is not the same as one.
 
-### Docker
+### Docker (Redis records — serverless-style)
 
 ```bash
 docker build -t bcci-portal .
 docker run -d --name bcci -p 3000:3000 --env-file .env.local \
   -e TRUST_PROXY=1 --restart unless-stopped bcci-portal
 ```
+
+### Docker Compose (Postgres records — recommended for the VPS)
+
+Durable records (applications, enquiries, events) move to Postgres running
+alongside the app. OTP codes, sessions and rate limits stay in Upstash
+Redis in both modes.
+
+```bash
+cp .env.example .env   # fill in Upstash + SMTP + admin secrets + POSTGRES_PASSWORD
+docker compose up -d --build
+docker compose exec app npm run migrate:pg   # one-time copy from Redis
+curl http://localhost:3000/api/health        # expect {"status":"ok"}
+```
+
+`STORAGE_BACKEND=postgres` is set for the app container by compose;
+`DATABASE_URL` is wired to the `db` service automatically. Data survives
+restarts in the `pgdata` volume.
 
 ---
 
@@ -187,7 +204,15 @@ The second one matters. If it returns application records, the build is old — 
 
 ## Data
 
-Everything lives in Upstash Redis:
+Two backends, selected by `STORAGE_BACKEND` (`redis` default, `postgres` on the VPS):
+
+| Backend | Holds | Where |
+|---|---|---|
+| Redis (always) | OTP codes, sessions, rate limits, email log | Upstash |
+| Redis records (`STORAGE_BACKEND=redis`) | applications, enquiries, events | Upstash keys below |
+| Postgres records (`STORAGE_BACKEND=postgres`) | applications, enquiries, events, attendees | `applications`, `enquiries`, `events`, `event_attendees` tables |
+
+Redis record layout (serverless mode):
 
 | Key | Contents |
 |---|---|
@@ -206,7 +231,13 @@ At 20–30 members a month, expect well under 1 MB of data in the first year and
 
 ### Backups
 
+Postgres (VPS):
+
 ```bash
+docker compose exec db pg_dump -U bcci bcci > backup-$(date +%F).sql
+```
+
+Redis mode (either host), as an admin:
 # Applications and enquiries, as an admin
 TOKEN=$(curl -s -X POST https://<domain>/api/admin-auth \
   -H 'Content-Type: application/json' \
