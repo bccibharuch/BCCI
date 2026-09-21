@@ -1,0 +1,17 @@
+# Vercel deployment — only ship what the site needs at runtime.
+# api/ runs as serverless functions; index.html + js/ + css/ + assets/ are static.
+# Everything else stays in git for VPS/Docker/dev but never deploys.
+
+# VPS / Docker only (server.js is the standalone Node server, unused on Vercel)
+server.js
+Dockerfile
+docker-compose.yml
+DEPLOYMENT.md
+
+# Docs / dev-only — shrink deployment and avoid source disclosure
+README.md
+.env.example
+docs/
+tests/
+scripts/
+.github/
