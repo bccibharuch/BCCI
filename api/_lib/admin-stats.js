@@ -1,7 +1,7 @@
 // api/admin-stats.js
 // Dashboard counters for the admin portal.
 
-import { listApplications, countEnquiries, STATUS } from './records.js';
+import { listApplications, countApplications, countEnquiries, STATUS } from './records.js';
 import {
   applyCors,
   handlePreflight,
@@ -22,13 +22,17 @@ async function handler(req, res) {
   // session store as every other route.
   if (!(await requireAdmin(req, res))) return;
 
+  // listApplications() defaults to a 500-row page; fetch the real total first
+  // so counts and the recent-applications feed never silently drop records
+  // once the org passes 500 applications.
+  const totalApplications = await countApplications();
   const [applications, totalEnquiries] = await Promise.all([
-    listApplications(),
+    totalApplications > 0 ? listApplications({ limit: totalApplications }) : Promise.resolve([]),
     countEnquiries(),
   ]);
 
   const stats = {
-    total: applications.length,
+    total: totalApplications,
     pending: applications.filter((a) => a.status === STATUS.PENDING).length,
     approved: applications.filter((a) => a.status === STATUS.APPROVED).length,
     rejected: applications.filter((a) => a.status === STATUS.REJECTED).length,

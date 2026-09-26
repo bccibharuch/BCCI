@@ -343,17 +343,8 @@ export async function registerForEvent(id, attendee) {
   const email = String(attendee.email).trim().toLowerCase();
 
   return withRetry(async () => {
-    const lockKey = `bcci:lock:eventreg:${id}`;
-    let lockAcquired = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const res = await redis.set(lockKey, '1', { nx: true, ex: 5 });
-      if (res) {
-        lockAcquired = true;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 40));
-    }
-    if (!lockAcquired) {
+    const lockToken = await acquireLock(`eventreg:${id}`);
+    if (!lockToken) {
       return { success: false, error: 'Registration service is busy. Please try again in a moment.' };
     }
 
@@ -405,7 +396,7 @@ export async function registerForEvent(id, attendee) {
 
       return { success: true, event, attendee: newAttendee, ticketId };
     } finally {
-      await redis.del(lockKey).catch(() => {});
+      await releaseLock(`eventreg:${id}`, lockToken);
     }
   });
 }
@@ -415,17 +406,8 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
     return { success: false, error: 'Event ID and ticket ID are required.' };
   }
   return withRetry(async () => {
-    const lockKey = `bcci:lock:eventreg:${id}`;
-    let lockAcquired = false;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const res = await redis.set(lockKey, '1', { nx: true, ex: 5 });
-      if (res) {
-        lockAcquired = true;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 40));
-    }
-    if (!lockAcquired) {
+    const lockToken = await acquireLock(`eventreg:${id}`);
+    if (!lockToken) {
       return { success: false, error: 'Event service is busy. Please try again in a moment.' };
     }
 
@@ -467,7 +449,7 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
         alreadyConfirmed,
       };
     } finally {
-      await redis.del(lockKey).catch(() => {});
+      await releaseLock(`eventreg:${id}`, lockToken);
     }
   });
 }

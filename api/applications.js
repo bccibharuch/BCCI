@@ -4,6 +4,7 @@
 import crypto from 'crypto';
 import {
   listApplications,
+  countApplications,
   getApplication,
   getApplicationByEmail,
   putApplication,
@@ -101,7 +102,11 @@ async function handler(req, res) {
       if (!adminEmail) {
         return res.status(401).json({ error: 'Admin authentication required.' });
       }
-      const applications = await listApplications();
+      // listApplications() defaults to a 500-row page; fetch the real total
+      // first so the admin list never silently drops applications once the
+      // org passes 500.
+      const totalApps = await countApplications();
+      const applications = totalApps > 0 ? await listApplications({ limit: totalApps }) : [];
       // Document scans stay out of the list payload (each is hundreds of KB);
       // the dossier and CSV fetch single records that include them.
       const slim = applications.map((a) => ({
