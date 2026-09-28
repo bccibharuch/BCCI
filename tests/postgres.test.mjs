@@ -127,6 +127,31 @@ await lib.releaseLock('pg-test-lock', tok);
 const freed = await lib.query('SELECT COUNT(*)::int n FROM locks WHERE name = $1', ['pg-test-lock']);
 check('correct token releases', freed.rows[0].n === 0);
 
+// A registration whose lock expired mid-flight must not release the lock a
+// later request now holds. Stall it on the event row, hand the lock to an
+// "intruder" as if the TTL had lapsed, then let it finish.
+await lib.putEvent({ id: 'PG-EVT-LOCK', title: 'Lock', date: new Date(Date.now() + 86400000).toISOString(), capacity: 10, pricingType: 'free' });
+const blocker = new pg.Client({ connectionString: TEST_URL });
+await blocker.connect();
+await blocker.query('BEGIN');
+await blocker.query('SELECT 1 FROM events WHERE id = $1 FOR UPDATE', ['PG-EVT-LOCK']);
+const stalled = lib.registerForEvent('PG-EVT-LOCK', { name: 'Slow', email: 'slow@example.com' });
+let lockRow = null;
+for (let i = 0; i < 100 && !lockRow; i++) {
+  lockRow = (await lib.query('SELECT token FROM locks WHERE name = $1', ['eventreg:PG-EVT-LOCK'])).rows[0] || null;
+  if (!lockRow) await new Promise((r) => setTimeout(r, 10));
+}
+check('stalled registration holds the event lock', !!lockRow);
+await lib.query('UPDATE locks SET token = $2 WHERE name = $1', ['eventreg:PG-EVT-LOCK', 'intruder-token']);
+await blocker.query('COMMIT');
+await blocker.end();
+const stalledResult = await stalled;
+check('stalled registration still completes', stalledResult.success === true, JSON.stringify(stalledResult).slice(0, 120));
+const intruder = await lib.query('SELECT token FROM locks WHERE name = $1', ['eventreg:PG-EVT-LOCK']);
+check("finishing request does not release the new holder's lock", intruder.rows[0]?.token === 'intruder-token');
+await lib.releaseLock('eventreg:PG-EVT-LOCK', 'intruder-token');
+await lib.deleteEvent('PG-EVT-LOCK');
+
 // ── Storage switch ───────────────────────────────────────────────
 section('records.js switch');
 

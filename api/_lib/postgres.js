@@ -377,8 +377,8 @@ export async function registerForEvent(id, attendee) {
   }
   const email = String(attendee.email).trim().toLowerCase();
 
-  const locked = await acquireLock(`eventreg:${id}`);
-  if (!locked) {
+  const lockToken = await acquireLock(`eventreg:${id}`);
+  if (!lockToken) {
     return { success: false, error: 'Registration service is busy. Please try again in a moment.' };
   }
   const client = await getPool().connect();
@@ -448,7 +448,7 @@ export async function registerForEvent(id, attendee) {
     throw err;
   } finally {
     client.release();
-    await releaseLock(`eventreg:${id}`);
+    await releaseLock(`eventreg:${id}`, lockToken);
   }
 }
 
@@ -456,8 +456,8 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
   if (!id || !ticketId) {
     return { success: false, error: 'Event ID and ticket ID are required.' };
   }
-  const locked = await acquireLock(`eventreg:${id}`);
-  if (!locked) {
+  const lockToken = await acquireLock(`eventreg:${id}`);
+  if (!lockToken) {
     return { success: false, error: 'Event service is busy. Please try again in a moment.' };
   }
   const client = await getPool().connect();
@@ -501,6 +501,6 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
     throw err;
   } finally {
     client.release();
-    await releaseLock(`eventreg:${id}`);
+    await releaseLock(`eventreg:${id}`, lockToken);
   }
 }
