@@ -152,6 +152,25 @@ check("finishing request does not release the new holder's lock", intruder.rows[
 await lib.releaseLock('eventreg:PG-EVT-LOCK', 'intruder-token');
 await lib.deleteEvent('PG-EVT-LOCK');
 
+// A failed connection checkout must not leave the event lock held until its
+// TTL. Plain queries (the lock itself) still work; only connect() fails.
+const livePool = new pg.Pool({ connectionString: TEST_URL });
+lib.setPool({
+  query: (...args) => livePool.query(...args),
+  connect: () => Promise.reject(new Error('simulated connect failure')),
+});
+for (const [label, run] of [
+  ['registerForEvent', () => lib.registerForEvent('PG-EVT-CONN', { name: 'C', email: 'c@example.com' })],
+  ['confirmEventPayment', () => lib.confirmEventPayment('PG-EVT-CONN', 'TKT-X', 'admin@test')],
+]) {
+  let threw = null;
+  try { await run(); } catch (err) { threw = err; }
+  const held = await livePool.query('SELECT COUNT(*)::int n FROM locks WHERE name = $1', ['eventreg:PG-EVT-CONN']);
+  check(`${label}: connect failure surfaces the error`, /simulated connect failure/.test(threw?.message || ''), threw?.message);
+  check(`${label}: connect failure releases the lock`, held.rows[0].n === 0, `${held.rows[0].n} lock row(s) left`);
+}
+lib.setPool(livePool);
+
 // ── Storage switch ───────────────────────────────────────────────
 section('records.js switch');
 

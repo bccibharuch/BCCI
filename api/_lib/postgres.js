@@ -381,7 +381,15 @@ export async function registerForEvent(id, attendee) {
   if (!lockToken) {
     return { success: false, error: 'Registration service is busy. Please try again in a moment.' };
   }
-  const client = await getPool().connect();
+  // The finally below only covers work after a client is checked out, so a
+  // failed connect must release the lock here or it blocks until its TTL.
+  let client;
+  try {
+    client = await getPool().connect();
+  } catch (err) {
+    await releaseLock(`eventreg:${id}`, lockToken);
+    throw err;
+  }
   try {
     await client.query('BEGIN');
     const er = await client.query('SELECT id, registered_count, data FROM events WHERE id = $1 FOR UPDATE', [id]);
@@ -460,7 +468,15 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
   if (!lockToken) {
     return { success: false, error: 'Event service is busy. Please try again in a moment.' };
   }
-  const client = await getPool().connect();
+  // The finally below only covers work after a client is checked out, so a
+  // failed connect must release the lock here or it blocks until its TTL.
+  let client;
+  try {
+    client = await getPool().connect();
+  } catch (err) {
+    await releaseLock(`eventreg:${id}`, lockToken);
+    throw err;
+  }
   try {
     await client.query('BEGIN');
     const er = await client.query('SELECT id, registered_count, data FROM events WHERE id = $1 FOR UPDATE', [id]);
