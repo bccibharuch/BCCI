@@ -171,6 +171,9 @@ let firstTicketId = null;
   ck('Attendee record contains paymentRef', getJson()?.attendee?.paymentRef === 'UPI/982512345678');
   ck('SEC-04: Paid attendee is pending payment verification', getJson()?.attendee?.status === 'pending' && getJson()?.attendee?.paymentStatus === 'pending_verification');
   ck('SEC-04: Response message informs verification pending', getJson()?.message?.toLowerCase().includes('pending'));
+  // No SMTP is configured here, so sendEmail() resolves { success: false }.
+  ck('Unsent pending email is reported (emailSent: false)', getJson()?.emailSent === false);
+  ck('Message admits the acknowledgement email was not sent', getJson()?.message?.includes('could not be sent'));
   ck('VULN-P4-01: Paid event registration redacts venue in response body', getJson()?.event?.venue?.includes('Meeting details will be sent to registered attendees'));
   ck('VULN-P4-01: Response does NOT leak secret venue before payment verification', !getJson()?.event?.venue?.includes('BCCI Convention Center, Bharuch'));
 
@@ -214,6 +217,8 @@ let firstTicketId = null;
   ck('SEC-04: Admin confirms attendee payment → 200', confirm.getStatus() === 200);
   ck('SEC-04: Attendee status becomes confirmed', confirm.getJson()?.attendee?.status === 'confirmed');
   ck('SEC-04: Attendee paymentStatus becomes confirmed', confirm.getJson()?.attendee?.paymentStatus === 'confirmed');
+  ck('Unsent E-Ticket is reported to the admin (emailSent: false)', confirm.getJson()?.emailSent === false);
+  ck('Confirmation message does not claim the ticket was issued', !confirm.getJson()?.message?.includes('E-Ticket issued'));
 
   // VULN-P4-04: Replay confirmation is idempotent and marks alreadyConfirmed
   const replayConfirm = mockReqRes({
@@ -244,6 +249,9 @@ let firstTicketId = null;
   ck('Free event registration returns 200', freeReg.getStatus() === 200);
   ck('Free attendee status is confirmed immediately', freeReg.getJson()?.attendee?.status === 'confirmed');
   ck('Free attendee paymentStatus is confirmed immediately', freeReg.getJson()?.attendee?.paymentStatus === 'confirmed');
+  ck('Unsent free-event ticket is reported (emailSent: false)', freeReg.getJson()?.emailSent === false);
+  ck('Free-event message does not claim the ticket was emailed', !freeReg.getJson()?.message?.includes('has been sent'));
+  ck('Ticket ID uses a 10-hex-char random suffix', /-[0-9A-F]{10}$/.test(freeReg.getJson()?.ticketId || ''), freeReg.getJson()?.ticketId);
 }
 
 // 6. Second registration succeeds with paymentRef (reaching capacity 2 of 2)

@@ -7,6 +7,7 @@ import http from 'node:http';
 const store = new Map();   // key -> string value
 const expiries = new Map(); // key -> epoch ms
 const zsets = new Map();   // key -> Map(member -> score)
+const failKeys = new Set(); // keys whose commands error, to simulate an outage
 
 function alive(key) {
   const exp = expiries.get(key);
@@ -22,6 +23,7 @@ function alive(key) {
 function run(cmd) {
   const op = String(cmd[0]).toUpperCase();
   const key = cmd[1];
+  if (failKeys.has(key)) throw new Error(`mock-redis: simulated failure for ${key}`);
   if (key !== undefined) alive(key);
 
   switch (op) {
@@ -136,7 +138,14 @@ export function startMockRedis() {
         res.setHeader('Content-Type', 'application/json');
         try {
           if (req.url.endsWith('/pipeline') || req.url.endsWith('/multi-exec')) {
-            res.end(JSON.stringify(payload.map((c) => ({ result: encodeResult(run(c), b64) }))));
+            // Upstash reports errors per command inside a pipeline.
+            res.end(JSON.stringify(payload.map((c) => {
+              try {
+                return { result: encodeResult(run(c), b64) };
+              } catch (err) {
+                return { error: err.message };
+              }
+            })));
           } else {
             res.end(JSON.stringify({ result: encodeResult(run(payload), b64) }));
           }
@@ -146,7 +155,7 @@ export function startMockRedis() {
       });
     });
     server.listen(0, '127.0.0.1', () => {
-      resolve({ url: `http://127.0.0.1:${server.address().port}`, server, store, zsets });
+      resolve({ url: `http://127.0.0.1:${server.address().port}`, server, store, zsets, failKeys });
     });
   });
 }

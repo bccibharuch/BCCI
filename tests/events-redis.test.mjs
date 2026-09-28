@@ -120,6 +120,17 @@ ck('confirmed attendee status becomes confirmed', confirmed.attendee?.status ===
 ck('confirmed attendee paymentStatus becomes confirmed', confirmed.attendee?.paymentStatus === 'confirmed');
 ck('confirmed attendee records confirmedBy', confirmed.attendee?.confirmedBy === 'admin@bcci.in');
 
+// Ticket IDs must be unique within an event: confirmation looks them up by ID.
+const bulk = await Promise.all(
+  Array.from({ length: 8 }, (_, i) => registerForEvent('EVT-TEST-PAID', {
+    name: `Bulk ${i}`, email: `bulk${i}@example.com`, phone: '9825199887', paymentRef: `UPI/${i}`,
+  }))
+);
+const bulkIds = bulk.filter((r) => r.success).map((r) => r.ticketId);
+ck('bulk registrations all succeed', bulkIds.length === 8, `${bulkIds.length} of 8`);
+ck('ticket IDs are unique within the event', new Set([paidReg.ticketId, ...bulkIds]).size === 9);
+ck('ticket IDs carry a 10-hex-char random suffix', bulkIds.every((t) => /-[0-9A-F]{10}$/.test(t)), bulkIds[0]);
+
 await deleteEvent('EVT-TEST-PAID');
 
 // 7. Delete event

@@ -4146,8 +4146,12 @@ class App {
                 confirmBtn.disabled = true;
                 confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Confirming...';
                 try {
-                  await this.store.confirmEventPayment(evId, tktId);
-                  this.showToast(`Payment confirmed for ticket ${tktId}! Official E-Ticket sent.`, 'success');
+                  const result = await this.store.confirmEventPayment(evId, tktId);
+                  if (result?.emailSent === false) {
+                    this.showToast(`Payment confirmed for ticket ${tktId}, but the E-Ticket email could not be sent. Please share the ticket manually.`, 'warning');
+                  } else {
+                    this.showToast(result?.message || `Payment confirmed for ticket ${tktId}! Official E-Ticket sent.`, 'success');
+                  }
                   btn.click();
                 } catch (err) {
                   this.showToast(err.message || 'Failed to confirm attendee payment.', 'error');
@@ -4595,7 +4599,10 @@ class App {
       try {
         const result = await this.store.registerForEvent(event.id, { name, email, phone, company, paymentRef });
         this.closeModal();
-        this.showToast(result.message || 'Registration confirmed! We look forward to seeing you.', 'success');
+        this.showToast(
+          result.message || 'Registration confirmed! We look forward to seeing you.',
+          result.emailSent === false ? 'warning' : 'success'
+        );
         await this.renderEventsPage();
         this.showUniversalEventTicketModal(result.event || event, result.attendee, result.ticketId);
       } catch (err) {

@@ -4,7 +4,7 @@ process.env.UPSTASH_REDIS_REST_URL = mock.url;
 process.env.UPSTASH_REDIS_REST_TOKEN = 't';
 
 const lib = await import(new URL('../api', import.meta.url).pathname + '/_lib/redis.js');
-const { redis, listApplications, getApplicationByEmail, putApplication, listEnquiries } = lib;
+const { redis, KEYS, listApplications, listApplicationSummaries, getApplicationByEmail, putApplication, updateApplication, listEnquiries } = lib;
 
 let pass=0, fail=0;
 const ck=(n,c,d='')=>{ c?(pass++,console.log('  PASS  '+n)):(fail++,console.log('  FAIL  '+n+(d?' — '+d:''))); };
@@ -55,6 +55,31 @@ const survivors = after.filter(a=>a.id.startsWith('CONC-')).length;
 ck(`all ${N} simultaneous submissions survived`, survivors === N, `only ${survivors} of ${N} persisted`);
 ck('each is individually retrievable by email', (await getApplicationByEmail('conc7@x.com'))?.company === 'Concurrent 7');
 ck('total is legacy + concurrent', after.length === 3 + N, `got ${after.length}`);
+
+console.log('\nApplication summaries — admin list never loads document scans');
+console.log('──────────────────────────────────────────────────────────────');
+
+const scan = 'data:image/png;base64,' + 'A'.repeat(200_000);
+await putApplication({
+  id:'DOC-1', company:'Doc Co', email:'doc@x.com', repName:'D', status:'Pending',
+  submittedAt:new Date(Date.now()+1e6).toISOString(), paymentProof:scan, gstCertProof:scan,
+});
+const docSummary = (await listApplicationSummaries()).find(a=>a.id==='DOC-1');
+ck('summary marks present documents', docSummary?.paymentProof === '[document]' && docSummary?.gstCertProof === '[document]');
+ck('summary marks absent documents as empty', docSummary?.panCertProof === '' && docSummary?.repAttachment === '');
+ck('summary keeps non-document fields', docSummary?.company === 'Doc Co' && docSummary?.status === 'Pending');
+const summaryKeyBytes = JSON.stringify(await redis.get(KEYS.appSummary('DOC-1'))).length;
+ck('stored summary excludes the scans', summaryKeyBytes < 2000, `${summaryKeyBytes} bytes`);
+ck('full record still holds the scan', (await getApplicationByEmail('doc@x.com'))?.paymentProof === scan);
+
+await updateApplication('DOC-1', (a) => ({ ...a, status:'Approved' }));
+ck('update refreshes the summary', (await listApplicationSummaries()).find(a=>a.id==='DOC-1')?.status === 'Approved');
+
+// Records written before summaries existed (legacy migration) are backfilled.
+await redis.del(KEYS.appSummary('BCCI-2'));
+const backfilled = (await listApplicationSummaries()).find(a=>a.id==='BCCI-2');
+ck('missing summary is backfilled on read', backfilled?.company === 'Beta Pharma' && !!(await redis.get(KEYS.appSummary('BCCI-2'))));
+ck('summaries cover every application', (await listApplicationSummaries()).length === (await listApplications()).length);
 
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 mock.server.close();

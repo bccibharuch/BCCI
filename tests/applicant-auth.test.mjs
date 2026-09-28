@@ -474,3 +474,21 @@ test('SEC-02: OTP-verified session is revoked after subsequent password reset', 
   const newValid = await getApplicantSession({ headers: { authorization: `Bearer ${newToken}` } });
   assert.equal(newValid, email, 'Newly issued session works');
 });
+
+test('SEC-02: Account lookup failure fails closed instead of accepting the session', async () => {
+  const { getApplicantSession } = await import('../api/_lib/http.js');
+  const email = 'lookup-fail@test.com';
+  const token = 'lookup-fail-token';
+  await redis.set(KEYS.applicantSession(token), { email, issuedAt: Date.now() - 60_000 }, { ex: 3600 });
+
+  mock.failKeys.add(KEYS.account(email));
+  try {
+    await assert.rejects(
+      getApplicantSession({ headers: { authorization: `Bearer ${token}` } }),
+      /simulated failure/,
+      'A failed account lookup must not be treated as "no account"'
+    );
+  } finally {
+    mock.failKeys.clear();
+  }
+});

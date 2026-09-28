@@ -70,6 +70,17 @@ const listed = await lib.listApplications();
 check('list is newest-first', listed.length === 2 && listed[0].id === 'PG-APP-3', listed.map((a) => a.id).join(','));
 check('count matches', (await lib.countApplications()) === 2);
 
+const scan = 'data:image/png;base64,' + 'A'.repeat(200_000);
+await lib.updateApplication('PG-APP-3', (a) => ({ ...a, paymentProof: scan, gstCertProof: scan, panCertProof: '' }));
+const summaries = await lib.listApplicationSummaries();
+const s3 = summaries.find((a) => a.id === 'PG-APP-3');
+check('summaries are newest-first like the full list', summaries.map((a) => a.id).join() === listed.map((a) => a.id).join());
+check('summary marks present documents', s3?.paymentProof === '[document]' && s3?.gstCertProof === '[document]');
+check('summary marks empty/absent documents as empty', s3?.panCertProof === '' && s3?.regCertProof === '' && s3?.repAttachment === '');
+check('summary keeps non-document fields', s3?.company === 'PG Three' && s3?.status === 'Pending');
+check('summary payload excludes the scans', JSON.stringify(summaries).length < 5000, `${JSON.stringify(summaries).length} bytes`);
+check('full record still holds the scan', (await lib.getApplication('PG-APP-3'))?.paymentProof === scan);
+
 // ── Enquiries ────────────────────────────────────────────────────
 section('Postgres enquiries');
 
@@ -88,6 +99,7 @@ check('get event', (await lib.getEvent('PG-EVT-1'))?.title === 'Meet');
 
 const reg1 = await lib.registerForEvent('PG-EVT-1', { name: 'Zed', email: 'zed@example.com' });
 check('register → confirmed for free events', reg1.success && reg1.attendee.status === 'confirmed', JSON.stringify(reg1).slice(0, 120));
+check('ticket ID carries a 10-hex-char random suffix', /-[0-9A-F]{10}$/.test(reg1.ticketId || ''), reg1.ticketId);
 
 const regDup = await lib.registerForEvent('PG-EVT-1', { name: 'Zed', email: 'ZED@example.com' });
 check('duplicate email → rejected', !regDup.success, JSON.stringify(regDup).slice(0, 120));

@@ -86,7 +86,9 @@ export async function getApplicantSession(req) {
   if (!email) return null;
   const cleanEmail = String(email).toLowerCase();
 
-  const accountRaw = await redis.get(KEYS.account(cleanEmail)).catch(() => null);
+  // No catch here: treating a lookup error as "no account" would accept a
+  // session that a password reset should have revoked. Let it fail closed.
+  const accountRaw = await withRetry(() => redis.get(KEYS.account(cleanEmail)));
   if (accountRaw) {
     const account = typeof accountRaw === 'string' ? JSON.parse(accountRaw) : accountRaw;
     if (account?.passwordUpdatedAt) {

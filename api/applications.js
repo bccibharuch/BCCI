@@ -3,7 +3,7 @@
 
 import crypto from 'crypto';
 import {
-  listApplications,
+  listApplicationSummaries,
   countApplications,
   getApplication,
   getApplicationByEmail,
@@ -102,21 +102,12 @@ async function handler(req, res) {
       if (!adminEmail) {
         return res.status(401).json({ error: 'Admin authentication required.' });
       }
-      // listApplications() defaults to a 500-row page; fetch the real total
-      // first so the admin list never silently drops applications once the
-      // org passes 500.
+      // The list defaults to a 500-row page; fetch the real total first so
+      // the admin list never silently drops applications once the org
+      // passes 500. Document scans (hundreds of KB each) are never loaded
+      // here; the dossier and CSV fetch single records that include them.
       const totalApps = await countApplications();
-      const applications = totalApps > 0 ? await listApplications({ limit: totalApps }) : [];
-      // Document scans stay out of the list payload (each is hundreds of KB);
-      // the dossier and CSV fetch single records that include them.
-      const slim = applications.map((a) => ({
-        ...a,
-        paymentProof: a.paymentProof ? '[document]' : '',
-        gstCertProof: a.gstCertProof ? '[document]' : '',
-        panCertProof: a.panCertProof ? '[document]' : '',
-        regCertProof: a.regCertProof ? '[document]' : '',
-        repAttachment: a.repAttachment ? '[document]' : '',
-      }));
+      const slim = totalApps > 0 ? await listApplicationSummaries({ limit: totalApps }) : [];
       return res.status(200).json({ applications: slim, total: slim.length });
     }
 

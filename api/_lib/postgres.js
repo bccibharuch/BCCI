@@ -171,6 +171,32 @@ export async function listApplications({ limit = 500, offset = 0 } = {}) {
   return r.rows.map(rowToApp).filter(Boolean);
 }
 
+// Uploaded scans are base64 strings of hundreds of KB each. List views only
+// need to know whether one exists, so the summary query strips them in SQL.
+export const DOCUMENT_FIELDS = ['paymentProof', 'gstCertProof', 'panCertProof', 'regCertProof', 'repAttachment'];
+
+/**
+ * Newest-first page of applications with document fields reduced to a
+ * '[document]' marker. The scans never leave the database.
+ */
+export async function listApplicationSummaries({ limit = 500, offset = 0 } = {}) {
+  const r = await query(
+    `SELECT id, status, data - $3::text[] AS data,
+            ARRAY(SELECT f FROM unnest($3::text[]) AS f WHERE COALESCE(data->>f, '') <> '') AS docs
+       FROM applications ORDER BY submitted_at DESC LIMIT $1 OFFSET $2`,
+    [limit, offset, DOCUMENT_FIELDS]
+  );
+  return r.rows
+    .map((row) => {
+      const app = rowToApp(row);
+      if (!app) return null;
+      const present = new Set(row.docs || []);
+      for (const f of DOCUMENT_FIELDS) app[f] = present.has(f) ? '[document]' : '';
+      return app;
+    })
+    .filter(Boolean);
+}
+
 export async function countApplications() {
   const r = await query('SELECT COUNT(*)::int AS n FROM applications');
   return r.rows[0]?.n || 0;
@@ -382,9 +408,21 @@ export async function registerForEvent(id, attendee) {
     }
 
     const isPaid = event.pricingType === 'paid' && Number(event.fee) > 0;
-    const { randomUUID } = await import('node:crypto');
+    // Confirmation looks tickets up by ID, so an ID must never be reused
+    // within an event: 40 random bits, re-drawn on the (unlikely) clash
+    // rather than failing the insert on the primary key.
+    const { randomBytes } = await import('node:crypto');
+    let ticketId;
+    for (;;) {
+      ticketId = `TKT-${id.replace(/^EVT-/, '')}-${randomBytes(5).toString('hex').toUpperCase()}`;
+      const clash = await client.query(
+        'SELECT 1 FROM event_attendees WHERE event_id = $1 AND ticket_id = $2',
+        [id, ticketId]
+      );
+      if (clash.rowCount === 0) break;
+    }
     const newAttendee = {
-      ticketId: attendee.ticketId || `TKT-${id.replace(/^EVT-/, '')}-${randomUUID().slice(0, 4).toUpperCase()}`,
+      ticketId,
       name: String(attendee.name || '').trim(),
       email,
       phone: String(attendee.phone || '').trim(),

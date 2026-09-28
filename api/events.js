@@ -150,7 +150,9 @@ async function handler(req, res) {
       // Do NOT send the confidential meeting link / access pass until payment is confirmed.
       const isPaid = targetEvent.pricingType === 'paid' && Number(targetEvent.fee) > 0;
       if (isPaid) {
-        sendEmail({
+        // Awaited: Vercel may freeze the function once the response is sent,
+        // and sendEmail() reports SMTP failures in its result, not by throwing.
+        const mail = await sendEmail({
           type: 'event_registration_pending',
           to: email,
           data: {
@@ -166,14 +168,18 @@ async function handler(req, res) {
             phone: result.attendee.phone,
             email: result.attendee.email,
           },
-        }).catch((err) => {
-          console.warn('[BCCI Event] Failed to dispatch registration pending email:', err.message);
         });
+        if (!mail.success) {
+          console.warn('[BCCI Event] Failed to dispatch registration pending email:', mail.error);
+        }
 
         console.log(`[BCCI Event] Registered ${email} (pending verification) for event ${eventId}`);
         return res.status(200).json({
           success: true,
-          message: 'Registration received! Your registration is pending payment verification. You will receive your official E-Ticket once payment is verified.',
+          emailSent: mail.success,
+          message: mail.success
+            ? 'Registration received! Your registration is pending payment verification. You will receive your official E-Ticket once payment is verified.'
+            : 'Registration received and pending payment verification, but the acknowledgement email could not be sent. You will still receive your official E-Ticket once payment is verified.',
           event: {
             id: result.event.id,
             title: result.event.title,
@@ -199,7 +205,7 @@ async function handler(req, res) {
       }
 
       // Free event: instant confirmation with full admission pass
-      sendEmail({
+      const mail = await sendEmail({
         type: 'event_ticket',
         to: email,
         data: {
@@ -217,14 +223,18 @@ async function handler(req, res) {
           phone: result.attendee.phone,
           email: result.attendee.email,
         },
-      }).catch((err) => {
-        console.warn('[BCCI Event] Failed to dispatch ticket email:', err.message);
       });
+      if (!mail.success) {
+        console.warn('[BCCI Event] Failed to dispatch ticket email:', mail.error);
+      }
 
       console.log(`[BCCI Event] Registered ${email} for event ${eventId} (Ticket: ${ticketId})`);
       return res.status(200).json({
         success: true,
-        message: 'Registration confirmed! Your official E-Ticket has been sent to your email.',
+        emailSent: mail.success,
+        message: mail.success
+          ? 'Registration confirmed! Your official E-Ticket has been sent to your email.'
+          : `Registration confirmed, but the E-Ticket email could not be sent. Please keep your ticket ID (${ticketId}) for entry.`,
         event: result.event,
         attendee: result.attendee,
         ticketId,
@@ -250,8 +260,9 @@ async function handler(req, res) {
       }
 
       // Dispatch the confirmed official E-Ticket with real venue / meeting credentials only if not already confirmed
+      let emailSent = null;
       if (!result.alreadyConfirmed) {
-        sendEmail({
+        const mail = await sendEmail({
           type: 'event_ticket',
           to: result.attendee.email,
           data: {
@@ -269,9 +280,11 @@ async function handler(req, res) {
             phone: result.attendee.phone,
             email: result.attendee.email,
           },
-        }).catch((err) => {
-          console.warn('[BCCI Event] Failed to dispatch confirmed ticket email:', err.message);
         });
+        emailSent = mail.success;
+        if (!mail.success) {
+          console.warn('[BCCI Event] Failed to dispatch confirmed ticket email:', mail.error);
+        }
       }
 
       console.log(`[BCCI Event] Payment confirmed for ticket ${ticketId} (${result.attendee.email}) on event ${eventId} (alreadyConfirmed: ${!!result.alreadyConfirmed})`);
@@ -279,7 +292,10 @@ async function handler(req, res) {
         success: true,
         message: result.alreadyConfirmed
           ? 'Attendee payment is already verified.'
-          : 'Attendee payment verified and official E-Ticket issued.',
+          : emailSent
+            ? 'Attendee payment verified and official E-Ticket issued.'
+            : 'Attendee payment verified, but the E-Ticket email could not be sent. Please share the ticket with the attendee manually.',
+        emailSent,
         event: result.event,
         attendee: result.attendee,
         alreadyConfirmed: !!result.alreadyConfirmed,

@@ -21,6 +21,7 @@ const all = process.argv.includes('--all');
 
 const MEMBER_DATA = [
   ['bcci:app:*', 'applications'],
+  ['bcci:app_summary:*', 'application list summaries'],
   ['bcci:app_email:*', 'email → application index'],
   ['bcci:app_index', 'application ordering index'],
   ['bcci:enq:*', 'enquiries'],

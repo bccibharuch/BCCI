@@ -8,6 +8,7 @@
 // Legacy blobs (bcci:applications / bcci:enquiries) are migrated lazily on
 // first access. The old key is left in place as a backup.
 
+import { randomBytes } from 'node:crypto';
 import { Redis } from '@upstash/redis';
 
 export const redis = new Redis({
@@ -18,6 +19,7 @@ export const redis = new Redis({
 // ── Key layout ─────────────────────────────────────────────────────
 export const KEYS = {
   app: (id) => `bcci:app:${id}`,
+  appSummary: (id) => `bcci:app_summary:${id}`,
   appIndex: 'bcci:app_index',
   appByEmail: (email) => `bcci:app_email:${String(email).trim().toLowerCase()}`,
   appLegacy: 'bcci:applications',
@@ -94,6 +96,17 @@ function normalizeApplication(app) {
 function timeOf(record) {
   const t = Date.parse(record?.submittedAt || '');
   return Number.isFinite(t) ? t : Date.now();
+}
+
+// Uploaded scans are base64 strings of hundreds of KB each. List views only
+// need to know whether one exists, so they read a summary copy without them.
+export const DOCUMENT_FIELDS = ['paymentProof', 'gstCertProof', 'panCertProof', 'regCertProof', 'repAttachment'];
+
+function summarizeApplication(app) {
+  if (!app) return null;
+  const summary = { ...app };
+  for (const f of DOCUMENT_FIELDS) summary[f] = app[f] ? '[document]' : '';
+  return summary;
 }
 
 // ── One-time migration from the legacy single-blob layout ──────────
@@ -173,6 +186,37 @@ export async function listApplications({ limit = 500, offset = 0 } = {}) {
   });
 }
 
+/**
+ * Newest-first page of applications with document fields reduced to a
+ * '[document]' marker. Reads the summary keys, so it never downloads the
+ * scans; records written before summaries existed are backfilled once.
+ */
+export async function listApplicationSummaries({ limit = 500, offset = 0 } = {}) {
+  return withRetry(async () => {
+    await ensureAppsMigrated();
+    const ids = await redis.zrange(KEYS.appIndex, offset, offset + limit - 1, {
+      rev: true,
+    });
+    if (!ids || !ids.length) return [];
+    const summaries = await redis.mget(...ids.map(KEYS.appSummary));
+
+    const missing = ids.filter((_, i) => !summaries[i]);
+    if (missing.length) {
+      const full = await redis.mget(...missing.map(KEYS.app));
+      const byId = new Map();
+      for (const record of full) {
+        const summary = summarizeApplication(normalizeApplication(record));
+        if (summary?.id) byId.set(summary.id, summary);
+      }
+      await Promise.all([...byId].map(([id, summary]) => redis.set(KEYS.appSummary(id), summary)));
+      ids.forEach((id, i) => {
+        if (!summaries[i]) summaries[i] = byId.get(id) || null;
+      });
+    }
+    return summaries.filter(Boolean).map(normalizeApplication);
+  });
+}
+
 export async function countApplications() {
   await ensureAppsMigrated();
   return (await redis.zcard(KEYS.appIndex)) || 0;
@@ -210,6 +254,7 @@ export async function putApplication(app) {
     }
     try {
       await redis.set(KEYS.app(record.id), record);
+      await redis.set(KEYS.appSummary(record.id), summarizeApplication(record));
       await redis.zadd(KEYS.appIndex, { score: timeOf(record), member: record.id });
     } catch (err) {
       if (record.email) await redis.del(KEYS.appByEmail(record.email)).catch(() => {});
@@ -231,6 +276,7 @@ export async function updateApplication(id, mutate) {
     if (!current) return null;
     const next = normalizeApplication(mutate({ ...current }));
     await redis.set(KEYS.app(id), next);
+    await redis.set(KEYS.appSummary(id), summarizeApplication(next));
     if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
     return next;
   });
@@ -375,7 +421,13 @@ export async function registerForEvent(id, attendee) {
       const initialStatus = isPaid ? 'pending' : 'confirmed';
       const initialPaymentStatus = isPaid ? 'pending_verification' : 'confirmed';
 
-      const ticketId = attendee.ticketId || `TKT-${id.replace(/^EVT-/, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      // Confirmation looks tickets up by ID, so an ID must never be reused
+      // within an event: 40 random bits, re-drawn on the (unlikely) clash.
+      const taken = new Set(attendees.map((a) => a.ticketId));
+      let ticketId;
+      do {
+        ticketId = `TKT-${id.replace(/^EVT-/, '')}-${randomBytes(5).toString('hex').toUpperCase()}`;
+      } while (taken.has(ticketId));
       const newAttendee = {
         ticketId,
         name: String(attendee.name || '').trim(),
