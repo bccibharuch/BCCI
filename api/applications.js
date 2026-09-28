@@ -27,6 +27,7 @@ import {
   cleanPhone,
   withErrorHandling,
 } from './_lib/http.js';
+import { UPLOADED_CERTIFICATES } from './_lib/record-fields.js';
 import { sendEmail, adminRecipients } from './_lib/email.js';
 import { validateFileSignature } from './_lib/validation.js';
 import adminStatsHandler from './_lib/admin-stats.js';
@@ -318,12 +319,7 @@ async function handler(req, res) {
       return { value: raw };
     };
     const docs = {};
-    for (const [key, label, required] of [
-      ['gstCertProof', 'GST certificate', true],
-      ['panCertProof', 'PAN certificate', true],
-      ['regCertProof', 'Registration certificate', false],
-      ['repAttachment', 'Representative attachment', false],
-    ]) {
+    for (const { key, label, required } of UPLOADED_CERTIFICATES) {
       const checked = readDoc(key, label, required);
       if (checked.error) {
         return res.status(400).json({ error: checked.error });

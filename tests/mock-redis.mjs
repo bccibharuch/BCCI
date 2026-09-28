@@ -8,6 +8,7 @@ const store = new Map();   // key -> string value
 const expiries = new Map(); // key -> epoch ms
 const zsets = new Map();   // key -> Map(member -> score)
 const failKeys = new Set(); // keys whose commands error, to simulate an outage
+const beforeCommand = [];   // (cmd) => void, to interleave writes deterministically
 
 function alive(key) {
   const exp = expiries.get(key);
@@ -22,6 +23,7 @@ function alive(key) {
 
 function run(cmd) {
   const op = String(cmd[0]).toUpperCase();
+  for (const hook of beforeCommand) hook(cmd);
   const key = cmd[1];
   if (failKeys.has(key)) throw new Error(`mock-redis: simulated failure for ${key}`);
   if (key !== undefined) alive(key);
@@ -155,7 +157,7 @@ export function startMockRedis() {
       });
     });
     server.listen(0, '127.0.0.1', () => {
-      resolve({ url: `http://127.0.0.1:${server.address().port}`, server, store, zsets, failKeys });
+      resolve({ url: `http://127.0.0.1:${server.address().port}`, server, store, zsets, failKeys, beforeCommand });
     });
   });
 }

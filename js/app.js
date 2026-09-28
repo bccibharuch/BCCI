@@ -4148,7 +4148,7 @@ class App {
                 try {
                   const result = await this.store.confirmEventPayment(evId, tktId);
                   if (result?.emailSent === false) {
-                    this.showToast(`Payment confirmed for ticket ${tktId}, but the E-Ticket email could not be sent. Please share the ticket manually.`, 'warning');
+                    this.showToast(result.message || `Payment confirmed for ticket ${tktId}, but the E-Ticket email may not have been sent. Please share the ticket manually.`, 'warning');
                   } else {
                     this.showToast(result?.message || `Payment confirmed for ticket ${tktId}! Official E-Ticket sent.`, 'success');
                   }

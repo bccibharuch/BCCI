@@ -24,6 +24,7 @@ export const {
   normalizeStatus,
   listApplications,
   listApplicationSummaries,
+  getApplicationStats,
   countApplications,
   getApplication,
   getApplicationByEmail,

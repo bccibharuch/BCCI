@@ -2,6 +2,8 @@ import { startMockRedis } from './mock-redis.mjs';
 const mock = await startMockRedis();
 process.env.UPSTASH_REDIS_REST_URL = mock.url;
 process.env.UPSTASH_REDIS_REST_TOKEN = 't';
+// Short email deadline so the hung-SMTP case below finishes quickly.
+process.env.EVENT_EMAIL_TIMEOUT_MS = '500';
 
 let pass = 0, fail = 0;
 const ck = (n, c, d = '') => {
@@ -173,7 +175,7 @@ let firstTicketId = null;
   ck('SEC-04: Response message informs verification pending', getJson()?.message?.toLowerCase().includes('pending'));
   // No SMTP is configured here, so sendEmail() resolves { success: false }.
   ck('Unsent pending email is reported (emailSent: false)', getJson()?.emailSent === false);
-  ck('Message admits the acknowledgement email was not sent', getJson()?.message?.includes('could not be sent'));
+  ck('Message admits the acknowledgement email was not confirmed', getJson()?.message?.includes('could not confirm'));
   ck('VULN-P4-01: Paid event registration redacts venue in response body', getJson()?.event?.venue?.includes('Meeting details will be sent to registered attendees'));
   ck('VULN-P4-01: Response does NOT leak secret venue before payment verification', !getJson()?.event?.venue?.includes('BCCI Convention Center, Bharuch'));
 
@@ -308,6 +310,45 @@ let firstTicketId = null;
   await eventsHandler(req, res);
   const ev = getJson()?.events?.find(e => e.id === createdEventId);
   ck('Deleted event no longer in list', !ev);
+}
+
+// 10. A hung SMTP server must not hold the response past the email deadline:
+// the attendee is already stored and needs their ticket ID back.
+{
+  const net = await import('node:net');
+  const sockets = new Set();
+  const silentSmtp = net.createServer((sock) => { sockets.add(sock); }); // accepts, never greets
+  await new Promise((r) => silentSmtp.listen(0, '127.0.0.1', r));
+  Object.assign(process.env, {
+    SMTP_HOST: '127.0.0.1',
+    SMTP_PORT: String(silentSmtp.address().port),
+    SMTP_SECURE: 'false',
+    SMTP_USER: 'test@bcci.in',
+    SMTP_PASS: 'pw',
+  });
+
+  const created = mockReqRes({
+    method: 'POST',
+    headers: { authorization: `Bearer ${adminToken}` },
+    body: { title: 'Hung SMTP Meetup', date: '2026-12-20', time: '10:00 AM', capacity: 5, pricingType: 'free', mode: 'offline', venue: 'BCCI Hall' },
+  });
+  await eventsHandler(created.req, created.res);
+  const hungEventId = created.getJson()?.event?.id;
+
+  const reg = mockReqRes({
+    method: 'POST',
+    query: { action: 'register' },
+    body: { eventId: hungEventId, name: 'Hung Case', email: 'hung@example.com', phone: '9825011111' },
+  });
+  const started = Date.now();
+  await eventsHandler(reg.req, reg.res);
+  const elapsed = Date.now() - started;
+  ck('Hung SMTP: registration responds within the email deadline', elapsed < 3000, `${elapsed}ms`);
+  ck('Hung SMTP: registration still succeeds with its ticket ID', reg.getStatus() === 200 && /^TKT-/.test(reg.getJson()?.ticketId || ''), JSON.stringify(reg.getJson()).slice(0, 120));
+  ck('Hung SMTP: response reports the email as unconfirmed', reg.getJson()?.emailSent === false);
+
+  for (const sock of sockets) sock.destroy();
+  silentSmtp.close();
 }
 
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);

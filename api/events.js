@@ -34,6 +34,24 @@ function newEventId() {
     .toUpperCase()}`;
 }
 
+// The attendee is already stored when the email goes out, so a slow SMTP
+// server (its own timeouts allow ~35s) must not push the response past the
+// function time limit and hide the ticket from the attendee.
+const EMAIL_TIMEOUT_MS = Number(process.env.EVENT_EMAIL_TIMEOUT_MS) || 5000;
+
+/** sendEmail() with a deadline; resolves { success: false } when it passes. */
+async function sendEmailWithin(message, ms = EMAIL_TIMEOUT_MS) {
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ success: false, error: `timed out after ${ms}ms` }), ms);
+  });
+  try {
+    return await Promise.race([sendEmail(message), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function getPublicVenue(event, isAdmin = false) {
   if (!event) return '';
   if (isAdmin) return event.venue;
@@ -144,7 +162,11 @@ async function handler(req, res) {
         return res.status(409).json({ success: false, error: result.error || 'Registration could not be completed.' });
       }
 
-      const ticketId = result.ticketId || result.attendee?.ticketId || `TKT-${eventId.slice(-6)}-${Date.now().toString(36).toUpperCase()}`;
+      // Only a stored ticket ID is useful: confirmation looks it up by ID.
+      const ticketId = result.ticketId;
+      if (!ticketId) {
+        throw new Error(`Registration for event ${eventId} was stored without a ticket ID.`);
+      }
 
       // SEC-04: If event is paid, acknowledge registration pending Secretariat verification.
       // Do NOT send the confidential meeting link / access pass until payment is confirmed.
@@ -152,7 +174,7 @@ async function handler(req, res) {
       if (isPaid) {
         // Awaited: Vercel may freeze the function once the response is sent,
         // and sendEmail() reports SMTP failures in its result, not by throwing.
-        const mail = await sendEmail({
+        const mail = await sendEmailWithin({
           type: 'event_registration_pending',
           to: email,
           data: {
@@ -179,7 +201,7 @@ async function handler(req, res) {
           emailSent: mail.success,
           message: mail.success
             ? 'Registration received! Your registration is pending payment verification. You will receive your official E-Ticket once payment is verified.'
-            : 'Registration received and pending payment verification, but the acknowledgement email could not be sent. You will still receive your official E-Ticket once payment is verified.',
+            : 'Registration received and pending payment verification, but we could not confirm the acknowledgement email was sent. You will still receive your official E-Ticket once payment is verified.',
           event: {
             id: result.event.id,
             title: result.event.title,
@@ -205,7 +227,7 @@ async function handler(req, res) {
       }
 
       // Free event: instant confirmation with full admission pass
-      const mail = await sendEmail({
+      const mail = await sendEmailWithin({
         type: 'event_ticket',
         to: email,
         data: {
@@ -234,7 +256,7 @@ async function handler(req, res) {
         emailSent: mail.success,
         message: mail.success
           ? 'Registration confirmed! Your official E-Ticket has been sent to your email.'
-          : `Registration confirmed, but the E-Ticket email could not be sent. Please keep your ticket ID (${ticketId}) for entry.`,
+          : `Registration confirmed, but we could not confirm the E-Ticket email was sent. Please keep your ticket ID (${ticketId}) for entry.`,
         event: result.event,
         attendee: result.attendee,
         ticketId,
@@ -262,7 +284,7 @@ async function handler(req, res) {
       // Dispatch the confirmed official E-Ticket with real venue / meeting credentials only if not already confirmed
       let emailSent = null;
       if (!result.alreadyConfirmed) {
-        const mail = await sendEmail({
+        const mail = await sendEmailWithin({
           type: 'event_ticket',
           to: result.attendee.email,
           data: {
@@ -294,7 +316,7 @@ async function handler(req, res) {
           ? 'Attendee payment is already verified.'
           : emailSent
             ? 'Attendee payment verified and official E-Ticket issued.'
-            : 'Attendee payment verified, but the E-Ticket email could not be sent. Please share the ticket with the attendee manually.',
+            : 'Attendee payment verified, but we could not confirm the E-Ticket email was sent. Please share the ticket with the attendee manually.',
         emailSent,
         event: result.event,
         attendee: result.attendee,

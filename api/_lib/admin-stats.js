@@ -1,7 +1,7 @@
 // api/admin-stats.js
 // Dashboard counters for the admin portal.
 
-import { listApplicationSummaries, countApplications, countEnquiries, STATUS } from './records.js';
+import { getApplicationStats, countEnquiries } from './records.js';
 import {
   applyCors,
   handlePreflight,
@@ -22,22 +22,17 @@ async function handler(req, res) {
   // session store as every other route.
   if (!(await requireAdmin(req, res))) return;
 
-  // The list defaults to a 500-row page; fetch the real total first so counts
-  // and the recent-applications feed never silently drop records once the
-  // org passes 500 applications. Summaries skip the document scans.
-  const totalApplications = await countApplications();
-  const [applications, totalEnquiries] = await Promise.all([
-    totalApplications > 0 ? listApplicationSummaries({ limit: totalApplications }) : Promise.resolve([]),
-    countEnquiries(),
-  ]);
+  // Counts cover every application (no 500-row page cap) and never load
+  // the document scans; Postgres computes them with a GROUP BY.
+  const [appStats, totalEnquiries] = await Promise.all([getApplicationStats({ recent: 5 }), countEnquiries()]);
 
   const stats = {
-    total: totalApplications,
-    pending: applications.filter((a) => a.status === STATUS.PENDING).length,
-    approved: applications.filter((a) => a.status === STATUS.APPROVED).length,
-    rejected: applications.filter((a) => a.status === STATUS.REJECTED).length,
+    total: appStats.total,
+    pending: appStats.pending,
+    approved: appStats.approved,
+    rejected: appStats.rejected,
     totalEnquiries,
-    recentApplications: applications.slice(0, 5).map((a) => ({
+    recentApplications: appStats.recent.map((a) => ({
       id: a.id,
       company: a.company,
       status: a.status,
@@ -48,7 +43,7 @@ async function handler(req, res) {
   return res.status(200).json({
     success: true,
     stats,
-    applications: applications.length,
+    applications: appStats.total,
     enquiries: totalEnquiries,
     checkedAt: new Date().toISOString(),
   });

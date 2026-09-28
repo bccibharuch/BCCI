@@ -81,6 +81,53 @@ const backfilled = (await listApplicationSummaries()).find(a=>a.id==='BCCI-2');
 ck('missing summary is backfilled on read', backfilled?.company === 'Beta Pharma' && !!(await redis.get(KEYS.appSummary('BCCI-2'))));
 ck('summaries cover every application', (await listApplicationSummaries()).length === (await listApplications()).length);
 
+// A record stored without an `id` field is matched by its index position.
+await redis.set(KEYS.app('NOID-1'), { company:'No Id Co', email:'noid@x.com', status:'pending', submittedAt:'2026-08-05T10:00:00Z' });
+await redis.zadd(KEYS.appIndex, { score: Date.parse('2026-08-05T10:00:00Z'), member:'NOID-1' });
+const noId = (await listApplicationSummaries()).find(a=>a.id==='NOID-1');
+ck('record without a stored id still appears, under its index id', noId?.company === 'No Id Co', JSON.stringify(noId));
+
+// The backfill must not overwrite a summary written after it read the record.
+await putApplication({ id:'RACE-1', company:'Race Co', email:'race@x.com', repName:'R', status:'Pending', submittedAt:'2026-08-06T10:00:00Z' });
+await redis.del(KEYS.appSummary('RACE-1'));
+const approvedSummary = JSON.stringify({ id:'RACE-1', company:'Race Co', email:'race@x.com', status:'Approved', submittedAt:'2026-08-06T10:00:00Z' });
+const raceHook = (cmd) => {
+  // Right as the backfill reads full records, an admin approval lands.
+  if (String(cmd[0]).toUpperCase() === 'MGET' && cmd.includes(KEYS.app('RACE-1'))) {
+    mock.store.set(KEYS.appSummary('RACE-1'), approvedSummary);
+  }
+};
+mock.beforeCommand.push(raceHook);
+await listApplicationSummaries();
+mock.beforeCommand.length = 0;
+ck('backfill does not overwrite a newer summary', (await redis.get(KEYS.appSummary('RACE-1')))?.status === 'Approved');
+
+// Backfill works in chunks and still covers everything past the first chunk.
+await Promise.all(Array.from({ length: 70 }, (_, i) => putApplication({
+  id:`BULK-${i}`, company:`Bulk ${i}`, email:`bulk${i}@x.com`, repName:'B', status: i % 2 ? 'Approved' : 'Pending',
+  submittedAt:new Date(Date.parse('2026-07-01T00:00:00Z') + i).toISOString(),
+})));
+const allIds = await redis.zrange(KEYS.appIndex, 0, -1);
+await redis.del(...allIds.map(KEYS.appSummary));
+let mgetSizes = [];
+mock.beforeCommand.push((cmd) => {
+  if (String(cmd[0]).toUpperCase() === 'MGET' && String(cmd[1]).startsWith('bcci:app:')) mgetSizes.push(cmd.length - 1);
+});
+const rebuilt = await listApplicationSummaries({ limit: allIds.length });
+mock.beforeCommand.length = 0;
+ck('backfill rebuilds every summary', rebuilt.length === allIds.length, `${rebuilt.length} of ${allIds.length}`);
+ck('backfill reads full records at most 50 at a time', mgetSizes.length > 1 && Math.max(...mgetSizes) <= 50, mgetSizes.join(','));
+const storedSummaries = await redis.mget(...allIds.map(KEYS.appSummary));
+ck('backfilled summaries are all stored', storedSummaries.every(Boolean));
+
+// Dashboard stats agree with the full records.
+const everyone = await listApplications({ limit: allIds.length });
+const stats = await lib.getApplicationStats({ recent: 5 });
+const tally = (st) => everyone.filter((a) => a.status === st).length;
+ck('stats total matches', stats.total === everyone.length, `${stats.total} vs ${everyone.length}`);
+ck('stats status counts match', stats.pending === tally('Pending') && stats.approved === tally('Approved') && stats.rejected === tally('Rejected'), JSON.stringify({ ...stats, recent: undefined }));
+ck('stats recent is the 5 newest, without scans', stats.recent.length === 5 && stats.recent[0].id === everyone[0].id && stats.recent.every((a) => !String(a.paymentProof).startsWith('data:')));
+
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 mock.server.close();
 process.exit(fail?1:0);

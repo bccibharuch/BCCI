@@ -81,6 +81,10 @@ check('summary keeps non-document fields', s3?.company === 'PG Three' && s3?.sta
 check('summary payload excludes the scans', JSON.stringify(summaries).length < 5000, `${JSON.stringify(summaries).length} bytes`);
 check('full record still holds the scan', (await lib.getApplication('PG-APP-3'))?.paymentProof === scan);
 
+const pgStats = await lib.getApplicationStats({ recent: 1 });
+check('stats count by status', pgStats.total === 2 && pgStats.approved === 1 && pgStats.pending === 1 && pgStats.rejected === 0, JSON.stringify({ ...pgStats, recent: undefined }));
+check('stats recent is newest, without scans', pgStats.recent.length === 1 && pgStats.recent[0].id === 'PG-APP-3' && pgStats.recent[0].paymentProof === '[document]');
+
 // ── Enquiries ────────────────────────────────────────────────────
 section('Postgres enquiries');
 
@@ -127,49 +131,20 @@ await lib.releaseLock('pg-test-lock', tok);
 const freed = await lib.query('SELECT COUNT(*)::int n FROM locks WHERE name = $1', ['pg-test-lock']);
 check('correct token releases', freed.rows[0].n === 0);
 
-// A registration whose lock expired mid-flight must not release the lock a
-// later request now holds. Stall it on the event row, hand the lock to an
-// "intruder" as if the TTL had lapsed, then let it finish.
-await lib.putEvent({ id: 'PG-EVT-LOCK', title: 'Lock', date: new Date(Date.now() + 86400000).toISOString(), capacity: 10, pricingType: 'free' });
-const blocker = new pg.Client({ connectionString: TEST_URL });
-await blocker.connect();
-await blocker.query('BEGIN');
-await blocker.query('SELECT 1 FROM events WHERE id = $1 FOR UPDATE', ['PG-EVT-LOCK']);
-const stalled = lib.registerForEvent('PG-EVT-LOCK', { name: 'Slow', email: 'slow@example.com' });
-let lockRow = null;
-for (let i = 0; i < 100 && !lockRow; i++) {
-  lockRow = (await lib.query('SELECT token FROM locks WHERE name = $1', ['eventreg:PG-EVT-LOCK'])).rows[0] || null;
-  if (!lockRow) await new Promise((r) => setTimeout(r, 10));
-}
-check('stalled registration holds the event lock', !!lockRow);
-await lib.query('UPDATE locks SET token = $2 WHERE name = $1', ['eventreg:PG-EVT-LOCK', 'intruder-token']);
-await blocker.query('COMMIT');
-await blocker.end();
-const stalledResult = await stalled;
-check('stalled registration still completes', stalledResult.success === true, JSON.stringify(stalledResult).slice(0, 120));
-const intruder = await lib.query('SELECT token FROM locks WHERE name = $1', ['eventreg:PG-EVT-LOCK']);
-check("finishing request does not release the new holder's lock", intruder.rows[0]?.token === 'intruder-token');
-await lib.releaseLock('eventreg:PG-EVT-LOCK', 'intruder-token');
-await lib.deleteEvent('PG-EVT-LOCK');
-
-// A failed connection checkout must not leave the event lock held until its
-// TTL. Plain queries (the lock itself) still work; only connect() fails.
-const livePool = new pg.Pool({ connectionString: TEST_URL });
-lib.setPool({
-  query: (...args) => livePool.query(...args),
-  connect: () => Promise.reject(new Error('simulated connect failure')),
-});
-for (const [label, run] of [
-  ['registerForEvent', () => lib.registerForEvent('PG-EVT-CONN', { name: 'C', email: 'c@example.com' })],
-  ['confirmEventPayment', () => lib.confirmEventPayment('PG-EVT-CONN', 'TKT-X', 'admin@test')],
-]) {
-  let threw = null;
-  try { await run(); } catch (err) { threw = err; }
-  const held = await livePool.query('SELECT COUNT(*)::int n FROM locks WHERE name = $1', ['eventreg:PG-EVT-CONN']);
-  check(`${label}: connect failure surfaces the error`, /simulated connect failure/.test(threw?.message || ''), threw?.message);
-  check(`${label}: connect failure releases the lock`, held.rows[0].n === 0, `${held.rows[0].n} lock row(s) left`);
-}
-lib.setPool(livePool);
+// Event writes rely on the event row's FOR UPDATE lock, not a cooperative
+// lock: parallel registrations must still respect capacity and duplicates.
+await lib.putEvent({ id: 'PG-EVT-RACE', title: 'Race', date: new Date(Date.now() + 86400000).toISOString(), capacity: 3, pricingType: 'free' });
+const raced = await Promise.all(
+  Array.from({ length: 10 }, (_, i) => lib.registerForEvent('PG-EVT-RACE', { name: `R${i}`, email: `race${i % 5}@example.com` }))
+);
+const won = raced.filter((r) => r.success);
+check('parallel registrations stop at capacity', won.length === 3, `${won.length} succeeded`);
+check('stored count matches capacity', (await lib.getEvent('PG-EVT-RACE'))?.registeredCount === 3);
+check('no duplicate attendees', new Set((await lib.getEventAttendees('PG-EVT-RACE')).map((a) => a.email)).size === 3);
+check('losers get a readable reason, not an error', raced.filter((r) => !r.success).every((r) => /capacity|already registered/.test(r.error)), JSON.stringify(raced.find((r) => !r.success)));
+const lockRows = await lib.query("SELECT COUNT(*)::int n FROM locks WHERE name LIKE 'eventreg:%'");
+check('event writes take no cooperative lock', lockRows.rows[0].n === 0);
+await lib.deleteEvent('PG-EVT-RACE');
 
 // ── Storage switch ───────────────────────────────────────────────
 section('records.js switch');

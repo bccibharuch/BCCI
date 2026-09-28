@@ -12,6 +12,7 @@
 // record serialise instead of silently clobbering each other.
 
 import pg from 'pg';
+import { DOCUMENT_FIELDS, newTicketId } from './record-fields.js';
 
 const { Pool } = pg;
 
@@ -171,13 +172,10 @@ export async function listApplications({ limit = 500, offset = 0 } = {}) {
   return r.rows.map(rowToApp).filter(Boolean);
 }
 
-// Uploaded scans are base64 strings of hundreds of KB each. List views only
-// need to know whether one exists, so the summary query strips them in SQL.
-export const DOCUMENT_FIELDS = ['paymentProof', 'gstCertProof', 'panCertProof', 'regCertProof', 'repAttachment'];
-
 /**
  * Newest-first page of applications with document fields reduced to a
- * '[document]' marker. The scans never leave the database.
+ * '[document]' marker. The scans (hundreds of KB each) never leave the
+ * database.
  */
 export async function listApplicationSummaries({ limit = 500, offset = 0 } = {}) {
   const r = await query(
@@ -195,6 +193,23 @@ export async function listApplicationSummaries({ limit = 500, offset = 0 } = {})
       return app;
     })
     .filter(Boolean);
+}
+
+/** Status counts and the newest few applications for the admin dashboard. */
+export async function getApplicationStats({ recent = 5 } = {}) {
+  const [counts, latest] = await Promise.all([
+    query('SELECT status, COUNT(*)::int AS n FROM applications GROUP BY status'),
+    listApplicationSummaries({ limit: recent }),
+  ]);
+  const stats = { total: 0, pending: 0, approved: 0, rejected: 0, recent: latest };
+  for (const row of counts.rows) {
+    stats.total += row.n;
+    const status = normalizeStatus(row.status);
+    if (status === STATUS.APPROVED) stats.approved += row.n;
+    else if (status === STATUS.REJECTED) stats.rejected += row.n;
+    else stats.pending += row.n;
+  }
+  return stats;
 }
 
 export async function countApplications() {
@@ -377,19 +392,10 @@ export async function registerForEvent(id, attendee) {
   }
   const email = String(attendee.email).trim().toLowerCase();
 
-  const lockToken = await acquireLock(`eventreg:${id}`);
-  if (!lockToken) {
-    return { success: false, error: 'Registration service is busy. Please try again in a moment.' };
-  }
-  // The finally below only covers work after a client is checked out, so a
-  // failed connect must release the lock here or it blocks until its TTL.
-  let client;
-  try {
-    client = await getPool().connect();
-  } catch (err) {
-    await releaseLock(`eventreg:${id}`, lockToken);
-    throw err;
-  }
+  // No cooperative lock: SELECT ... FOR UPDATE on the event row serialises
+  // registrations and confirmations for the event inside the transaction,
+  // and is released by COMMIT/ROLLBACK, so it cannot leak.
+  const client = await getPool().connect();
   try {
     await client.query('BEGIN');
     const er = await client.query('SELECT id, registered_count, data FROM events WHERE id = $1 FOR UPDATE', [id]);
@@ -416,13 +422,11 @@ export async function registerForEvent(id, attendee) {
     }
 
     const isPaid = event.pricingType === 'paid' && Number(event.fee) > 0;
-    // Confirmation looks tickets up by ID, so an ID must never be reused
-    // within an event: 40 random bits, re-drawn on the (unlikely) clash
-    // rather than failing the insert on the primary key.
-    const { randomBytes } = await import('node:crypto');
+    // Confirmation looks tickets up by ID, so re-draw on a clash rather
+    // than failing the insert on the primary key.
     let ticketId;
     for (;;) {
-      ticketId = `TKT-${id.replace(/^EVT-/, '')}-${randomBytes(5).toString('hex').toUpperCase()}`;
+      ticketId = newTicketId(id);
       const clash = await client.query(
         'SELECT 1 FROM event_attendees WHERE event_id = $1 AND ticket_id = $2',
         [id, ticketId]
@@ -456,7 +460,6 @@ export async function registerForEvent(id, attendee) {
     throw err;
   } finally {
     client.release();
-    await releaseLock(`eventreg:${id}`, lockToken);
   }
 }
 
@@ -464,19 +467,8 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
   if (!id || !ticketId) {
     return { success: false, error: 'Event ID and ticket ID are required.' };
   }
-  const lockToken = await acquireLock(`eventreg:${id}`);
-  if (!lockToken) {
-    return { success: false, error: 'Event service is busy. Please try again in a moment.' };
-  }
-  // The finally below only covers work after a client is checked out, so a
-  // failed connect must release the lock here or it blocks until its TTL.
-  let client;
-  try {
-    client = await getPool().connect();
-  } catch (err) {
-    await releaseLock(`eventreg:${id}`, lockToken);
-    throw err;
-  }
+  // Serialised by the event row's FOR UPDATE lock; see registerForEvent.
+  const client = await getPool().connect();
   try {
     await client.query('BEGIN');
     const er = await client.query('SELECT id, registered_count, data FROM events WHERE id = $1 FOR UPDATE', [id]);
@@ -517,6 +509,5 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
     throw err;
   } finally {
     client.release();
-    await releaseLock(`eventreg:${id}`, lockToken);
   }
 }

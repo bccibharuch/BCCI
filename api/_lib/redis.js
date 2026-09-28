@@ -8,8 +8,8 @@
 // Legacy blobs (bcci:applications / bcci:enquiries) are migrated lazily on
 // first access. The old key is left in place as a backup.
 
-import { randomBytes } from 'node:crypto';
 import { Redis } from '@upstash/redis';
+import { summarizeApplication, newTicketId } from './record-fields.js';
 
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -96,17 +96,6 @@ function normalizeApplication(app) {
 function timeOf(record) {
   const t = Date.parse(record?.submittedAt || '');
   return Number.isFinite(t) ? t : Date.now();
-}
-
-// Uploaded scans are base64 strings of hundreds of KB each. List views only
-// need to know whether one exists, so they read a summary copy without them.
-export const DOCUMENT_FIELDS = ['paymentProof', 'gstCertProof', 'panCertProof', 'regCertProof', 'repAttachment'];
-
-function summarizeApplication(app) {
-  if (!app) return null;
-  const summary = { ...app };
-  for (const f of DOCUMENT_FIELDS) summary[f] = app[f] ? '[document]' : '';
-  return summary;
 }
 
 // ── One-time migration from the legacy single-blob layout ──────────
@@ -200,21 +189,47 @@ export async function listApplicationSummaries({ limit = 500, offset = 0 } = {})
     if (!ids || !ids.length) return [];
     const summaries = await redis.mget(...ids.map(KEYS.appSummary));
 
-    const missing = ids.filter((_, i) => !summaries[i]);
-    if (missing.length) {
-      const full = await redis.mget(...missing.map(KEYS.app));
-      const byId = new Map();
-      for (const record of full) {
-        const summary = summarizeApplication(normalizeApplication(record));
-        if (summary?.id) byId.set(summary.id, summary);
-      }
-      await Promise.all([...byId].map(([id, summary]) => redis.set(KEYS.appSummary(id), summary)));
-      ids.forEach((id, i) => {
-        if (!summaries[i]) summaries[i] = byId.get(id) || null;
-      });
+    const missing = ids.flatMap((id, i) => (summaries[i] ? [] : [i]));
+    for (let c = 0; c < missing.length; c += BACKFILL_CHUNK) {
+      await backfillSummaries(ids, summaries, missing.slice(c, c + BACKFILL_CHUNK));
     }
     return summaries.filter(Boolean).map(normalizeApplication);
   });
+}
+
+// Full records carry the scans, so the one-time backfill reads them a few
+// at a time to bound memory, and writes each chunk in one request.
+const BACKFILL_CHUNK = 50;
+
+async function backfillSummaries(ids, summaries, positions) {
+  const full = await redis.mget(...positions.map((i) => KEYS.app(ids[i])));
+  const pipe = redis.pipeline();
+  let writes = 0;
+  positions.forEach((pos, j) => {
+    const record = normalizeApplication(full[j]);
+    if (!record) return;
+    // Match by index position, not the stored id, which old records may lack.
+    const summary = summarizeApplication({ ...record, id: record.id || ids[pos] });
+    summaries[pos] = summary;
+    // NX: never overwrite a summary a concurrent update wrote after our read.
+    pipe.set(KEYS.appSummary(ids[pos]), summary, { nx: true });
+    writes++;
+  });
+  if (writes) await pipe.exec();
+}
+
+/** Status counts and the newest few applications for the admin dashboard. */
+export async function getApplicationStats({ recent = 5 } = {}) {
+  const total = await countApplications();
+  const apps = total > 0 ? await listApplicationSummaries({ limit: total }) : [];
+  const count = (status) => apps.filter((a) => a.status === status).length;
+  return {
+    total,
+    pending: count(STATUS.PENDING),
+    approved: count(STATUS.APPROVED),
+    rejected: count(STATUS.REJECTED),
+    recent: apps.slice(0, recent),
+  };
 }
 
 export async function countApplications() {
@@ -253,9 +268,13 @@ export async function putApplication(app) {
       }
     }
     try {
-      await redis.set(KEYS.app(record.id), record);
-      await redis.set(KEYS.appSummary(record.id), summarizeApplication(record));
-      await redis.zadd(KEYS.appIndex, { score: timeOf(record), member: record.id });
+      // One transaction, so the list summary can never disagree with the record.
+      await redis
+        .multi()
+        .set(KEYS.app(record.id), record)
+        .set(KEYS.appSummary(record.id), summarizeApplication(record))
+        .zadd(KEYS.appIndex, { score: timeOf(record), member: record.id })
+        .exec();
     } catch (err) {
       if (record.email) await redis.del(KEYS.appByEmail(record.email)).catch(() => {});
       throw err;
@@ -275,8 +294,12 @@ export async function updateApplication(id, mutate) {
     const current = normalizeApplication(await redis.get(KEYS.app(id)));
     if (!current) return null;
     const next = normalizeApplication(mutate({ ...current }));
-    await redis.set(KEYS.app(id), next);
-    await redis.set(KEYS.appSummary(id), summarizeApplication(next));
+    // One transaction, so the list summary can never disagree with the record.
+    await redis
+      .multi()
+      .set(KEYS.app(id), next)
+      .set(KEYS.appSummary(id), summarizeApplication(next))
+      .exec();
     if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
     return next;
   });
@@ -421,12 +444,11 @@ export async function registerForEvent(id, attendee) {
       const initialStatus = isPaid ? 'pending' : 'confirmed';
       const initialPaymentStatus = isPaid ? 'pending_verification' : 'confirmed';
 
-      // Confirmation looks tickets up by ID, so an ID must never be reused
-      // within an event: 40 random bits, re-drawn on the (unlikely) clash.
+      // Confirmation looks tickets up by ID, so re-draw on a clash.
       const taken = new Set(attendees.map((a) => a.ticketId));
       let ticketId;
       do {
-        ticketId = `TKT-${id.replace(/^EVT-/, '')}-${randomBytes(5).toString('hex').toUpperCase()}`;
+        ticketId = newTicketId(id);
       } while (taken.has(ticketId));
       const newAttendee = {
         ticketId,
