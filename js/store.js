@@ -312,6 +312,10 @@ export class Store {
         body: { username, password },
       });
 
+      // Password accepted: the server emailed a one-time code (step 2).
+      if (result.success && result.step === 'code' && result.challenge) {
+        return { success: true, step: 'code', challenge: result.challenge, message: result.message };
+      }
       if (result.success && result.session) {
         this._writeSession(STORAGE_KEYS.ADMIN_SESSION, result.session);
         return { success: true };
@@ -319,6 +323,23 @@ export class Store {
       return { success: false, error: result.error || 'Sign-in failed.' };
     } catch (err) {
       return { success: false, error: err.message || 'Sign-in failed.' };
+    }
+  }
+
+  /** Second sign-in step: exchange the emailed code for an admin session. */
+  async verifyAdminCode(challenge, code) {
+    try {
+      const result = await this.apiCall('/api/admin-auth', {
+        method: 'POST',
+        body: { challenge, code },
+      });
+      if (result.success && result.session) {
+        this._writeSession(STORAGE_KEYS.ADMIN_SESSION, result.session);
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Verification failed.' };
+    } catch (err) {
+      return { success: false, error: err.message || 'Verification failed.' };
     }
   }
 

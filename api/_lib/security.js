@@ -11,11 +11,11 @@
  *   - Font Awesome stylesheet + webfonts from cdnjs
  *   - qrcode.min.js from cdnjs
  *   - DM Serif Display / Inter / JetBrains Mono from Google Fonts
- *   - inline styles and inline <script> blocks in index.html
+ *   - inline styles (no inline script: buttons use data-action handlers)
  */
 export const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+  "script-src 'self' https://cdnjs.cloudflare.com",
   "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
   "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com",
   "img-src 'self' data: blob:",

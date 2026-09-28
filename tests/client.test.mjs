@@ -178,6 +178,25 @@ console.log('──────────────────────�
 import('node:fs').then(() => {});
 const exists = (p) => { try { fs.accessSync(new URL(p, import.meta.url)); return true; } catch { return false; } };
 ck('the renewal-check endpoint is gone', !exists('../api/renewal-check.js'));
+console.log('\nScript injection defences');
+console.log('─────────────────────────');
+{
+  const inlineHandler = / on[a-z]+="/;
+  ck('index.html has no inline event handlers', !inlineHandler.test(HTML));
+  ck('app.js templates have no inline event handlers', !inlineHandler.test(SRC));
+  ck('no javascript: URLs in markup', !/href="javascript:/i.test(HTML + SRC));
+  const VERCEL = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
+  const vercelCsp = VERCEL.headers.flatMap((h) => h.headers).find((h) => h.key === 'Content-Security-Policy')?.value || '';
+  const { CSP } = await import(new URL('../api/_lib/security.js', import.meta.url));
+  for (const [where, csp] of [['vercel.json', vercelCsp], ['security.js', CSP]]) {
+    const scriptSrc = (csp.split(';').find((d) => d.trim().startsWith('script-src')) || '').trim();
+    ck(`${where}: script-src forbids inline script`, !!scriptSrc && !scriptSrc.includes("'unsafe-inline'") && !scriptSrc.includes("'unsafe-eval'"), scriptSrc);
+  }
+  const cdnTags = HTML.match(/<(script|link)\b[^>]*https:\/\/cdnjs\.cloudflare\.com[^>]*>/g) || [];
+  const loading = cdnTags.filter((t) => /\b(src|rel="stylesheet")/.test(t));
+  ck('every cdnjs script/stylesheet carries an integrity hash', loading.length >= 2 && loading.every((t) => /integrity="sha(384|512)-/.test(t) && /crossorigin="anonymous"/.test(t)), `${loading.length} tags`);
+}
+
 ck('no cron is scheduled in vercel.json', !JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url),'utf8')).crons);
 ck('health no longer reports a cron job', !fs.readFileSync(new URL('../api/health.js', import.meta.url),'utf8').includes('cron'));
 ck('the reminder email template is gone', !fs.readFileSync(new URL('../api/_lib/email.js', import.meta.url),'utf8').includes('renewal_reminder'));
@@ -1449,7 +1468,8 @@ console.log('──────────────────────�
   ck('showMembershipDetailsModal renders GSTIN and PAN', modalContent.includes('24AAAAA0000A1Z5') && modalContent.includes('AAAAA0000A'));
   ck('showMembershipDetailsModal renders digital pass action button', modalContent.includes('id="dossierViewPassBtn"'));
   ck('showMembershipDetailsModal renders renewal action button', modalContent.includes('id="dossierRenewBtn"'));
-  ck('showMembershipDetailsModal renders print button', modalContent.includes('window.print()'));
+  ck('showMembershipDetailsModal renders print button', modalContent.includes('data-action="print"'));
+  ck('print action handler calls window.print()', /print: \(\) => window\.print\(\)/.test(SRC));
 }
 
 console.log('\nNumeric Input Safeguards (Turnover & Employee Headcount)');

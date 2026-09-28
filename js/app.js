@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.0';
+import { Store } from './store.js?v=4.0.1';
 
 // ── Configuration ──────────────────────────────────────────────
 // Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
@@ -128,6 +128,23 @@ class App {
     this.setupScrollReveal();
     this.setupDraftPersistence();
     this.setupConnectivityWatch();
+    this.setupDataActions();
+  }
+
+  // Buttons declare behaviour with data-action instead of inline onclick,
+  // so the Content-Security-Policy can forbid inline script entirely.
+  setupDataActions() {
+    const actions = {
+      print: () => window.print(),
+      'open-membership': () => document.querySelector('[data-view-nav=membership]')?.click(),
+      'scroll-to-auth-gate': () => document.getElementById('applicantAuthGate')
+        ?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }),
+    };
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-action]');
+      const run = el && actions[el.getAttribute('data-action')];
+      if (run) run();
+    });
   }
 
   setupScrollReveal() {
@@ -1062,7 +1079,7 @@ class App {
             </div>
           </div>
           <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
-            <button type="button" class="btn-primary" onclick="window.print();" style="flex: 1; min-width: 120px; justify-content: center; font-size: 0.85rem;">
+            <button type="button" class="btn-primary" data-action="print" style="flex: 1; min-width: 120px; justify-content: center; font-size: 0.85rem;">
               <i class="fas fa-print"></i> Print Card
             </button>
             <button type="button" class="btn-secondary" id="viewMemberDetailsFromCardBtn" style="flex: 1; min-width: 140px; justify-content: center; font-size: 0.85rem;">
@@ -1234,7 +1251,7 @@ class App {
               <i class="fas fa-sync-alt"></i> Renew Membership
             </button>
           ` : ''}
-          <button type="button" class="btn-secondary" onclick="window.print()" style="font-size: 0.85rem; padding: 0.55rem 1rem;">
+          <button type="button" class="btn-secondary" data-action="print" style="font-size: 0.85rem; padding: 0.55rem 1rem;">
             <i class="fas fa-print"></i> Print Details
           </button>
           <button type="button" class="btn-secondary" id="modalCloseBtn" style="font-size: 0.85rem; padding: 0.55rem 1.25rem;">Close</button>
@@ -1402,12 +1419,12 @@ class App {
       `;
     } else {
       desktopHtml = `
-        <button type="button" class="btn-signin-nav" onclick="document.querySelector('[data-view-nav=membership]').click()">
+        <button type="button" class="btn-signin-nav" data-action="open-membership">
           <i class="fas fa-user"></i> Sign In
         </button>
       `;
       drawerHtml = `
-        <button type="button" class="btn-signin-nav" style="width: 100%; justify-content: center;" onclick="document.querySelector('[data-view-nav=membership]').click()">
+        <button type="button" class="btn-signin-nav" style="width: 100%; justify-content: center;" data-action="open-membership">
           <i class="fas fa-user"></i> Sign In
         </button>
       `;
@@ -3224,31 +3241,79 @@ class App {
     // ── Admin Login Form ─────────────────────────────────────────────
     const pageAdminLoginForm = document.getElementById('pageAdminLoginForm');
     if (pageAdminLoginForm) {
+      // Two-step sign-in: password first, then the code emailed to the admin.
+      let adminChallenge = null;
+      const credentials = document.getElementById('pageAdminCredentials');
+      const codeStep = document.getElementById('pageAdminCodeStep');
+      const codeInput = document.getElementById('pageAdminCode');
+      const userInput = document.getElementById('pageAdminUser');
+      const passInput = document.getElementById('pageAdminPass');
+      const submitBtn = document.getElementById('pageAdminSubmit');
+      const idleLabel = () => (adminChallenge
+        ? '<i class="fas fa-shield-alt"></i> Verify Code'
+        : '<i class="fas fa-sign-in-alt"></i> Sign In to Admin Portal');
+      const showStep = (challenge, hint = '') => {
+        adminChallenge = challenge;
+        credentials.hidden = !!challenge;
+        codeStep.hidden = !challenge;
+        // Hidden inputs must not block submit with "required".
+        userInput.required = passInput.required = !challenge;
+        codeInput.required = !!challenge;
+        document.getElementById('pageAdminCodeHint').textContent = hint;
+        codeInput.value = '';
+        submitBtn.innerHTML = idleLabel();
+        (challenge ? codeInput : userInput).focus();
+      };
+      document.getElementById('pageAdminCodeRestart')?.addEventListener('click', () => {
+        pageAdminLoginForm.reset();
+        showStep(null);
+      });
+
       pageAdminLoginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const user = document.getElementById('pageAdminUser').value.trim();
-        // Never trim the password — a trailing space in the configured secret
-        // would otherwise cause a sign-in failure with no visible cause.
-        const pass = document.getElementById('pageAdminPass').value;
-        const submitBtn = pageAdminLoginForm.querySelector('button[type="submit"]');
-
-        if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating…'; }
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating…';
 
         try {
-          const result = await this.store.setAdminAuth(user, pass);
+          if (!adminChallenge) {
+            const user = userInput.value.trim();
+            // Never trim the password — a trailing space in the configured secret
+            // would otherwise cause a sign-in failure with no visible cause.
+            const result = await this.store.setAdminAuth(user, passInput.value);
+            if (result.success && result.step === 'code') {
+              passInput.value = '';
+              showStep(result.challenge, result.message || 'A sign-in code was sent to your admin email.');
+              this.showToast('Check your email for the sign-in code.', 'info');
+            } else if (result.success) {
+              this.adminAuthed = true;
+              pageAdminLoginForm.reset();
+              this.updateNavAuthUI();
+              this.showToast('Admin authenticated successfully!', 'success');
+              this.renderView('admin');
+            } else {
+              this.showToast(result.error || 'Invalid credentials.', 'warning');
+            }
+            return;
+          }
+
+          const result = await this.store.verifyAdminCode(adminChallenge, codeInput.value.trim());
           if (result.success) {
             this.adminAuthed = true;
             pageAdminLoginForm.reset();
+            showStep(null);
             this.updateNavAuthUI();
             this.showToast('Admin authenticated successfully!', 'success');
             this.renderView('admin');
           } else {
-            this.showToast(result.error || 'Invalid credentials.', 'warning');
+            this.showToast(result.error || 'Incorrect code.', 'warning');
+            // An expired or exhausted challenge cannot recover; restart.
+            if (/expired|sign in again/i.test(result.error || '')) showStep(null);
           }
         } catch (err) {
           this.showToast('Authentication failed. Please try again.', 'error');
         } finally {
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In to Admin Portal'; }
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = idleLabel();
         }
       });
     }
@@ -4721,7 +4786,7 @@ class App {
           </div>
 
           <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
-            <button type="button" class="btn-primary" onclick="window.print();" style="flex: 1; min-width: 160px; justify-content: center; font-size: 0.88rem;">
+            <button type="button" class="btn-primary" data-action="print" style="flex: 1; min-width: 160px; justify-content: center; font-size: 0.88rem;">
               <i class="fas fa-print"></i> Print / Save Ticket PDF
             </button>
             <button type="button" class="btn-secondary" id="modalCloseBtn" style="padding: 0.6rem 1.5rem;">Done</button>

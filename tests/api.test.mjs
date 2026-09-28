@@ -19,6 +19,7 @@ const enquiries = (await import(`${BCCI}/enquiries.js`)).default;
 const sendOtp = (await import(`${BCCI}/send-otp.js`)).default;
 const verifyOtp = (await import(`${BCCI}/verify-otp.js`)).default;
 const sendEmailRoute = (await import(`${BCCI}/send-email.js`)).default;
+const { redis: adminRedis } = await import(`${BCCI}/_lib/redis.js`);
 
 // ── Fake req/res ────────────────────────────────────────────────────
 function mockRes() {
@@ -75,8 +76,34 @@ r = await call(adminAuth, { method: 'POST', body: { username: 'nobody@evil.com',
 check('unknown admin email → 401', r.statusCode === 401, `got ${r.statusCode}`);
 
 r = await call(adminAuth, { method: 'POST', body: { username: 'admin@bccibharuch.in', password: 'correct-horse-battery-staple' } });
-check('correct credentials → 200 with a token', r.statusCode === 200 && !!r.body?.session?.token, `got ${r.statusCode}`);
+check('correct password alone issues NO session', r.statusCode === 200 && !r.body?.session && r.body?.step === 'code', JSON.stringify(r.body));
+check('password step returns a challenge, not the code', !!r.body?.challenge && !JSON.stringify(r.body).match(/\b\d{6}\b/), JSON.stringify(r.body));
+const challenge = r.body?.challenge;
+const pendingCode = (await adminRedis.get(`bcci:adminotp:${challenge}`))?.code;
+check('the emailed code is stored server-side', /^\d{6}$/.test(pendingCode || ''));
+
+r = await call(adminAuth, { method: 'POST', body: { challenge, code: pendingCode === '000000' ? '111111' : '000000' } });
+check('wrong code → 401', r.statusCode === 401, `got ${r.statusCode}`);
+r = await call(adminAuth, { method: 'POST', body: { challenge: 'made-up-challenge', code: pendingCode } });
+check('code with a forged challenge → rejected', r.statusCode === 400 && !r.body?.session, `got ${r.statusCode}`);
+
+r = await call(adminAuth, { method: 'POST', body: { challenge, code: pendingCode } });
+check('correct code → 200 with a token', r.statusCode === 200 && !!r.body?.session?.token, `got ${r.statusCode}`);
 const adminToken = r.body?.session?.token;
+const firstSession = r;
+
+r = await call(adminAuth, { method: 'POST', body: { challenge, code: pendingCode } });
+check('code is single-use', r.statusCode === 400 && !r.body?.session, `got ${r.statusCode}`);
+
+// Guessing is capped per challenge.
+r = await call(adminAuth, { method: 'POST', body: { username: 'admin@bccibharuch.in', password: 'correct-horse-battery-staple' } });
+const guessChallenge = r.body?.challenge;
+const realGuessCode = (await adminRedis.get(`bcci:adminotp:${guessChallenge}`))?.code;
+const wrong = realGuessCode === '000000' ? '111111' : '000000';
+for (let i = 0; i < 5; i++) await call(adminAuth, { method: 'POST', body: { challenge: guessChallenge, code: wrong } });
+r = await call(adminAuth, { method: 'POST', body: { challenge: guessChallenge, code: realGuessCode } });
+check('after 5 wrong codes even the right one is refused', r.statusCode === 429 && !r.body?.session, `got ${r.statusCode}`);
+r = firstSession;
 
 // BUG-02: expiresIn must be seconds, and the client multiplies by 1000.
 check('session expiresIn is 8h in SECONDS (not ms)', r.body?.session?.expiresIn === 28800, `got ${r.body?.session?.expiresIn}`);
