@@ -167,15 +167,8 @@ ck('email recorded from the verified session', stored?.email === MEMBER);
 ck('submittedAt is a valid timestamp', !Number.isNaN(Date.parse(stored?.submittedAt || '')));
 
 sec('The secretariat approves it');
-const mailsBeforeAdmin = smtp.received.length;
 r = await req('/api/admin-auth', { method: 'POST', body: { username: 'secretariat@bccibharuch.in', password: 'a-long-random-admin-secret' } });
-ck('admin password accepted, code step requested', r.status === 200 && r.json?.step === 'code' && !r.json?.session);
-ck('admin sign-in code emailed', await waitForMail(mailsBeforeAdmin + 1), 'no mail');
-const adminMail = smtp.received[smtp.received.length - 1];
-ck('code went to the admin address', adminMail?.to?.includes('secretariat@bccibharuch.in'));
-const adminCode = (adminMail?.raw?.match(/letter-spacing:12px[^>]*>(\d{6})</) || [])[1];
-r = await req('/api/admin-auth', { method: 'POST', body: { challenge: r.json?.challenge, code: adminCode } });
-ck('admin signed in with the emailed code', r.status === 200 && !!r.json?.session?.token);
+ck('admin signed in', r.status === 200 && !!r.json?.session?.token);
 const adminToken = r.json?.session?.token;
 
 r = await req('/api/applications', { token: adminToken });

@@ -177,17 +177,7 @@ await admin.goto(BASE + '/admin-bcci', { waitUntil: 'networkidle' });
 check('admin tab is gone, single admin form only', (await admin.locator('#signinTabEmployee').count()) === 0);
 await admin.fill('#pageAdminUser', 'admin@bccibharuch.in');
 await admin.fill('#pageAdminPass', 'sandbox-admin-password');
-{
-  // Sign-in is two steps: password, then the code emailed to the admin.
-  const mark = fs.readFileSync(SANDBOX_LOG, 'utf8').length;
-  await admin.locator('#pageAdminLoginForm button[type="submit"]').click();
-  await admin.waitForSelector('#pageAdminCode:visible', { timeout: 15000 }).catch(() => {});
-  check('admin password step asks for an emailed code', await admin.locator('#pageAdminCode').isVisible());
-  const adminCode = await waitOtp(mark);
-  check('admin sign-in code arrives in sandbox mail', !!adminCode);
-  await admin.fill('#pageAdminCode', adminCode || '');
-  await admin.locator('#pageAdminLoginForm button[type="submit"]').click();
-}
+await admin.locator('#pageAdminLoginForm button[type="submit"]').click();
 await admin.waitForSelector('#view-admin:not([style*="none"])', { timeout: 15000 }).catch(() => {});
 check('admin portal loads', await admin.locator('#view-admin').isVisible());
 await admin.waitForFunction(() => (document.getElementById('pendingAppsBody')?.innerText || '').includes('SiteTest Co'), { timeout: 15000 }).catch(() => {});

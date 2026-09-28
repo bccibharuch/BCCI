@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.1';
+import { Store } from './store.js?v=4.0.0';
 
 // ── Configuration ──────────────────────────────────────────────
 // Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
@@ -3241,79 +3241,31 @@ class App {
     // ── Admin Login Form ─────────────────────────────────────────────
     const pageAdminLoginForm = document.getElementById('pageAdminLoginForm');
     if (pageAdminLoginForm) {
-      // Two-step sign-in: password first, then the code emailed to the admin.
-      let adminChallenge = null;
-      const credentials = document.getElementById('pageAdminCredentials');
-      const codeStep = document.getElementById('pageAdminCodeStep');
-      const codeInput = document.getElementById('pageAdminCode');
-      const userInput = document.getElementById('pageAdminUser');
-      const passInput = document.getElementById('pageAdminPass');
-      const submitBtn = document.getElementById('pageAdminSubmit');
-      const idleLabel = () => (adminChallenge
-        ? '<i class="fas fa-shield-alt"></i> Verify Code'
-        : '<i class="fas fa-sign-in-alt"></i> Sign In to Admin Portal');
-      const showStep = (challenge, hint = '') => {
-        adminChallenge = challenge;
-        credentials.hidden = !!challenge;
-        codeStep.hidden = !challenge;
-        // Hidden inputs must not block submit with "required".
-        userInput.required = passInput.required = !challenge;
-        codeInput.required = !!challenge;
-        document.getElementById('pageAdminCodeHint').textContent = hint;
-        codeInput.value = '';
-        submitBtn.innerHTML = idleLabel();
-        (challenge ? codeInput : userInput).focus();
-      };
-      document.getElementById('pageAdminCodeRestart')?.addEventListener('click', () => {
-        pageAdminLoginForm.reset();
-        showStep(null);
-      });
-
       pageAdminLoginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating…';
+        const user = document.getElementById('pageAdminUser').value.trim();
+        // Never trim the password — a trailing space in the configured secret
+        // would otherwise cause a sign-in failure with no visible cause.
+        const pass = document.getElementById('pageAdminPass').value;
+        const submitBtn = pageAdminLoginForm.querySelector('button[type="submit"]');
+
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating…'; }
 
         try {
-          if (!adminChallenge) {
-            const user = userInput.value.trim();
-            // Never trim the password — a trailing space in the configured secret
-            // would otherwise cause a sign-in failure with no visible cause.
-            const result = await this.store.setAdminAuth(user, passInput.value);
-            if (result.success && result.step === 'code') {
-              passInput.value = '';
-              showStep(result.challenge, result.message || 'A sign-in code was sent to your admin email.');
-              this.showToast('Check your email for the sign-in code.', 'info');
-            } else if (result.success) {
-              this.adminAuthed = true;
-              pageAdminLoginForm.reset();
-              this.updateNavAuthUI();
-              this.showToast('Admin authenticated successfully!', 'success');
-              this.renderView('admin');
-            } else {
-              this.showToast(result.error || 'Invalid credentials.', 'warning');
-            }
-            return;
-          }
-
-          const result = await this.store.verifyAdminCode(adminChallenge, codeInput.value.trim());
+          const result = await this.store.setAdminAuth(user, pass);
           if (result.success) {
             this.adminAuthed = true;
             pageAdminLoginForm.reset();
-            showStep(null);
             this.updateNavAuthUI();
             this.showToast('Admin authenticated successfully!', 'success');
             this.renderView('admin');
           } else {
-            this.showToast(result.error || 'Incorrect code.', 'warning');
-            // An expired or exhausted challenge cannot recover; restart.
-            if (/expired|sign in again/i.test(result.error || '')) showStep(null);
+            this.showToast(result.error || 'Invalid credentials.', 'warning');
           }
         } catch (err) {
           this.showToast('Authentication failed. Please try again.', 'error');
         } finally {
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = idleLabel();
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Sign In to Admin Portal'; }
         }
       });
     }

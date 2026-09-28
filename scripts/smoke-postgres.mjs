@@ -83,10 +83,6 @@ const appId = r.json?.applicationId;
 await expect('application created in postgres', r.status === 201 && !!appId, `${r.status} ${JSON.stringify(r.json).slice(0, 150)}`);
 
 r = await api('/api/admin-auth', { method: 'POST', body: { username: 'admin@bccibharuch.in', password: 'smoke-test-password-123' } });
-// Two-step sign-in: the password earns a challenge; the code is in Redis.
-const adminChallenge = r.json?.challenge;
-const adminCode = JSON.parse(redisMock.store.get(`bcci:adminotp:${adminChallenge}`) || '{}').code;
-r = await api('/api/admin-auth', { method: 'POST', body: { challenge: adminChallenge, code: adminCode } });
 const adminToken = r.json?.session?.token;
 await expect('admin signed in', !!adminToken);
 

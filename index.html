@@ -1507,7 +1507,6 @@
               <h3 class="signin-title">Administrator Login</h3>
               <p class="signin-subtitle">BCCI Secretariat Access</p>
 
-              <div id="pageAdminCredentials">
               <div class="form-group" style="margin-bottom: 1.5rem;">
                 <label class="form-label" for="pageAdminUser">Username / Official Email <span class="req">*</span></label>
                 <input type="text" id="pageAdminUser" class="form-control" placeholder="admin@bccibharuch.in"
@@ -1519,21 +1518,8 @@
                 <input type="password" id="pageAdminPass" class="form-control" placeholder="Enter your password" required
                   autocomplete="current-password" />
               </div>
-              </div>
 
-              <div id="pageAdminCodeStep" hidden>
-                <p id="pageAdminCodeHint" style="font-size: 0.85rem; color: var(--gray-600); margin-bottom: 1rem; text-align: center;"></p>
-                <div class="form-group" style="margin-bottom: 1rem;">
-                  <label class="form-label" for="pageAdminCode">Sign-in code from your email <span class="req">*</span></label>
-                  <input type="text" id="pageAdminCode" class="form-control" placeholder="6-digit code" inputmode="numeric"
-                    pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" />
-                </div>
-                <p style="text-align: center; margin-bottom: 1.5rem;">
-                  <button type="button" id="pageAdminCodeRestart" class="btn-link" style="background: none; border: none; color: var(--primary); font-size: 0.82rem; cursor: pointer; text-decoration: underline;">Start over</button>
-                </p>
-              </div>
-
-              <button type="submit" id="pageAdminSubmit" class="btn-primary"
+              <button type="submit" class="btn-primary"
                 style="width: 100%; justify-content: center; padding: 0.85rem; font-size: 0.9rem;">
                 <i class="fas fa-sign-in-alt"></i> Sign In to Admin Portal
               </button>
