@@ -909,8 +909,8 @@ class App {
     } else {
       if (gate) gate.style.display = 'block';
       if (banner) banner.style.display = 'none';
-      if (wrapper) wrapper.style.display = 'grid';
-      if (signInReminder) signInReminder.style.display = 'flex';
+      if (wrapper) wrapper.style.display = 'none';
+      if (signInReminder) signInReminder.style.display = 'none';
       if (membershipSubmitBtn) {
         membershipSubmitBtn.disabled = true;
         membershipSubmitBtn.innerHTML = '<i class="fas fa-lock"></i> Sign In to Submit';
