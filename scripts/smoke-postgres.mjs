@@ -72,7 +72,7 @@ r = await api('/api/applications', {
     company: 'Smoke Foods Ltd',
     legalStatus: 'Private Limited', enterpriseType: 'Small', businessServices: 'Food',
     primaryBusiness: 'Smoke Foods', businessDescription: 'Packaged snacks manufacturing unit.',
-    feedback: 'Smoke test application.', membershipPlan: 'Micro & Small - ₹500 / Year', paymentMode: 'UPI',
+    feedback: 'Smoke test application.', membershipPlan: 'General Membership - ₹5,000/-', paymentMode: 'UPI',
     annualTurnover: '10000000', employees: '12', phone: '9876543210',
     address: 'Plot 1, GIDC', district: 'Bharuch', pincode: '392001',
     gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A', paymentRef: 'UPI/123456789012',

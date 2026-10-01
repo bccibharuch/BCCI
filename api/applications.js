@@ -35,6 +35,19 @@ import adminStatsHandler from './_lib/admin-stats.js';
 // A receipt is base64 in the JSON body, so the cap has to leave room for it.
 const MAX_BODY_SIZE = 3.5 * 1024 * 1024;
 
+// Membership tiers: plan label → fee in INR. Keep in sync with
+// MEMBERSHIP_FEES in js/app.js and the #appMembershipPlan options.
+const MEMBERSHIP_FEES = {
+  'General Membership - ₹5,000/-': 5000,
+  'Executive Membership - ₹10,000/-': 10000,
+  'Executive VIP Membership - ₹15,000/-': 15000,
+  'Corporate Membership - ₹25,000/-': 25000,
+  'Micro & Small - ₹500 / Year': 500,
+  'Medium - ₹1,000 / Year': 1000,
+  'Large - ₹2,500 / Year': 2500,
+};
+const MEMBERSHIP_PLANS = Object.keys(MEMBERSHIP_FEES);
+
 function newApplicationId() {
   return `BCCI-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 }
@@ -228,10 +241,17 @@ async function handler(req, res) {
     if (!feedback || feedback.length < 5) {
       return res.status(400).json({ error: 'Feedback or questions are required (minimum 5 characters).' });
     }
-    const MEMBERSHIP_PLANS = ['Micro & Small - ₹500 / Year', 'Medium - ₹1,000 / Year', 'Large - ₹2,500 / Year'];
     if (!MEMBERSHIP_PLANS.includes(membershipPlan)) {
       return res.status(400).json({ error: 'Select a valid membership type.' });
     }
+    // The total fee is derived server-side from the tier — a client-supplied
+    // amount is cross-checked, never trusted.
+    const expectedFee = MEMBERSHIP_FEES[membershipPlan];
+    const claimedAmountRaw = str(body.paymentAmount ?? body.totalFee, 20).replace(/[^0-9]/g, '');
+    if (claimedAmountRaw && Number(claimedAmountRaw) !== expectedFee) {
+      return res.status(400).json({ error: `Total fee mismatch for the selected membership type (expected ₹${expectedFee.toLocaleString('en-IN')}/-).` });
+    }
+    const paymentAmount = String(expectedFee);
     const PAYMENT_MODES = ['Cash', 'UPI', 'Bank Transfer'];
     if (!PAYMENT_MODES.includes(paymentMode)) {
       return res.status(400).json({ error: 'Select a valid payment mode (Cash, UPI or Bank Transfer).' });
@@ -385,7 +405,8 @@ async function handler(req, res) {
       panCertProof: docs.panCertProof,
       regCertProof: docs.regCertProof,
       repAttachment: docs.repAttachment,
-      paymentAmount: '',
+      paymentAmount,
+      totalFee: expectedFee,
       paymentRef: str(body.paymentRef, 80),
       status: STATUS.PENDING,
       submittedAt: new Date().toISOString(),

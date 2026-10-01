@@ -125,7 +125,7 @@ const application = {
   enterpriseType: 'Medium', businessServices: 'Chemicals & Petrochemicals',
   primaryBusiness: 'Sunrise Chemicals', businessDescription: 'Manufacturing specialty chemicals for a decade.',
   website: 'https://sunrise.example', feedback: 'Glad to apply.',
-  membershipPlan: 'Medium - ₹1,000 / Year', paymentMode: 'UPI',
+  membershipPlan: 'General Membership - ₹5,000/-', paymentMode: 'UPI',
   annualTurnover: '75000000', employees: '85', cin: 'U24100GJ2015PTC012345',
   phone: '9825012345', address: 'Plot 42, GIDC Estate, Ankleshwar',
   district: 'Bharuch', pincode: '393002',

@@ -132,7 +132,7 @@ const validApp = (overrides = {}) => ({
   businessDescription: 'Manufacturing industrial solvents for ten years.',
   website: 'https://shahchemicals.example',
   feedback: 'Happy to join the chamber.',
-  membershipPlan: 'Medium - ₹1,000 / Year',
+  membershipPlan: 'General Membership - ₹5,000/-',
   paymentMode: 'UPI',
   annualTurnover: '50000000',
   employees: '50',

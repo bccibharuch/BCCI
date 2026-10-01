@@ -154,7 +154,7 @@ await member.selectOption('#appLegalStatus', 'Proprietorship');
 await member.selectOption('#appEnterpriseType', 'Micro');
 await member.selectOption('#appBusinessServices', 'Information Technology');
 await member.selectOption('#appDistrict', 'Bharuch');
-await member.selectOption('#appMembershipPlan', 'Micro & Small - ₹500 / Year');
+await member.selectOption('#appMembershipPlan', 'General Membership - ₹5,000/-');
 await member.selectOption('#appPaymentMode', 'UPI');
 // Required file uploads: payment screenshot (image), GST + PAN certs (PDF).
 await member.setInputFiles('#paymentProofInput', '/tmp/site-cert.png');
@@ -207,7 +207,7 @@ const MEMAIL2 = `sitetest-${stamp2}@example.com`;
       repName: 'Reject Me', repDesignation: 'Owner', repMobile: '9825012347', repEmail: `repr-${stamp}@example.com`,
       company: `RejectCo ${stamp}`, legalStatus: 'None', enterpriseType: 'None', businessServices: 'Textile & Garments',
       primaryBusiness: 'RejectCo', businessDescription: 'Testing the rejection path end to end.',
-      feedback: 'Reject me please.', membershipPlan: 'Micro & Small - ₹500 / Year', paymentMode: 'Cash',
+      feedback: 'Reject me please.', membershipPlan: 'General Membership - ₹5,000/-', paymentMode: 'Cash',
       annualTurnover: '100000', employees: '2', phone: '9825012347', address: 'Plot 2', district: 'Bharuch',
       pincode: '392001', gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A', paymentRef: 'UPI/999888777666',
       gstCertProof: PNG, panCertProof: PNG,

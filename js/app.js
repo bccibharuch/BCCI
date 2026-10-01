@@ -15,6 +15,25 @@ const CONFIG = {
   UPI_ID: '7861906384.eazypay@icici',
 };
 
+// ── Membership tiers ───────────────────────────────────────────
+// Single source of truth for the client: plan label → fee in INR.
+// Must stay in sync with MEMBERSHIP_FEES in api/applications.js.
+const MEMBERSHIP_FEES = {
+  'General Membership - ₹5,000/-': 5000,
+  'Executive Membership - ₹10,000/-': 10000,
+  'Executive VIP Membership - ₹15,000/-': 15000,
+  'Corporate Membership - ₹25,000/-': 25000,
+  'Micro & Small - ₹500 / Year': 500,
+  'Medium - ₹1,000 / Year': 1000,
+  'Large - ₹2,500 / Year': 2500,
+};
+
+const MEMBERSHIP_PLANS = Object.keys(MEMBERSHIP_FEES);
+
+function formatMembershipFee(amount) {
+  return `₹${Number(amount).toLocaleString('en-IN')}/-`;
+}
+
 // ── XSS sanitisation ──────────────────────────────────────────
 // Every value that reaches innerHTML goes through this. Applicant-supplied
 // text (company names, enquiry subjects) is rendered in the admin portal, so
@@ -119,6 +138,7 @@ class App {
     this.setupFileUploadHandlers();
     this.setupDocUploads();
     this.setupFormValidation();
+    this.setupMembershipFeeUpdater();
     this.setupFormHandlers();
     this.setupAdminEventForm();
     this.setupPublicEventsHandlers();
@@ -2838,6 +2858,34 @@ class App {
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     MEMBERSHIP FEE — tier selection drives the total payable
+     ════════════════════════════════════════════════════════════════════ */
+
+  updateMembershipTotalFee() {
+    const planSelect = document.getElementById('appMembershipPlan');
+    const totalEl = document.getElementById('membershipTotalFee');
+    if (!planSelect || !totalEl) return null;
+    const amount = MEMBERSHIP_FEES[planSelect.value];
+    if (amount === undefined) {
+      totalEl.textContent = '—';
+      return null;
+    }
+    totalEl.textContent = formatMembershipFee(amount);
+    return amount;
+  }
+
+  setupMembershipFeeUpdater() {
+    const planSelect = document.getElementById('appMembershipPlan');
+    if (!planSelect) return;
+    // Initialise the total from the default-selected tier.
+    this.updateMembershipTotalFee();
+    planSelect.addEventListener('change', () => {
+      this.updateMembershipTotalFee();
+      this.validateField(planSelect);
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      FORM VALIDATION
      ════════════════════════════════════════════════════════════════════ */
 
@@ -3027,6 +3075,12 @@ class App {
         case 'paymentRef':
           if (val.length > 0 && val.length < 6) { isValid = false; errorMsg = 'UTR must be at least 6 characters.'; }
           break;
+        case 'membershipPlan':
+          if (!MEMBERSHIP_PLANS.includes(val)) { isValid = false; errorMsg = 'Select a valid membership type.'; }
+          break;
+        case 'paymentMode':
+          if (!['Cash', 'UPI', 'Bank Transfer'].includes(val)) { isValid = false; errorMsg = 'Select a valid payment mode.'; }
+          break;
       }
     }
 
@@ -3101,6 +3155,18 @@ class App {
         try {
           const formData = new FormData(membershipForm);
           const data = Object.fromEntries(formData.entries());
+          // Derive the total fee from the selected tier — never trust a
+          // stale/hand-edited value. The server re-derives this too.
+          const expectedFee = MEMBERSHIP_FEES[data.membershipPlan];
+          if (expectedFee === undefined) {
+            this.showToast('Select a valid membership type.', 'warning');
+            const planSelect = document.getElementById('appMembershipPlan');
+            if (planSelect) planSelect.focus();
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Application for Admin Approval'; }
+            return;
+          }
+          data.totalFee = expectedFee;
+          data.paymentAmount = String(expectedFee);
           data.paymentProof = this.currentPaymentProofBase64 || '';
           for (const [key, value] of Object.entries(this.docFiles)) {
             data[key] = value;
@@ -3116,6 +3182,7 @@ class App {
 
           // Reset form
           membershipForm.reset();
+          this.updateMembershipTotalFee();
           this.currentPaymentProofBase64 = null;
           this.currentPaymentProofFile = null;
           this.docFiles = {};
