@@ -3079,7 +3079,7 @@ class App {
           if (!MEMBERSHIP_PLANS.includes(val)) { isValid = false; errorMsg = 'Select a valid membership type.'; }
           break;
         case 'paymentMode':
-          if (!['Cash', 'UPI', 'Bank Transfer'].includes(val)) { isValid = false; errorMsg = 'Select a valid payment mode.'; }
+          if (!['Cash', 'UPI', 'RTGS', 'NEFT', 'Bank Transfer'].includes(val)) { isValid = false; errorMsg = 'Select a valid payment mode.'; }
           break;
       }
     }

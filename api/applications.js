@@ -252,9 +252,9 @@ async function handler(req, res) {
       return res.status(400).json({ error: `Total fee mismatch for the selected membership type (expected ₹${expectedFee.toLocaleString('en-IN')}/-).` });
     }
     const paymentAmount = String(expectedFee);
-    const PAYMENT_MODES = ['Cash', 'UPI', 'Bank Transfer'];
+    const PAYMENT_MODES = ['Cash', 'UPI', 'RTGS', 'NEFT', 'Bank Transfer'];
     if (!PAYMENT_MODES.includes(paymentMode)) {
-      return res.status(400).json({ error: 'Select a valid payment mode (Cash, UPI or Bank Transfer).' });
+      return res.status(400).json({ error: 'Select a valid payment mode (Cash, UPI, RTGS, NEFT or Bank Transfer).' });
     }
     if (regDate) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(regDate)) {

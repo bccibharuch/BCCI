@@ -173,6 +173,15 @@ r = await call(applications, {
 });
 check('a second application from the same email → 409', r.statusCode === 409, `got ${r.statusCode}`);
 
+// Payment mode is validated before the duplicate-email check: an accepted mode
+// reaches the 409, a rejected one stops at 400.
+for (const mode of ['RTGS', 'NEFT']) {
+  r = await call(applications, { method: 'POST', token: applicantToken, body: validApp({ paymentMode: mode }) });
+  check(`payment mode "${mode}" passes validation`, r.statusCode === 409, `got ${r.statusCode}`);
+}
+r = await call(applications, { method: 'POST', token: applicantToken, body: validApp({ paymentMode: 'Cheque' }) });
+check('unknown payment mode → 400', r.statusCode === 400, `got ${r.statusCode}`);
+
 // Server-side validation checks (SEC-06)
 r = await call(applications, {
   method: 'POST', token: applicantToken, ip: '203.0.113.11',
