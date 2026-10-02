@@ -44,7 +44,7 @@ function fail(message) {
   process.exit(1);
 }
 
-/** Excel serial date (1900 system) → ISO timestamp at noon IST-safe UTC. */
+/** Excel serial date (1900 system) → ISO timestamp at 12:00 UTC, so no timezone shifts the calendar day. */
 function serialToIso(serial) {
   if (!Number.isFinite(serial)) fail(`Invalid sheet date: ${serial}`);
   return new Date(Math.round((serial - 25569) * 86400000) + 12 * 3600 * 1000).toISOString();
@@ -91,7 +91,7 @@ function buildRecord(member, docsDir, index) {
   }
 
   const record = {
-    id: `BCCI-${Date.now()}-${index}${randomBytes(3).toString('hex')}`,
+    id: `BCCI-${Date.now() + index}-${randomBytes(4).toString('hex')}`,
     applicantName: member.repName,
     fullName: member.repName,
     subject: 'Membership (imported from Secretariat register)',
