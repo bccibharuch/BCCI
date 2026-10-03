@@ -337,9 +337,13 @@ let firstTicketId = null;
     return r.getStatus();
   };
   const fromOneNetwork = [];
-  for (let i = 1; i <= 6; i++) fromOneNetwork.push(await reg(`guest${i}@example.com`, '192.0.2.50'));
-  ck('five registrations from one network for one event are accepted', fromOneNetwork.slice(0, 5).every(s => s === 200), JSON.stringify(fromOneNetwork));
-  ck('the sixth from the same network is refused with 429', fromOneNetwork[5] === 429, JSON.stringify(fromOneNetwork));
+  for (let i = 1; i <= 21; i++) {
+    fromOneNetwork.push(await reg(`guest${i}@example.com`, '192.0.2.50'));
+    // Spread over the hour in real life: clear the separate 10-a-minute burst counter.
+    await redis.del('bcci:rl:eventreg:ip:192.0.2.50');
+  }
+  ck('twenty registrations from one network for one event are accepted (a company\'s delegates)', fromOneNetwork.slice(0, 20).every(s => s === 200), JSON.stringify(fromOneNetwork));
+  ck('the 21st from the same network is refused with 429', fromOneNetwork[20] === 429, JSON.stringify(fromOneNetwork));
 
   const sameAddress = [];
   for (let i = 1; i <= 6; i++) sameAddress.push(await reg('target@example.com', `192.0.2.${100 + i}`));

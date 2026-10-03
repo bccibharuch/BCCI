@@ -368,71 +368,82 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'Payment reference / UTR must be at least 6 alphanumeric characters.' });
     }
 
-    // One application per verified email.
-    const existing = await getApplicationByEmail(applicantEmail);
-    if (existing) {
-      return res.status(409).json({
-        error: `An application for this email already exists (${existing.id}).`,
-        applicationId: existing.id,
-        application: existing,
-      });
+    // One application per verified email. The check and the save hold one
+    // lock, so a double-clicked submit cannot file two applications.
+    const applyLock = `apply:${applicantEmail}`;
+    const applyLockToken = await acquireLock(applyLock, 15);
+    if (!applyLockToken) {
+      return res.status(409).json({ error: 'Your application is already being submitted. Please wait a moment.' });
     }
-    const application = {
-      id: newApplicationId(),
-      applicantName: repName,
-      fullName,
-      subject,
-      repName,
-      repDesignation,
-      repMobile,
-      repEmail,
-      company,
-      email: applicantEmail,
-      phone,
-      address: applicantAddress,
-      city,
-      state,
-      district,
-      pincode,
-      website,
-      primaryBusiness,
-      businessDescription,
-      internationalOps,
-      regNumber,
-      regDate,
-      regPlace,
-      otherAssociations,
-      feedback,
-      membershipPlan,
-      paymentMode,
-      // Saved as validated (upper case), so registers and searches match.
-      gstin: gstNo,
-      gstNo,
-      pan: panNo,
-      panNo,
-      legalStatus,
-      enterpriseType,
-      businessServices: membershipType,
-      annualTurnover,
-      employees,
-      cin,
-      membershipType,
-      paymentProof,
-      gstCertProof: docs.gstCertProof,
-      panCertProof: docs.panCertProof,
-      regCertProof: docs.regCertProof,
-      repAttachment: docs.repAttachment,
-      paymentAmount,
-      totalFee: expectedFee,
-      paymentRef,
-      status: STATUS.PENDING,
-      submittedAt: new Date().toISOString(),
-      reviewedAt: null,
-      reviewedBy: null,
-      renewalYears: 1,
-    };
+    let saved;
+    try {
+      const existing = await getApplicationByEmail(applicantEmail);
+      if (existing) {
+        return res.status(409).json({
+          error: `An application for this email already exists (${existing.id}).`,
+          applicationId: existing.id,
+          application: existing,
+        });
+      }
+      const application = {
+        id: newApplicationId(),
+        applicantName: repName,
+        fullName,
+        subject,
+        repName,
+        repDesignation,
+        repMobile,
+        repEmail,
+        company,
+        email: applicantEmail,
+        phone,
+        address: applicantAddress,
+        city,
+        state,
+        district,
+        pincode,
+        website,
+        primaryBusiness,
+        businessDescription,
+        internationalOps,
+        regNumber,
+        regDate,
+        regPlace,
+        otherAssociations,
+        feedback,
+        membershipPlan,
+        paymentMode,
+        // Saved as validated (upper case), so registers and searches match.
+        gstin: gstNo,
+        gstNo,
+        pan: panNo,
+        panNo,
+        legalStatus,
+        enterpriseType,
+        businessServices: membershipType,
+        annualTurnover,
+        employees,
+        cin,
+        membershipType,
+        paymentProof,
+        gstCertProof: docs.gstCertProof,
+        panCertProof: docs.panCertProof,
+        regCertProof: docs.regCertProof,
+        repAttachment: docs.repAttachment,
+        paymentAmount,
+        totalFee: expectedFee,
+        paymentRef,
+        status: STATUS.PENDING,
+        submittedAt: new Date().toISOString(),
+        reviewedAt: null,
+        reviewedBy: null,
+        renewalYears: 1,
+      };
 
-    const saved = await putApplication(application);
+      saved = await putApplication(application);
+    } finally {
+      await releaseLock(applyLock, applyLockToken);
+    }
 
     // Notifications are sent here rather than by the browser, so they still go
     // out if the applicant closes the tab, and so the recipient list cannot be

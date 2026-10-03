@@ -159,8 +159,9 @@ async function handler(req, res) {
       }
       // Each registration emails the address typed in and takes a seat, so cap
       // both: a script cannot fill one event from a single network, nor use
-      // the form to send tickets to a stranger's inbox over and over.
-      const eventIpLimit = await rateLimit(`eventreg:ip:${ip}:event:${eventId}`, { max: 5, windowSec: 3600 });
+      // the form to send tickets to a stranger's inbox over and over. 20 an
+      // hour still lets a company register its delegates from one office.
+      const eventIpLimit = await rateLimit(`eventreg:ip:${ip}:event:${eventId}`, { max: 20, windowSec: 3600 });
       if (!eventIpLimit.ok) {
         return tooManyRequests(res, eventIpLimit.retryAfter, 'Too many registrations for this event from your network. Please try again later.');
       }

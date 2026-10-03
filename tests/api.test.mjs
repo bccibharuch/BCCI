@@ -313,6 +313,22 @@ r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: a
 check('admin approves → 200, status Approved', r.statusCode === 200 && r.body?.application?.status === 'Approved', JSON.stringify(r.body).slice(0, 200));
 check('approvedAt is recorded', !!r.body?.application?.approvedAt);
 
+// A double-clicked submit must file exactly one application.
+await call(sendOtp, { method: 'POST', ip: '203.0.113.81', body: { email: 'double@example.com' } });
+const otpDouble = JSON.parse(mock.store.get('bcci:otp:double@example.com'));
+r = await call(verifyOtp, { method: 'POST', ip: '203.0.113.81', body: { email: 'double@example.com', code: otpDouble, name: 'Double Click' } });
+const doubleToken = r.body?.session?.token;
+const doubleBody = validApp({ company: 'Double Click Pvt Ltd', repName: 'Dev Patel', gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A' });
+const [d1, d2] = await Promise.all([
+  call(applications, { method: 'POST', token: doubleToken, ip: '203.0.113.82', body: doubleBody }),
+  call(applications, { method: 'POST', token: doubleToken, ip: '203.0.113.83', body: doubleBody }),
+]);
+const doubleCodes = [d1.statusCode, d2.statusCode].sort();
+check('two simultaneous submits file one application (201 + 409)', doubleCodes[0] === 201 && doubleCodes[1] === 409, JSON.stringify(doubleCodes));
+const doubleList = await call(applications, { method: 'GET', token: adminToken });
+check('only one record exists for the double-clicked email',
+  (doubleList.body?.applications || []).filter((a) => a.email === 'double@example.com').length === 1);
+
 // Rejection with a reason: persisted on the record, not just emailed
 await call(sendOtp, { method: 'POST', ip: '203.0.113.77', body: { email: 'reject@example.com' } });
 const otp2 = JSON.parse(mock.store.get('bcci:otp:reject@example.com'));
