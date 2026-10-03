@@ -42,6 +42,7 @@ export const {
   getEventAttendees,
   registerForEvent,
   confirmEventPayment,
+  removeEventAttendee,
   acquireLock,
   releaseLock,
 } = backend;

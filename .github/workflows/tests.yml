@@ -17,8 +17,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Lower bound is the engines floor in package.json.
-        node-version: ['18', '20']
+        # 24 is the "engines" target (Vercel, Docker); 22 is the oldest
+        # maintained LTS that nodemailer 10 and --env-file support.
+        node-version: ['22', '24']
+
+    # Runs tests/postgres.test.mjs against a real database instead of skipping it.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bcci
+          POSTGRES_PASSWORD: testpw
+          POSTGRES_DB: bcci
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U bcci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4
@@ -38,3 +55,5 @@ jobs:
       # credentials and no network access are needed.
       - name: Run tests
         run: npm test
+        env:
+          TEST_DATABASE_URL: postgresql://bcci:testpw@localhost:5433/bcci

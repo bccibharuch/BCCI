@@ -1,4 +1,5 @@
-FROM node:20-alpine
+# Matches "engines" in package.json (Node 20 reached end of life in April 2026).
+FROM node:24-alpine
 
 # Run as an unprivileged user, not root.
 RUN addgroup -S bcci && adduser -S bcci -G bcci
@@ -7,7 +8,7 @@ WORKDIR /app
 
 # Install dependencies first so this layer caches across code changes.
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm ci --omit=dev --no-audit --no-fund
 
 COPY --chown=bcci:bcci . .
 

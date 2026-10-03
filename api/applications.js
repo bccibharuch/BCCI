@@ -54,12 +54,29 @@ function newApplicationId() {
 
 const INDIAN_DATE = { day: 'numeric', month: 'long', year: 'numeric' };
 
-/** Membership expiry, mirroring the client's getMembershipValidity(). */
+/**
+ * Membership expiry, mirroring the client's getMembershipValidity().
+ * A renewal stores expiresAt; records never renewed since that field was
+ * added fall back to approval date + renewalYears.
+ */
 function validUntil(app) {
+  if (app.expiresAt && Number.isFinite(Date.parse(app.expiresAt))) return new Date(app.expiresAt);
   const from = app.approvedAt ? new Date(app.approvedAt) : new Date(app.submittedAt || Date.now());
   const until = new Date(from);
   until.setFullYear(until.getFullYear() + (Number(app.renewalYears) || 1));
   return until;
+}
+
+/**
+ * Expiry after one more year: from the current expiry while the membership
+ * is still running, from today once it has lapsed, so a member who renews
+ * late is not left expired after paying.
+ */
+function renewedExpiry(app, now = new Date()) {
+  const current = validUntil(app);
+  const next = new Date(Math.max(current.getTime(), now.getTime()));
+  next.setFullYear(next.getFullYear() + 1);
+  return next.toISOString();
 }
 
 async function handler(req, res) {
@@ -351,71 +368,82 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'Payment reference / UTR must be at least 6 alphanumeric characters.' });
     }
 
-    // One application per verified email.
-    const existing = await getApplicationByEmail(applicantEmail);
-    if (existing) {
-      return res.status(409).json({
-        error: `An application for this email already exists (${existing.id}).`,
-        applicationId: existing.id,
-        application: existing,
-      });
+    // One application per verified email. The check and the save hold one
+    // lock, so a double-clicked submit cannot file two applications.
+    const applyLock = `apply:${applicantEmail}`;
+    const applyLockToken = await acquireLock(applyLock, 15);
+    if (!applyLockToken) {
+      return res.status(409).json({ error: 'Your application is already being submitted. Please wait a moment.' });
     }
-    const application = {
-      id: newApplicationId(),
-      applicantName: repName,
-      fullName,
-      subject,
-      repName,
-      repDesignation: str(body.repDesignation, 120),
-      repMobile,
-      repEmail,
-      company,
-      email: applicantEmail,
-      phone,
-      address: applicantAddress,
-      city,
-      state,
-      district,
-      pincode: str(body.pincode, 10),
-      website,
-      primaryBusiness,
-      businessDescription,
-      internationalOps,
-      regNumber,
-      regDate,
-      regPlace,
-      otherAssociations,
-      feedback,
-      membershipPlan,
-      paymentMode,
-      pincode: str(body.pincode, 10),
-      gstin: str(body.gstNo, 20),
-      gstNo: str(body.gstNo, 20),
-      pan: str(body.panNo, 15),
-      panNo: str(body.panNo, 15),
-      legalStatus: str(body.legalStatus, 80),
-      enterpriseType: str(body.enterpriseType, 80),
-      businessServices: membershipType,
-      annualTurnover: str(body.annualTurnover, 60),
-      employees: str(body.employees, 30),
-      cin: str(body.cin, 30),
-      membershipType,
-      paymentProof,
-      gstCertProof: docs.gstCertProof,
-      panCertProof: docs.panCertProof,
-      regCertProof: docs.regCertProof,
-      repAttachment: docs.repAttachment,
-      paymentAmount,
-      totalFee: expectedFee,
-      paymentRef: str(body.paymentRef, 80),
-      status: STATUS.PENDING,
-      submittedAt: new Date().toISOString(),
-      reviewedAt: null,
-      reviewedBy: null,
-      renewalYears: 1,
-    };
+    let saved;
+    try {
+      const existing = await getApplicationByEmail(applicantEmail);
+      if (existing) {
+        return res.status(409).json({
+          error: `An application for this email already exists (${existing.id}).`,
+          applicationId: existing.id,
+          application: existing,
+        });
+      }
+      const application = {
+        id: newApplicationId(),
+        applicantName: repName,
+        fullName,
+        subject,
+        repName,
+        repDesignation,
+        repMobile,
+        repEmail,
+        company,
+        email: applicantEmail,
+        phone,
+        address: applicantAddress,
+        city,
+        state,
+        district,
+        pincode,
+        website,
+        primaryBusiness,
+        businessDescription,
+        internationalOps,
+        regNumber,
+        regDate,
+        regPlace,
+        otherAssociations,
+        feedback,
+        membershipPlan,
+        paymentMode,
+        // Saved as validated (upper case), so registers and searches match.
+        gstin: gstNo,
+        gstNo,
+        pan: panNo,
+        panNo,
+        legalStatus,
+        enterpriseType,
+        businessServices: membershipType,
+        annualTurnover,
+        employees,
+        cin,
+        membershipType,
+        paymentProof,
+        gstCertProof: docs.gstCertProof,
+        panCertProof: docs.panCertProof,
+        regCertProof: docs.regCertProof,
+        repAttachment: docs.repAttachment,
+        paymentAmount,
+        totalFee: expectedFee,
+        paymentRef,
+        status: STATUS.PENDING,
+        submittedAt: new Date().toISOString(),
+        reviewedAt: null,
+        reviewedBy: null,
+        renewalYears: 1,
+      };
 
-    const saved = await putApplication(application);
+      saved = await putApplication(application);
+    } finally {
+      await releaseLock(applyLock, applyLockToken);
+    }
 
     // Notifications are sent here rather than by the browser, so they still go
     // out if the applicant closes the tab, and so the recipient list cannot be
@@ -538,6 +566,7 @@ async function handler(req, res) {
         return {
           ...app,
           renewalYears: (Number(app.renewalYears) || 1) + 1,
+          expiresAt: renewedExpiry(app),
           lastRenewedAt: renewalRecord.renewedAt,
           renewalStatus: 'Approved',
           pendingRenewal: null,
@@ -621,6 +650,7 @@ async function handler(req, res) {
           return {
             ...app,
             renewalYears: (Number(app.renewalYears) || 1) + 1,
+            expiresAt: renewedExpiry(app),
             lastRenewedAt: renewalRecord.renewedAt,
             renewalStatus: 'Approved',
             pendingRenewal: null,

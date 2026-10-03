@@ -3,7 +3,8 @@
    Apple × Bloomberg × Architecture Magazine
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts load from the <link> in index.html; a second @import here only
+   delayed the first paint and fetched the families twice. */
 
 :root {
   /* ── Palette ─────────────────────────────────────────────────── */
@@ -1490,6 +1491,21 @@ body.admin-area footer .footer-grid > div:has(a) h4 {
   overflow-y: auto;
   padding: var(--space-2xl);
   position: relative;
+}
+
+.modal-box--wide {
+  max-width: min(1040px, calc(100vw - 2rem));
+}
+
+.modal-box--wide .data-table code,
+.modal-box--wide .data-table button {
+  white-space: nowrap;
+}
+
+/* .modal-box breaks text anywhere; in a wide table, columns can size to fit
+   whole emails and numbers, breaking only when a word cannot fit at all. */
+.modal-box--wide .data-table td {
+  overflow-wrap: break-word;
 }
 
 .modal-backdrop.show .modal-box {

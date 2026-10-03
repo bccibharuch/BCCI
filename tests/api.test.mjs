@@ -313,6 +313,22 @@ r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: a
 check('admin approves → 200, status Approved', r.statusCode === 200 && r.body?.application?.status === 'Approved', JSON.stringify(r.body).slice(0, 200));
 check('approvedAt is recorded', !!r.body?.application?.approvedAt);
 
+// A double-clicked submit must file exactly one application.
+await call(sendOtp, { method: 'POST', ip: '203.0.113.81', body: { email: 'double@example.com' } });
+const otpDouble = JSON.parse(mock.store.get('bcci:otp:double@example.com'));
+r = await call(verifyOtp, { method: 'POST', ip: '203.0.113.81', body: { email: 'double@example.com', code: otpDouble, name: 'Double Click' } });
+const doubleToken = r.body?.session?.token;
+const doubleBody = validApp({ company: 'Double Click Pvt Ltd', repName: 'Dev Patel', gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A' });
+const [d1, d2] = await Promise.all([
+  call(applications, { method: 'POST', token: doubleToken, ip: '203.0.113.82', body: doubleBody }),
+  call(applications, { method: 'POST', token: doubleToken, ip: '203.0.113.83', body: doubleBody }),
+]);
+const doubleCodes = [d1.statusCode, d2.statusCode].sort();
+check('two simultaneous submits file one application (201 + 409)', doubleCodes[0] === 201 && doubleCodes[1] === 409, JSON.stringify(doubleCodes));
+const doubleList = await call(applications, { method: 'GET', token: adminToken });
+check('only one record exists for the double-clicked email',
+  (doubleList.body?.applications || []).filter((a) => a.email === 'double@example.com').length === 1);
+
 // Rejection with a reason: persisted on the record, not just emailed
 await call(sendOtp, { method: 'POST', ip: '203.0.113.77', body: { email: 'reject@example.com' } });
 const otp2 = JSON.parse(mock.store.get('bcci:otp:reject@example.com'));
@@ -322,9 +338,13 @@ check('second applicant verifies → 200 with a session token', r.statusCode ===
 
 r = await call(applications, {
   method: 'POST', token: rejectToken, ip: '203.0.113.78',
-  body: validApp({ company: 'Rao Foods', repName: 'Nita Rao', gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A' }),
+  body: validApp({ company: 'Rao Foods', repName: 'Nita Rao', gstNo: '24aaaaa0000a1z5', panNo: 'aaaaa0000a' }),
 });
 check('second application submits → 201', r.statusCode === 201, `got ${r.statusCode}`);
+check('GSTIN and PAN typed in lower case are saved in capitals',
+  r.body?.application?.gstNo === '24AAAAA0000A1Z5' && r.body?.application?.gstin === '24AAAAA0000A1Z5'
+    && r.body?.application?.panNo === 'AAAAA0000A' && r.body?.application?.pan === 'AAAAA0000A',
+  JSON.stringify({ gstNo: r.body?.application?.gstNo, panNo: r.body?.application?.panNo }));
 const rejectAppId = r.body?.applicationId;
 
 r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: 'Rejected', reason: 'Invalid GSTIN document' } });
@@ -400,6 +420,27 @@ check('SEC-03: concurrent approval incremented renewalYears by exactly +1 (years
 // Direct admin renewal
 const rAdminRenew = await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/ADMIN678' } });
 check('SEC-03: admin direct renew extends term to 4 years', rAdminRenew.statusCode === 200 && rAdminRenew.body?.application?.renewalYears === 4);
+
+const DAY = 86400000;
+const yearsFrom = (iso, base) => (Date.parse(iso) - Date.parse(base)) / (365.25 * DAY);
+const termStart = rAdminRenew.body?.application?.approvedAt;
+check('a running membership renews from its current expiry (approval + 4 years)',
+  Math.abs(yearsFrom(rAdminRenew.body?.application?.expiresAt, termStart) - 4) < 0.01,
+  `expiresAt ${rAdminRenew.body?.application?.expiresAt}, approvedAt ${termStart}`);
+
+// A member whose term lapsed years ago and renews late must come out active.
+const { updateApplication: rewrite } = await import(`${BCCI}/_lib/records.js`);
+const threeYearsAgo = new Date(Date.now() - 3 * 365 * DAY).toISOString();
+await rewrite(rejectAppId, (a) => ({ ...a, approvedAt: threeYearsAgo, renewalYears: 1, expiresAt: undefined }));
+r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
+check('a membership approved three years ago reads as expired', r.body?.member?.isExpired === true, JSON.stringify(r.body?.member));
+const rLate = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, action: 'renew', paymentRef: 'UTR/LATE0001' } });
+check('late renewal → 200', rLate.statusCode === 200, `got ${rLate.statusCode}`);
+check('late renewal runs one year from today, not from the lapsed term',
+  Math.abs((Date.parse(rLate.body?.application?.expiresAt) - Date.now()) / DAY - 365) < 2,
+  `expiresAt ${rLate.body?.application?.expiresAt}`);
+r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
+check('after a late renewal the QR check shows the member as active', r.body?.verified === true && r.body?.member?.isExpired === false, JSON.stringify(r.body?.member));
 
 // ════════════════════════════════════════════════════════════════════
 section('FUNC-01  Public QR verification endpoint');

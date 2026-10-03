@@ -80,7 +80,7 @@ Verify a deploy with `curl https://<your-domain>/api/health`.
 ## VPS
 
 ```bash
-git clone https://github.com/underratedgitter/BCCI.git
+git clone https://github.com/bccibharuch/BCCI.git
 cd BCCI
 npm install --omit=dev
 cp .env.example .env.local     # then edit it
@@ -88,7 +88,7 @@ cp .env.example .env.local     # then edit it
 node --env-file=.env.local server.js
 ```
 
-Node 20+ supports `--env-file` natively; no dotenv needed.
+Node 22+ (the app targets Node 24) supports `--env-file` natively; no dotenv needed.
 
 ### systemd
 
