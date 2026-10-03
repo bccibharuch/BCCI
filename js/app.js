@@ -30,6 +30,12 @@ const MEMBERSHIP_FEES = {
 
 const MEMBERSHIP_PLANS = Object.keys(MEMBERSHIP_FEES);
 
+/** Highlighted membership-plan chip for admin lists and the dossier; "—" for legacy records without a plan. */
+function membershipPlanChip(app) {
+  if (!app.membershipPlan) return '<span style="color: #94A3B8;">—</span>';
+  return `<span style="display: inline-block; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.78rem; font-weight: 700; white-space: nowrap;">${escapeHtml(app.membershipPlan)}</span>`;
+}
+
 function formatMembershipFee(amount) {
   return `₹${Number(amount).toLocaleString('en-IN')}/-`;
 }
@@ -3344,7 +3350,7 @@ class App {
 
   _showAdminLoading() {
     const skeletonRow = (cols) => `<tr><td colspan="${cols}"><span class="skeleton-bar" style="width:40%"></span><span class="skeleton-bar"></span><span class="skeleton-bar" style="width:70%"></span></td></tr>`;
-    [['pendingAppsBody', 7, 'pendingAppsCards'], ['approvedAppsBody', 7, 'approvedAppsCards'], ['rejectedAppsBody', 7, 'rejectedAppsCards'], ['enquiriesBody', 5, 'enquiriesCards']].forEach(([bodyId, cols, cardsId]) => {
+    [['pendingAppsBody', 8, 'pendingAppsCards'], ['approvedAppsBody', 8, 'approvedAppsCards'], ['rejectedAppsBody', 8, 'rejectedAppsCards'], ['enquiriesBody', 5, 'enquiriesCards']].forEach(([bodyId, cols, cardsId]) => {
       const body = document.getElementById(bodyId);
       if (body) body.innerHTML = skeletonRow(cols);
       const cards = document.getElementById(cardsId);
@@ -3442,6 +3448,7 @@ class App {
         <tr>
           <td><strong>${escapeHtml(app.id)}</strong></td>
           <td><div style="font-weight: 600;">${escapeHtml(app.company)}</div><small style="color: #94A3B8;">${escapeHtml(app.legalStatus)} &bull; ${escapeHtml(app.enterpriseType)}</small></td>
+          <td>${membershipPlanChip(app)}</td>
           <td>${escapeHtml(app.repName)}<br/><small style="color: #94A3B8;">${escapeHtml(app.repDesignation || 'Applicant')}</small></td>
           <td>${escapeHtml(app.businessServices)}</td>
           <td><span class="badge-status badge-pending"><i class="fas fa-clock"></i> Pending</span></td>
@@ -3463,6 +3470,9 @@ class App {
           </div>
           <div class="admin-card-meta">
             <div><strong>Rep:</strong> ${escapeHtml(app.repName)}</div>
+            <div><strong>Membership:</strong> ${membershipPlanChip(app)}</div>
+            <div><strong>Membership:</strong> ${membershipPlanChip(app)}</div>
+            <div><strong>Membership:</strong> ${membershipPlanChip(app)}</div>
             <div><strong>Sector:</strong> ${escapeHtml(app.businessServices)}</div>
             <div><strong>Status:</strong> <span class="badge-status badge-pending"><i class="fas fa-clock"></i> Pending</span></div>
             <div><strong>Date:</strong> ${escapeHtml(formatDate(app.submittedAt))}</div>
@@ -3474,7 +3484,7 @@ class App {
           </div>
         </div>
       `),
-      7,
+      8,
       'fa-check-double',
       'No pending applications.'
     );
@@ -3487,6 +3497,7 @@ class App {
         <tr>
           <td><strong>${escapeHtml(app.id)}</strong></td>
           <td><div style="font-weight: 600; color: var(--primary);">${escapeHtml(app.company)}</div><small style="color: #64748B;">${escapeHtml(app.legalStatus || '')} &bull; ${escapeHtml(app.businessServices || '')}</small></td>
+          <td>${membershipPlanChip(app)}</td>
           <td>${escapeHtml(app.repName)}<br/><small style="color: #64748B;">${escapeHtml(app.repDesignation || 'Applicant')}</small></td>
           <td>${escapeHtml(app.email)}<br/><small style="color: #64748B;">${escapeHtml(app.phone || '')}</small></td>
           <td><span class="badge-status badge-approved"><i class="fas fa-check-circle"></i> Active</span></td>
@@ -3513,7 +3524,7 @@ class App {
           </div>
         </div>
       `),
-      7,
+      8,
       'fa-user-group',
       'No approved members yet.'
     );
@@ -3530,6 +3541,7 @@ class App {
         <tr>
           <td><strong>${escapeHtml(app.id)}</strong></td>
           <td><div style="font-weight: 600; color: #DC2626;">${escapeHtml(app.company)}</div><small style="color: #64748B;">${escapeHtml(app.legalStatus || '')} &bull; ${escapeHtml(app.enterpriseType || '')}</small></td>
+          <td>${membershipPlanChip(app)}</td>
           <td>${escapeHtml(app.repName)}<br/><small style="color: #64748B;">${escapeHtml(app.repDesignation || 'Applicant')}</small></td>
           <td>${escapeHtml(app.businessServices || '')}</td>
           <td><span class="badge-status badge-rejected"><i class="fas fa-times-circle"></i> Rejected</span></td>
@@ -3561,7 +3573,7 @@ class App {
           </div>
         </div>
       `;}),
-      7,
+      8,
       'fa-times-circle',
       'No rejected applications.'
     );
@@ -3815,10 +3827,11 @@ class App {
                     Submitted: <strong>${submittedDate}</strong>
                   </div>
                 </div>
-                <div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;">
                   <span class="badge-status badge-${escapeAttr(statusSlug)}" style="font-size: 0.85rem; padding: 0.35rem 0.85rem;">
                     ${statusText}
                   </span>
+                  ${app.membershipPlan ? `<span style="font-size: 0.7rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #64748B;">Membership Type</span>${membershipPlanChip(app)}` : ''}
                 </div>
               </div>
 
