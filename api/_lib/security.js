@@ -9,13 +9,13 @@
  * Content-Security-Policy for the portal.
  * Must stay in step with what index.html actually loads:
  *   - Font Awesome stylesheet + webfonts from cdnjs
- *   - qrcode.min.js from cdnjs
+ *   - qrcode.min.js from /assets/vendor (self-hosted)
  *   - DM Serif Display / Inter / JetBrains Mono from Google Fonts
  *   - inline styles (no inline script: buttons use data-action handlers)
  */
 export const CSP = [
   "default-src 'self'",
-  "script-src 'self' https://cdnjs.cloudflare.com",
+  "script-src 'self'",
   "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
   "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com",
   "img-src 'self' data: blob:",

@@ -216,6 +216,14 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+.bcci-card-qr-fallback {
+  font-size: 0.5rem;
+  line-height: 1.2;
+  color: #0a1628;
+  text-align: center;
+  padding: 2px;
+}
+
 .bcci-card-qr canvas,
 .bcci-card-qr img {
   width: 100% !important;

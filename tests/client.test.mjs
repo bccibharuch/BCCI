@@ -194,7 +194,18 @@ console.log('──────────────────────�
   }
   const cdnTags = HTML.match(/<(script|link)\b[^>]*https:\/\/cdnjs\.cloudflare\.com[^>]*>/g) || [];
   const loading = cdnTags.filter((t) => /\b(src|rel="stylesheet")/.test(t));
-  ck('every cdnjs script/stylesheet carries an integrity hash', loading.length >= 2 && loading.every((t) => /integrity="sha(384|512)-/.test(t) && /crossorigin="anonymous"/.test(t)), `${loading.length} tags`);
+  ck('every cdnjs script/stylesheet carries an integrity hash', loading.length >= 1 && loading.every((t) => /integrity="sha(384|512)-/.test(t) && /crossorigin="anonymous"/.test(t)), `${loading.length} tags`);
+  ck('no script is loaded from a third-party CDN', !/<script\b[^>]*src="https?:\/\//.test(HTML));
+  const qrTag = (HTML.match(/<script\b[^>]*qrcode\.min\.js[^>]*>/) || [''])[0];
+  ck('QR library is self-hosted with an integrity hash', /src="\/assets\/vendor\/qrcodejs\/qrcode\.min\.js"/.test(qrTag) && /integrity="sha512-/.test(qrTag), qrTag);
+  const qrBytes = fs.readFileSync(new URL('../assets/vendor/qrcodejs/qrcode.min.js', import.meta.url));
+  const { createHash } = await import('node:crypto');
+  ck('self-hosted QR library matches its integrity hash', qrTag.includes(`sha512-${createHash('sha512').update(qrBytes).digest('base64')}`));
+  ck('styles.css does not @import fonts a second time', !/@import\s+url\(['"]?https:\/\/fonts\.googleapis/.test(fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8')));
+  ck('no fake QR pattern when the library is missing', !SRC.includes('Generate deterministic pattern') && SRC.includes('QR unavailable'));
+  ck('QR image gets alt text and the raw payload tooltip is removed', SRC.includes("qrContainer.removeAttribute('title')") && /img\.alt = `Membership verification QR code/.test(SRC));
+  ck('attendee list opens in the wide dialog with a Remove action', /Registered Attendees[^\n]*\n\s*wide: true/.test(SRC) && SRC.includes('btnRemoveAttendee'));
+  ck('events search box has an accessible name', /id="eventsSearchInput"[^>]*aria-label="Search events"/.test(HTML));
 }
 
 ck('no cron is scheduled in vercel.json', !JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url),'utf8')).crons);

@@ -87,7 +87,12 @@ r = await req('/');
 for (const h of ['content-security-policy', 'x-frame-options', 'x-content-type-options', 'referrer-policy']) {
   ck(`${h} present`, !!r.headers.get(h), 'missing');
 }
-ck('CSP allows cdnjs (icons + QR)', (r.headers.get('content-security-policy') || '').includes('cdnjs.cloudflare.com'));
+ck('CSP allows cdnjs stylesheets (icons)', /style-src[^;]*cdnjs\.cloudflare\.com/.test(r.headers.get('content-security-policy') || ''));
+ck('CSP allows scripts from this site only', /script-src 'self'(;|$)/.test(r.headers.get('content-security-policy') || ''), r.headers.get('content-security-policy'));
+{
+  const qr = await req('/assets/vendor/qrcodejs/qrcode.min.js');
+  ck('self-hosted QR library is served', qr.status === 200 && qr.text.includes('QRCode'), `status ${qr.status}`);
+}
 ck('CSP allows Google Fonts', (r.headers.get('content-security-policy') || '').includes('fonts.googleapis.com'));
 
 sec('Health check');

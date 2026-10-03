@@ -2367,31 +2367,21 @@ class App {
         colorLight: '#ffffff',
         correctLevel: QRCode.CorrectLevel.H
       });
+      // qrcodejs sets the raw payload as a hover tooltip and leaves its <img>
+      // without alt text; describe the code for screen readers instead.
+      qrContainer.removeAttribute('title');
+      qrContainer.querySelectorAll('img').forEach((img) => {
+        img.alt = `Membership verification QR code for ${memberId}`;
+      });
+      qrContainer.querySelectorAll('canvas').forEach((c) => c.setAttribute('aria-hidden', 'true'));
     } else {
-      // Fallback: simple canvas pattern
-      const canvas = document.createElement('canvas');
-      canvas.width = 62;
-      canvas.height = 62;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 62, 62);
-      ctx.fillStyle = '#0a1628';
-      
-      // Generate deterministic pattern
-      let hash = 0;
-      for (let i = 0; i < memberId.length; i++) {
-        hash = ((hash << 5) - hash) + memberId.charCodeAt(i);
-        hash = hash & hash;
-      }
-      
-      for (let y = 0; y < 15; y++) {
-        for (let x = 0; x < 15; x++) {
-          if ((hash >> ((y * 15 + x) % 32)) & 1) {
-            ctx.fillRect(x * 4, y * 4, 4, 4);
-          }
-        }
-      }
-      qrContainer.appendChild(canvas);
+      // The QR library did not load. Never draw a pattern that only looks
+      // like a QR code: a card that cannot be scanned must say so.
+      const note = document.createElement('div');
+      note.className = 'bcci-card-qr-fallback';
+      note.setAttribute('role', 'note');
+      note.textContent = 'QR unavailable. Reload to show it.';
+      qrContainer.appendChild(note);
     }
   }
 
@@ -4170,6 +4160,7 @@ class App {
           const attendees = event.attendees || [];
           this.showModal({
             title: `<i class="fas fa-users" style="color:var(--primary);"></i> Registered Attendees: ${escapeHtml(event.title)}`,
+            wide: true,
             content: `
               <div style="font-size:0.9rem;">
                 <div style="background:#F8FAFC;padding:0.75rem 1rem;border-radius:6px;border:1px solid #E2E8F0;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
@@ -4192,7 +4183,6 @@ class App {
                           <th>Company</th>
                           <th>Payment / Admission</th>
                           <th>Registered At</th>
-                          <th><span class="sr-only">Actions</span></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4212,8 +4202,8 @@ class App {
                                 ${a.paymentRef ? `<br/><small style="color:#64748B;font-family:monospace;">UTR: ${escapeHtml(a.paymentRef)}</small>` : '<br/><small style="color:#64748B;">Complimentary</small>'}
                               `}
                             </td>
-                            <td><small>${escapeHtml(formatDate(a.registeredAt))}</small></td>
-                            <td><button type="button" class="btn-secondary btnRemoveAttendee" data-event-id="${escapeAttr(event.id)}" data-ticket-id="${escapeAttr(a.ticketId)}" data-attendee-name="${escapeAttr(a.name)}" aria-label="Remove ${escapeAttr(a.name)}" style="padding:0.2rem 0.5rem;font-size:0.72rem;color:#B91C1C;border-color:#FCA5A5;"><i class="fas fa-user-minus"></i> Remove</button></td>
+                            <td><small>${escapeHtml(formatDate(a.registeredAt))}</small>
+                              <br/><button type="button" class="btn-secondary btnRemoveAttendee" data-event-id="${escapeAttr(event.id)}" data-ticket-id="${escapeAttr(a.ticketId)}" data-attendee-name="${escapeAttr(a.name)}" aria-label="Remove ${escapeAttr(a.name)}" style="padding:0.2rem 0.5rem;font-size:0.72rem;margin-top:0.3rem;color:#B91C1C;border-color:#FCA5A5;"><i class="fas fa-user-minus"></i> Remove</button></td>
                           </tr>
                         `).join('')}
                       </tbody>
@@ -4855,10 +4845,12 @@ class App {
      MODAL, TOAST, LIGHTBOX — UI Utilities
      ════════════════════════════════════════════════════════════════════ */
 
-  showModal({ title, content }) {
+  showModal({ title, content, wide = false }) {
     const backdrop = document.getElementById('modalBackdrop');
     const container = document.getElementById('modalContainer');
     if (!backdrop || !container) return;
+    // Wide dialogs hold tables (e.g. event attendees) that do not fit 560px.
+    container.classList.toggle('modal-box--wide', Boolean(wide));
 
     // Remember where focus came from, so it can be handed back on close.
     this._modalReturnFocus = document.activeElement;

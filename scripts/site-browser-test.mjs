@@ -12,7 +12,8 @@ import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 
 const BASE = process.env.SITE_URL || 'http://localhost:3000';
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// Defaults to macOS Chrome; set CHROME_PATH for any other Chrome or Chromium.
+const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const SANDBOX_LOG = '/tmp/bcci-sandbox.log';
 
 let pass = 0, fail = 0;
