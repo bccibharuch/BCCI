@@ -322,9 +322,13 @@ check('second applicant verifies → 200 with a session token', r.statusCode ===
 
 r = await call(applications, {
   method: 'POST', token: rejectToken, ip: '203.0.113.78',
-  body: validApp({ company: 'Rao Foods', repName: 'Nita Rao', gstNo: '24AAAAA0000A1Z5', panNo: 'AAAAA0000A' }),
+  body: validApp({ company: 'Rao Foods', repName: 'Nita Rao', gstNo: '24aaaaa0000a1z5', panNo: 'aaaaa0000a' }),
 });
 check('second application submits → 201', r.statusCode === 201, `got ${r.statusCode}`);
+check('GSTIN and PAN typed in lower case are saved in capitals',
+  r.body?.application?.gstNo === '24AAAAA0000A1Z5' && r.body?.application?.gstin === '24AAAAA0000A1Z5'
+    && r.body?.application?.panNo === 'AAAAA0000A' && r.body?.application?.pan === 'AAAAA0000A',
+  JSON.stringify({ gstNo: r.body?.application?.gstNo, panNo: r.body?.application?.panNo }));
 const rejectAppId = r.body?.applicationId;
 
 r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: 'Rejected', reason: 'Invalid GSTIN document' } });

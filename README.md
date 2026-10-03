@@ -35,7 +35,7 @@ Two runtime dependencies: `@upstash/redis` and `nodemailer`.
 ## Running it
 
 ```bash
-git clone https://github.com/underratedgitter/BCCI.git
+git clone https://github.com/bccibharuch/BCCI.git
 cd BCCI
 npm install
 cp .env.example .env.local     # then fill it in
