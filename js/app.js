@@ -4192,6 +4192,7 @@ class App {
                           <th>Company</th>
                           <th>Payment / Admission</th>
                           <th>Registered At</th>
+                          <th><span class="sr-only">Actions</span></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4212,6 +4213,7 @@ class App {
                               `}
                             </td>
                             <td><small>${escapeHtml(formatDate(a.registeredAt))}</small></td>
+                            <td><button type="button" class="btn-secondary btnRemoveAttendee" data-event-id="${escapeAttr(event.id)}" data-ticket-id="${escapeAttr(a.ticketId)}" data-attendee-name="${escapeAttr(a.name)}" aria-label="Remove ${escapeAttr(a.name)}" style="padding:0.2rem 0.5rem;font-size:0.72rem;color:#B91C1C;border-color:#FCA5A5;"><i class="fas fa-user-minus"></i> Remove</button></td>
                           </tr>
                         `).join('')}
                       </tbody>
@@ -4254,6 +4256,27 @@ class App {
                   this.showToast(err.message || 'Failed to confirm attendee payment.', 'error');
                   confirmBtn.disabled = false;
                   confirmBtn.innerHTML = '<i class="fas fa-check"></i> Confirm Payment';
+                }
+              });
+            });
+
+            document.querySelectorAll('.btnRemoveAttendee').forEach(removeBtn => {
+              removeBtn.addEventListener('click', async () => {
+                const evId = removeBtn.getAttribute('data-event-id');
+                const tktId = removeBtn.getAttribute('data-ticket-id');
+                const who = removeBtn.getAttribute('data-attendee-name') || tktId;
+                if (!confirm(`Remove ${who} (${tktId}) from this event? Their seat will be released. This cannot be undone.`)) return;
+                removeBtn.disabled = true;
+                removeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing...';
+                try {
+                  const result = await this.store.removeEventAttendee(evId, tktId);
+                  this.showToast(result?.message || `Removed ticket ${tktId}.`, 'success');
+                  btn.click();
+                  await this.renderAdminEvents();
+                } catch (err) {
+                  this.showToast(err.message || 'Failed to remove the attendee.', 'error');
+                  removeBtn.disabled = false;
+                  removeBtn.innerHTML = '<i class="fas fa-user-minus"></i> Remove';
                 }
               });
             });

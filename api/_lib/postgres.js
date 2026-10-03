@@ -463,6 +463,44 @@ export async function registerForEvent(id, attendee) {
   }
 }
 
+/** Removes one attendee and frees their seat; see redis.js. */
+export async function removeEventAttendee(id, ticketId) {
+  if (!id || !ticketId) {
+    return { success: false, error: 'Event ID and ticket ID are required.' };
+  }
+  // Serialised by the event row's FOR UPDATE lock; see registerForEvent.
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const er = await client.query('SELECT id, registered_count, data FROM events WHERE id = $1 FOR UPDATE', [id]);
+    if (!er.rows.length) {
+      await client.query('ROLLBACK');
+      return { success: false, error: 'Event not found.' };
+    }
+    const event = rowToEvent(er.rows[0]);
+    const dr = await client.query(
+      'DELETE FROM event_attendees WHERE event_id = $1 AND ticket_id = $2 RETURNING data',
+      [id, ticketId]
+    );
+    if (!dr.rows.length) {
+      await client.query('ROLLBACK');
+      return { success: false, error: 'Attendee ticket not found.' };
+    }
+    const registeredCount = Math.max(0, (Number(event.registeredCount) || 0) - 1);
+    await client.query(
+      'UPDATE events SET registered_count = $3, updated_at = now(), data = $2 WHERE id = $1',
+      [id, { ...event, registeredCount }, registeredCount]
+    );
+    await client.query('COMMIT');
+    return { success: true, event: { ...event, registeredCount }, attendee: dr.rows[0].data };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
   if (!id || !ticketId) {
     return { success: false, error: 'Event ID and ticket ID are required.' };

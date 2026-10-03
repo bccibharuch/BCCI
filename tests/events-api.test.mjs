@@ -293,6 +293,59 @@ let firstTicketId = null;
   ck('Error explains capacity reached', getJson()?.error?.includes('capacity'));
 }
 
+// 7b. Admin removes an attendee: the seat is freed and the next person fits
+{
+  const register = async (body, ip = '198.51.100.7') => {
+    const r = mockReqRes({ method: 'POST', query: { action: 'register' }, body, headers: { 'x-forwarded-for': ip } });
+    await eventsHandler(r.req, r.res);
+    return r;
+  };
+  const remove = async (body, token) => {
+    const r = mockReqRes({ method: 'POST', query: { action: 'remove-attendee' }, body, headers: token ? { authorization: `Bearer ${token}` } : {} });
+    await eventsHandler(r.req, r.res);
+    return r;
+  };
+  const stored = await redis.get(KEYS.eventAttendees(createdEventId));
+  const deepak = (Array.isArray(stored) ? stored : JSON.parse(stored || '[]')).find(a => a.email === 'deepak@example.com');
+
+  const anon = await remove({ eventId: createdEventId, ticketId: deepak?.ticketId });
+  ck('remove-attendee without admin auth returns 401', anon.getStatus() === 401);
+  const missing = await remove({ eventId: createdEventId, ticketId: 'TKT-NOPE' }, adminToken);
+  ck('remove-attendee with an unknown ticket returns 404', missing.getStatus() === 404);
+  const removed = await remove({ eventId: createdEventId, ticketId: deepak?.ticketId }, adminToken);
+  ck('admin removes an attendee → 200', removed.getStatus() === 200, JSON.stringify(removed.getJson()));
+  ck('removal frees a seat (registeredCount 2 → 1)', removed.getJson()?.event?.registeredCount === 1, JSON.stringify(removed.getJson()?.event?.registeredCount));
+  const after = await redis.get(KEYS.eventAttendees(createdEventId));
+  ck('removed attendee is gone from the list', !(Array.isArray(after) ? after : JSON.parse(after || '[]')).some(a => a.ticketId === deepak?.ticketId));
+  const third = await register({ eventId: createdEventId, name: 'Third Person', email: 'third@example.com', phone: '9825999888', company: 'Third Corp', paymentRef: 'UPI/999888777666' });
+  ck('the freed seat can be taken by the next registrant', third.getStatus() === 200, JSON.stringify(third.getJson()));
+}
+
+// 7c. Abuse limits: one network cannot fill an event, one address cannot be emailed endlessly
+{
+  const c = mockReqRes({
+    method: 'POST',
+    headers: { authorization: `Bearer ${adminToken}` },
+    body: { title: 'Open Networking Evening', date: '2026-12-10', time: '06:00 PM', capacity: 100, pricingType: 'free', fee: 0, mode: 'offline', venue: 'Bharuch', description: 'Free networking evening for members and guests.' },
+  });
+  await eventsHandler(c.req, c.res);
+  const openId = c.getJson()?.event?.id;
+  const reg = async (email, ip) => {
+    const r = mockReqRes({ method: 'POST', query: { action: 'register' }, headers: { 'x-forwarded-for': ip },
+      body: { eventId: openId, name: 'Guest Person', email, phone: '9825012345', company: 'Guest Co' } });
+    await eventsHandler(r.req, r.res);
+    return r.getStatus();
+  };
+  const fromOneNetwork = [];
+  for (let i = 1; i <= 6; i++) fromOneNetwork.push(await reg(`guest${i}@example.com`, '192.0.2.50'));
+  ck('five registrations from one network for one event are accepted', fromOneNetwork.slice(0, 5).every(s => s === 200), JSON.stringify(fromOneNetwork));
+  ck('the sixth from the same network is refused with 429', fromOneNetwork[5] === 429, JSON.stringify(fromOneNetwork));
+
+  const sameAddress = [];
+  for (let i = 1; i <= 6; i++) sameAddress.push(await reg('target@example.com', `192.0.2.${100 + i}`));
+  ck('one address gets at most five attempts a day, the sixth is 429', sameAddress[5] === 429 && sameAddress[0] === 200, JSON.stringify(sameAddress));
+}
+
 // 8. Admin DELETE /api/events deletes the event
 {
   const { req, res, getStatus, getJson } = mockReqRes({

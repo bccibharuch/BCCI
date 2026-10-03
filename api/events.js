@@ -11,6 +11,7 @@ import {
   getEventAttendees,
   registerForEvent,
   confirmEventPayment,
+  removeEventAttendee,
 } from './_lib/records.js';
 import {
   applyCors,
@@ -156,6 +157,17 @@ async function handler(req, res) {
       if (!ipLimit.ok) {
         return tooManyRequests(res, ipLimit.retryAfter, 'Too many registration requests. Please wait a moment.');
       }
+      // Each registration emails the address typed in and takes a seat, so cap
+      // both: a script cannot fill one event from a single network, nor use
+      // the form to send tickets to a stranger's inbox over and over.
+      const eventIpLimit = await rateLimit(`eventreg:ip:${ip}:event:${eventId}`, { max: 5, windowSec: 3600 });
+      if (!eventIpLimit.ok) {
+        return tooManyRequests(res, eventIpLimit.retryAfter, 'Too many registrations for this event from your network. Please try again later.');
+      }
+      const recipientLimit = await rateLimit(`eventreg:email:${email}`, { max: 5, windowSec: 86400 });
+      if (!recipientLimit.ok) {
+        return tooManyRequests(res, recipientLimit.retryAfter, 'This email address has reached today\'s registration limit. Please try again tomorrow.');
+      }
 
       const result = await registerForEvent(eventId, { name, email, phone, company, paymentRef });
       if (!result.success) {
@@ -259,6 +271,32 @@ async function handler(req, res) {
           : `Registration confirmed, but we could not confirm the E-Ticket email was sent. Please keep your ticket ID (${ticketId}) for entry.`,
         event: result.event,
         attendee: result.attendee,
+        ticketId,
+      });
+    }
+
+    // ── 2c. Remove an attendee (Admin Only) ──────────────────────────
+    // Clears fake or duplicate registrations and frees their seats.
+    if (action === 'remove-attendee') {
+      if (!(await requireAdmin(req, res))) return;
+
+      const body = req.body || {};
+      const eventId = str(body.eventId || req.query?.eventId, 100);
+      const ticketId = str(body.ticketId || req.query?.ticketId, 100);
+      if (!eventId || !ticketId) {
+        return res.status(400).json({ success: false, error: 'Event ID and Ticket ID are required.' });
+      }
+
+      const result = await removeEventAttendee(eventId, ticketId);
+      if (!result.success) {
+        const notFound = /not found/i.test(result.error || '');
+        return res.status(notFound ? 404 : 409).json({ success: false, error: result.error });
+      }
+      console.log(`[BCCI Event] Removed ticket ${ticketId} from event ${eventId}`);
+      return res.status(200).json({
+        success: true,
+        message: 'Attendee removed and their seat released.',
+        event: result.event,
         ticketId,
       });
     }

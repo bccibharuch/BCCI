@@ -299,6 +299,14 @@ export class Store {
     return result;
   }
 
+  async removeEventAttendee(eventId, ticketId) {
+    return this.apiCall('/api/events?action=remove-attendee', {
+      method: 'POST',
+      body: { eventId, ticketId },
+      auth: 'admin',
+    });
+  }
+
   /* ════════════════════════════════════════════════════════════════════
      ADMIN SESSION
      ════════════════════════════════════════════════════════════════════ */

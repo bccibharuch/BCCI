@@ -116,6 +116,15 @@ check('attendee listed', (await lib.getEventAttendees('PG-EVT-1')).length === 1)
 const conf = await lib.confirmEventPayment('PG-EVT-1', reg1.ticketId, 'admin@test');
 check('confirm is idempotent on confirmed tickets', conf.success && conf.alreadyConfirmed === true);
 
+const rmMissing = await lib.removeEventAttendee('PG-EVT-1', 'TKT-NOPE');
+check('remove of an unknown ticket → not found', !rmMissing.success && /not found/i.test(rmMissing.error || ''));
+const rm = await lib.removeEventAttendee('PG-EVT-1', reg1.ticketId);
+check('remove frees the seat (count 1 → 0)', rm.success && rm.event.registeredCount === 0, JSON.stringify(rm).slice(0, 160));
+check('removed attendee no longer listed', (await lib.getEventAttendees('PG-EVT-1')).length === 0);
+check('stored count matches after removal', (await lib.getEvent('PG-EVT-1')).registeredCount === 0);
+const regAgain = await lib.registerForEvent('PG-EVT-1', { name: 'Other', email: 'other@example.com' });
+check('the freed seat can be taken', regAgain.success, JSON.stringify(regAgain).slice(0, 120));
+
 await lib.deleteEvent('PG-EVT-1');
 check('delete removes event + attendees', (await lib.getEvent('PG-EVT-1')) === null && (await lib.getEventAttendees('PG-EVT-1')).length === 0);
 

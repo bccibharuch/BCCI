@@ -528,6 +528,51 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
   });
 }
 
+/**
+ * Removes one attendee (e.g. a fake or duplicate registration) and frees
+ * their seat. Returns { success, attendee } or { success: false, error }.
+ */
+export async function removeEventAttendee(id, ticketId) {
+  if (!id || !ticketId) {
+    return { success: false, error: 'Event ID and ticket ID are required.' };
+  }
+  return withRetry(async () => {
+    const lockToken = await acquireLock(`eventreg:${id}`);
+    if (!lockToken) {
+      return { success: false, error: 'Event service is busy. Please try again in a moment.' };
+    }
+
+    try {
+      const rawEvent = await redis.get(KEYS.event(id));
+      if (!rawEvent) {
+        return { success: false, error: 'Event not found.' };
+      }
+      const event = typeof rawEvent === 'string' ? JSON.parse(rawEvent) : rawEvent;
+
+      const rawAttendees = await redis.get(KEYS.eventAttendees(id));
+      let attendees = [];
+      if (rawAttendees) {
+        attendees = Array.isArray(rawAttendees) ? rawAttendees : (typeof rawAttendees === 'string' ? JSON.parse(rawAttendees) : []);
+      }
+
+      const idx = attendees.findIndex(a => a.ticketId === ticketId);
+      if (idx === -1) {
+        return { success: false, error: 'Attendee ticket not found.' };
+      }
+
+      const [removed] = attendees.splice(idx, 1);
+      event.registeredCount = Math.max(0, (Number(event.registeredCount) || 0) - 1);
+
+      await redis.set(KEYS.eventAttendees(id), attendees);
+      await redis.set(KEYS.event(id), event);
+
+      return { success: true, event, attendee: removed };
+    } finally {
+      await releaseLock(`eventreg:${id}`, lockToken);
+    }
+  });
+}
+
 // ── Cooperative locks ────────────────────────────────────────────
 // Token-checked: release only deletes the key when the token still matches,
 // so a slow holder can never delete the next holder's lock after its own
