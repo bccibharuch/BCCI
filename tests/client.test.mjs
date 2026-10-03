@@ -255,6 +255,16 @@ ck('store has confirmEventPayment method', typeof store.confirmEventPayment === 
 ck('store has approveRenewal method', typeof store.approveRenewal === 'function');
 ck('store has rejectRenewal method', typeof store.rejectRenewal === 'function');
 
+// Membership validity mirrors the server: a renewal's expiresAt wins over approval + years.
+{
+  const DAY = 86400000;
+  const lapsed = { status: 'Approved', approvedAt: new Date(Date.now() - 3 * 365 * DAY).toISOString(), renewalYears: 1 };
+  ck('a term approved three years ago is expired', store.getMembershipValidity(lapsed).state === 'EXPIRED');
+  const renewed = { ...lapsed, renewalYears: 2, expiresAt: new Date(Date.now() + 365 * DAY).toISOString() };
+  ck('a late renewal (expiresAt a year out) is active', store.getMembershipValidity(renewed).state === 'ACTIVE');
+  ck('validity date follows expiresAt', store.getMembershipValidity(renewed).validUntilISO === renewed.expiresAt);
+}
+
 // Test 2: applicantLogin success
 localStorage.clear();
 mockResponse = {

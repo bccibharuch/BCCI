@@ -54,12 +54,29 @@ function newApplicationId() {
 
 const INDIAN_DATE = { day: 'numeric', month: 'long', year: 'numeric' };
 
-/** Membership expiry, mirroring the client's getMembershipValidity(). */
+/**
+ * Membership expiry, mirroring the client's getMembershipValidity().
+ * A renewal stores expiresAt; records never renewed since that field was
+ * added fall back to approval date + renewalYears.
+ */
 function validUntil(app) {
+  if (app.expiresAt && Number.isFinite(Date.parse(app.expiresAt))) return new Date(app.expiresAt);
   const from = app.approvedAt ? new Date(app.approvedAt) : new Date(app.submittedAt || Date.now());
   const until = new Date(from);
   until.setFullYear(until.getFullYear() + (Number(app.renewalYears) || 1));
   return until;
+}
+
+/**
+ * Expiry after one more year: from the current expiry while the membership
+ * is still running, from today once it has lapsed, so a member who renews
+ * late is not left expired after paying.
+ */
+function renewedExpiry(app, now = new Date()) {
+  const current = validUntil(app);
+  const next = new Date(Math.max(current.getTime(), now.getTime()));
+  next.setFullYear(next.getFullYear() + 1);
+  return next.toISOString();
 }
 
 async function handler(req, res) {
@@ -538,6 +555,7 @@ async function handler(req, res) {
         return {
           ...app,
           renewalYears: (Number(app.renewalYears) || 1) + 1,
+          expiresAt: renewedExpiry(app),
           lastRenewedAt: renewalRecord.renewedAt,
           renewalStatus: 'Approved',
           pendingRenewal: null,
@@ -621,6 +639,7 @@ async function handler(req, res) {
           return {
             ...app,
             renewalYears: (Number(app.renewalYears) || 1) + 1,
+            expiresAt: renewedExpiry(app),
             lastRenewedAt: renewalRecord.renewedAt,
             renewalStatus: 'Approved',
             pendingRenewal: null,

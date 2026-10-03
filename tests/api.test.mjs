@@ -401,6 +401,27 @@ check('SEC-03: concurrent approval incremented renewalYears by exactly +1 (years
 const rAdminRenew = await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/ADMIN678' } });
 check('SEC-03: admin direct renew extends term to 4 years', rAdminRenew.statusCode === 200 && rAdminRenew.body?.application?.renewalYears === 4);
 
+const DAY = 86400000;
+const yearsFrom = (iso, base) => (Date.parse(iso) - Date.parse(base)) / (365.25 * DAY);
+const termStart = rAdminRenew.body?.application?.approvedAt;
+check('a running membership renews from its current expiry (approval + 4 years)',
+  Math.abs(yearsFrom(rAdminRenew.body?.application?.expiresAt, termStart) - 4) < 0.01,
+  `expiresAt ${rAdminRenew.body?.application?.expiresAt}, approvedAt ${termStart}`);
+
+// A member whose term lapsed years ago and renews late must come out active.
+const { updateApplication: rewrite } = await import(`${BCCI}/_lib/records.js`);
+const threeYearsAgo = new Date(Date.now() - 3 * 365 * DAY).toISOString();
+await rewrite(rejectAppId, (a) => ({ ...a, approvedAt: threeYearsAgo, renewalYears: 1, expiresAt: undefined }));
+r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
+check('a membership approved three years ago reads as expired', r.body?.member?.isExpired === true, JSON.stringify(r.body?.member));
+const rLate = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, action: 'renew', paymentRef: 'UTR/LATE0001' } });
+check('late renewal → 200', rLate.statusCode === 200, `got ${rLate.statusCode}`);
+check('late renewal runs one year from today, not from the lapsed term',
+  Math.abs((Date.parse(rLate.body?.application?.expiresAt) - Date.now()) / DAY - 365) < 2,
+  `expiresAt ${rLate.body?.application?.expiresAt}`);
+r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
+check('after a late renewal the QR check shows the member as active', r.body?.verified === true && r.body?.member?.isExpired === false, JSON.stringify(r.body?.member));
+
 // ════════════════════════════════════════════════════════════════════
 section('FUNC-01  Public QR verification endpoint');
 

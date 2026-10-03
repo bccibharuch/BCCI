@@ -189,9 +189,15 @@ export class Store {
     const approvedDate = app.approvedAt
       ? new Date(app.approvedAt)
       : new Date(app.submittedAt || Date.now());
-    const validUntil = new Date(approvedDate);
     const yearsToAdd = Number(app.renewalYears) || 1;
-    validUntil.setFullYear(validUntil.getFullYear() + yearsToAdd);
+    // Mirrors validUntil() in api/applications.js: a renewal stores expiresAt.
+    let validUntil;
+    if (app.expiresAt && Number.isFinite(Date.parse(app.expiresAt))) {
+      validUntil = new Date(app.expiresAt);
+    } else {
+      validUntil = new Date(approvedDate);
+      validUntil.setFullYear(validUntil.getFullYear() + yearsToAdd);
+    }
 
     const daysRemaining = Math.ceil((validUntil.getTime() - Date.now()) / 86400000);
 
