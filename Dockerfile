@@ -7,13 +7,13 @@ RUN addgroup -S bcci && adduser -S bcci -G bcci
 WORKDIR /app
 
 # Install dependencies first so this layer caches across code changes.
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 COPY --chown=bcci:bcci . .
 
-# Secrets are supplied at runtime, never baked into the image.
-RUN rm -f .env .env.local
+# Secrets are supplied at runtime; .dockerignore keeps .env* out of the
+# build context so they never reach any layer.
 
 USER bcci
 

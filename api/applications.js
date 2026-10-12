@@ -56,12 +56,14 @@ const INDIAN_DATE = { day: 'numeric', month: 'long', year: 'numeric' };
 
 /**
  * Membership expiry, mirroring the client's getMembershipValidity().
- * A renewal stores expiresAt; records never renewed since that field was
- * added fall back to approval date + renewalYears.
+ * A renewal stores expiresAt. Records never renewed since that field was
+ * added run one term from validFrom when set (members imported from the
+ * Secretariat register, whose year starts on the date they paid), otherwise
+ * from approval.
  */
 function validUntil(app) {
   if (app.expiresAt && Number.isFinite(Date.parse(app.expiresAt))) return new Date(app.expiresAt);
-  const from = app.approvedAt ? new Date(app.approvedAt) : new Date(app.submittedAt || Date.now());
+  const from = new Date(app.validFrom || app.approvedAt || app.submittedAt || Date.now());
   const until = new Date(from);
   until.setFullYear(until.getFullYear() + (Number(app.renewalYears) || 1));
   return until;

@@ -1,0 +1,16 @@
+# Keep secrets and dev-only files out of the build context. A file that is
+# COPY'd and later rm'd still ships in the earlier image layer.
+.env
+.env.*
+!.env.example
+.git/
+.github/
+.vercel/
+.freebuff/
+.superpowers/
+node_modules/
+graphify-out/
+docs/
+tests/
+*.log
+.DS_Store
