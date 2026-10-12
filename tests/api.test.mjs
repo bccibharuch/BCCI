@@ -442,6 +442,25 @@ check('late renewal runs one year from today, not from the lapsed term',
 r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
 check('after a late renewal the QR check shows the member as active', r.body?.verified === true && r.body?.member?.isExpired === false, JSON.stringify(r.body?.member));
 
+// Members imported from the Secretariat register are approved on import day but
+// their year started when they paid (validFrom). A renewal's expiresAt still wins.
+const thirteenMonthsAgo = new Date(Date.now() - 395 * DAY).toISOString();
+await rewrite(rejectAppId, (a) => ({ ...a, approvedAt: new Date().toISOString(), validFrom: thirteenMonthsAgo, renewalYears: 1, expiresAt: undefined }));
+r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
+check('an imported member\'s year runs from validFrom, not the import-day approval',
+  Math.abs(yearsFrom(r.body?.member?.validUntil, thirteenMonthsAgo) - 1) < 0.01, JSON.stringify(r.body?.member));
+check('an imported member who paid 13 months ago reads as expired', r.body?.member?.isExpired === true, JSON.stringify(r.body?.member));
+
+const sixMonthsAgo = new Date(Date.now() - 182 * DAY).toISOString();
+await rewrite(rejectAppId, (a) => ({ ...a, validFrom: sixMonthsAgo, renewalYears: 1, expiresAt: undefined }));
+const rImported = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, action: 'renew', paymentRef: 'UTR/IMPORT0001' } });
+check('renewing a running imported member extends from validFrom + 1 year',
+  rImported.statusCode === 200 && Math.abs(yearsFrom(rImported.body?.application?.expiresAt, sixMonthsAgo) - 2) < 0.01,
+  `status ${rImported.statusCode}, expiresAt ${rImported.body?.application?.expiresAt}`);
+r = await call(applications, { method: 'GET', query: { verifyId: rejectAppId } });
+check('after renewal the stored expiresAt takes precedence over validFrom',
+  r.body?.member?.validUntil === new Date(rImported.body?.application?.expiresAt).toISOString(), JSON.stringify(r.body?.member));
+
 // ════════════════════════════════════════════════════════════════════
 section('FUNC-01  Public QR verification endpoint');
 

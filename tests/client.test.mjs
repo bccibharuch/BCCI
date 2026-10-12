@@ -274,6 +274,15 @@ ck('store has rejectRenewal method', typeof store.rejectRenewal === 'function');
   const renewed = { ...lapsed, renewalYears: 2, expiresAt: new Date(Date.now() + 365 * DAY).toISOString() };
   ck('a late renewal (expiresAt a year out) is active', store.getMembershipValidity(renewed).state === 'ACTIVE');
   ck('validity date follows expiresAt', store.getMembershipValidity(renewed).validUntilISO === renewed.expiresAt);
+
+  // Imported from the Secretariat register: approved today, but the year began on payment.
+  const paid = new Date(Date.now() - 395 * DAY);
+  const imported = { ...lapsed, approvedAt: new Date().toISOString(), validFrom: paid.toISOString(), renewalYears: 1, expiresAt: undefined };
+  const expectedEnd = new Date(paid); expectedEnd.setFullYear(expectedEnd.getFullYear() + 1);
+  ck('an imported member\'s year runs from validFrom', store.getMembershipValidity(imported).validUntilISO === expectedEnd.toISOString());
+  ck('an imported member who paid 13 months ago is expired', store.getMembershipValidity(imported).state === 'EXPIRED');
+  const importedRenewed = { ...imported, expiresAt: new Date(Date.now() + 200 * DAY).toISOString() };
+  ck('a renewal\'s expiresAt takes precedence over validFrom', store.getMembershipValidity(importedRenewed).validUntilISO === importedRenewed.expiresAt);
 }
 
 // Test 2: applicantLogin success
