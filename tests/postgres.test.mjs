@@ -35,7 +35,7 @@ const lib = await import('../api/_lib/postgres.js');
 await lib.initSchema();
 
 // Isolate from any other run: wipe record tables (locks included).
-await lib.query('TRUNCATE event_attendees, events, enquiries, applications, locks');
+await lib.query('TRUNCATE event_attendees, events, enquiries, applications, membership_plans, locks');
 
 // ── Applications ─────────────────────────────────────────────────
 section('Postgres applications');
@@ -155,6 +155,21 @@ const lockRows = await lib.query("SELECT COUNT(*)::int n FROM locks WHERE name L
 check('event writes take no cooperative lock', lockRows.rows[0].n === 0);
 await lib.deleteEvent('PG-EVT-RACE');
 
+// ── Membership plans ─────────────────────────────────────────────
+section('Postgres membership plans');
+
+const planA = { id: 'pg-gold', name: 'PG Gold', fee: 40000, label: 'PG Gold - ₹40,000/-', createdAt: '2026-01-01T00:00:00.000Z' };
+const planB = { id: 'pg-silver', name: 'PG Silver', fee: 20000, label: 'PG Silver - ₹20,000/-', createdAt: '2026-01-02T00:00:00.000Z' };
+check('insertCustomPlan stores a new plan', (await lib.insertCustomPlan(planA)) === true);
+check('insertCustomPlan stores a second plan', (await lib.insertCustomPlan(planB)) === true);
+check('insertCustomPlan refuses a duplicate id', (await lib.insertCustomPlan({ ...planA, fee: 1 })) === false);
+const storedPlans = await lib.listCustomPlans();
+check('listCustomPlans returns plans oldest first', storedPlans.map((p) => p.id).join() === 'pg-gold,pg-silver', JSON.stringify(storedPlans));
+check('duplicate insert did not overwrite the fee', storedPlans[0]?.fee === 40000);
+check('deleteCustomPlan removes a plan', (await lib.deleteCustomPlan('pg-gold')) === true);
+check('deleteCustomPlan reports a missing plan', (await lib.deleteCustomPlan('pg-gold')) === false);
+check('only the remaining plan is listed', (await lib.listCustomPlans()).map((p) => p.id).join() === 'pg-silver');
+
 // ── Storage switch ───────────────────────────────────────────────
 section('records.js switch');
 
@@ -166,5 +181,5 @@ check('records.js exposes locks', typeof records.acquireLock === 'function' && t
 
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 for (const line of results) console.log(line);
-await lib.query('TRUNCATE event_attendees, events, enquiries, applications, locks');
+await lib.query('TRUNCATE event_attendees, events, enquiries, applications, membership_plans, locks');
 process.exit(fail ? 1 : 0);

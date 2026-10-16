@@ -82,6 +82,12 @@ export async function initSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS event_attendees_email_uidx
       ON event_attendees (event_id, lower(email));
 
+    CREATE TABLE IF NOT EXISTS membership_plans (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      data JSONB NOT NULL DEFAULT '{}'
+    );
+
     CREATE TABLE IF NOT EXISTS locks (
       name TEXT PRIMARY KEY,
       token TEXT NOT NULL,
@@ -378,6 +384,31 @@ export async function deleteEvent(id) {
   if (!id) return false;
   await query('DELETE FROM events WHERE id = $1', [id]);
   return true;
+}
+
+// ── Membership plans (admin-added tiers; built-ins live in code) ───
+
+/** Admin-added membership plans, oldest first. */
+export async function listCustomPlans() {
+  const r = await query('SELECT data FROM membership_plans ORDER BY created_at, id');
+  return r.rows.map(row => row.data);
+}
+
+/** Stores a new plan; false when a plan with the same id already exists. */
+export async function insertCustomPlan(plan) {
+  if (!plan || !plan.id) throw new Error('Membership plan must have an ID');
+  const r = await query(
+    'INSERT INTO membership_plans (id, created_at, data) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING',
+    [plan.id, plan.createdAt || new Date().toISOString(), plan]
+  );
+  return r.rowCount === 1;
+}
+
+/** Removes a plan; false when it did not exist. */
+export async function deleteCustomPlan(id) {
+  if (!id) return false;
+  const r = await query('DELETE FROM membership_plans WHERE id = $1', [id]);
+  return r.rowCount > 0;
 }
 
 export async function getEventAttendees(id) {

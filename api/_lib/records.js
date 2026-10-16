@@ -1,5 +1,6 @@
 // api/_lib/records.js
-// Storage switch for durable records (applications, enquiries, events).
+// Storage switch for durable records (applications, enquiries, events,
+// admin-added membership plans).
 //
 //   STORAGE_BACKEND=redis     Upstash Redis (default — Vercel, serverless)
 //   STORAGE_BACKEND=postgres  Postgres on the VPS (docker-compose)
@@ -43,6 +44,9 @@ export const {
   registerForEvent,
   confirmEventPayment,
   removeEventAttendee,
+  listCustomPlans,
+  insertCustomPlan,
+  deleteCustomPlan,
   acquireLock,
   releaseLock,
 } = backend;

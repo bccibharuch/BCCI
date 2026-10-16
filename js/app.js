@@ -16,8 +16,9 @@ const CONFIG = {
 };
 
 // ── Membership tiers ───────────────────────────────────────────
-// Single source of truth for the client: plan label → fee in INR.
-// Must stay in sync with MEMBERSHIP_FEES in api/applications.js.
+// Built-in plans: label → fee in INR. The form starts with these and swaps in
+// the live list from /api/membership-plans, which adds the tiers admins create.
+// Must stay in sync with BUILT_IN_PLANS in api/_lib/membership-plans.js.
 const MEMBERSHIP_FEES = {
   'General Membership - ₹5,000/-': 5000,
   'Executive Membership - ₹10,000/-': 10000,
@@ -29,7 +30,8 @@ const MEMBERSHIP_FEES = {
   'Large - ₹2,500 / Year': 2500,
 };
 
-const MEMBERSHIP_PLANS = Object.keys(MEMBERSHIP_FEES);
+/** Plans currently on offer (label → fee); replaced by applyMembershipPlans(). */
+const membershipFees = new Map(Object.entries(MEMBERSHIP_FEES));
 
 /**
  * Membership plan as shown in the admin portal: the plan's type with the amount the
@@ -160,8 +162,10 @@ class App {
     this.setupDocUploads();
     this.setupFormValidation();
     this.setupMembershipFeeUpdater();
+    this.loadMembershipPlans();
     this.setupFormHandlers();
     this.setupAdminEventForm();
+    this.setupAdminPlanForm();
     this.setupPublicEventsHandlers();
     this.setupModalEvents();
     this.setupLightboxEvents();
@@ -2876,13 +2880,51 @@ class App {
     const planSelect = document.getElementById('appMembershipPlan');
     const totalEl = document.getElementById('membershipTotalFee');
     if (!planSelect || !totalEl) return null;
-    const amount = MEMBERSHIP_FEES[planSelect.value];
+    const amount = membershipFees.get(planSelect.value);
     if (amount === undefined) {
       totalEl.textContent = '—';
       return null;
     }
     totalEl.textContent = formatMembershipFee(amount);
     return amount;
+  }
+
+  /**
+   * Fetches the live plan list (built-ins plus admin-added tiers) into the
+   * form. On failure the form keeps its built-in tiers; the server re-checks
+   * every fee either way.
+   */
+  async loadMembershipPlans() {
+    try {
+      const plans = await this.store.getMembershipPlans();
+      this.applyMembershipPlans(plans);
+      return plans;
+    } catch (err) {
+      console.warn('[Membership Plans] Keeping the built-in tiers:', err.message);
+      return null;
+    }
+  }
+
+  /** Replaces the plans on offer and rebuilds the Membership Type dropdown. */
+  applyMembershipPlans(plans) {
+    const valid = (Array.isArray(plans) ? plans : [])
+      .filter(p => p && typeof p.label === 'string' && p.label && Number(p.fee) > 0);
+    if (!valid.length) return;
+
+    membershipFees.clear();
+    valid.forEach(p => membershipFees.set(p.label, Number(p.fee)));
+
+    const planSelect = document.getElementById('appMembershipPlan');
+    if (!planSelect) return;
+    const current = planSelect.value;
+    planSelect.replaceChildren(...valid.map(p => {
+      const option = document.createElement('option');
+      option.value = p.label;
+      option.textContent = p.label;
+      return option;
+    }));
+    if (membershipFees.has(current)) planSelect.value = current;
+    this.updateMembershipTotalFee();
   }
 
   setupMembershipFeeUpdater() {
@@ -3087,7 +3129,7 @@ class App {
           if (val.length > 0 && val.length < 6) { isValid = false; errorMsg = 'UTR must be at least 6 characters.'; }
           break;
         case 'membershipPlan':
-          if (!MEMBERSHIP_PLANS.includes(val)) { isValid = false; errorMsg = 'Select a valid membership type.'; }
+          if (!membershipFees.has(val)) { isValid = false; errorMsg = 'Select a valid membership type.'; }
           break;
         case 'paymentMode':
           if (!['Cash', 'UPI', 'RTGS', 'NEFT', 'Bank Transfer'].includes(val)) { isValid = false; errorMsg = 'Select a valid payment mode.'; }
@@ -3168,7 +3210,7 @@ class App {
           const data = Object.fromEntries(formData.entries());
           // Derive the total fee from the selected tier — never trust a
           // stale/hand-edited value. The server re-derives this too.
-          const expectedFee = MEMBERSHIP_FEES[data.membershipPlan];
+          const expectedFee = membershipFees.get(data.membershipPlan);
           if (expectedFee === undefined) {
             this.showToast('Select a valid membership type.', 'warning');
             const planSelect = document.getElementById('appMembershipPlan');
@@ -3616,6 +3658,7 @@ class App {
 
     this.bindAdminActions();
     this.renderAdminEvents();
+    this.renderAdminMembershipPlans();
   }
 
   async handleApproveApplication(id) {
@@ -4308,6 +4351,139 @@ class App {
           this.showToast(err.message || 'Failed to delete event.', 'error');
         }
       };
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     ADMIN — MEMBERSHIP TYPES
+     ════════════════════════════════════════════════════════════════════ */
+
+  async renderAdminMembershipPlans() {
+    const tableBody = document.getElementById('adminPlansBody');
+    const cardsEl = document.getElementById('adminPlansCards');
+    if (!tableBody && !cardsEl) return;
+
+    let plans;
+    try {
+      plans = await this.store.getMembershipPlans();
+    } catch (err) {
+      console.error('[Admin Plans] Failed to load:', err);
+      const errHtml = `<div style="text-align:center;padding:2rem;color:#EF4444;"><i class="fas fa-exclamation-triangle"></i> Failed to load membership types. ${escapeHtml(err.message || '')}</div>`;
+      if (tableBody) tableBody.innerHTML = `<tr><td colspan="4" style="padding:0;">${errHtml}</td></tr>`;
+      if (cardsEl) cardsEl.innerHTML = errHtml;
+      return;
+    }
+
+    // Keep the application form on this page in step with what admins see.
+    this.applyMembershipPlans(plans);
+
+    const typeBadge = (plan) => plan.builtIn
+      ? '<span class="badge-status" style="background:#F1F5F9;color:#475569;border:1px solid #CBD5E1;"><i class="fas fa-lock"></i> Built-in</span>'
+      : '<span class="badge-status" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;"><i class="fas fa-user-shield"></i> Added by admin</span>';
+    const deleteButton = (plan, withLabel) => plan.builtIn
+      ? '<span style="color:#94A3B8;font-size:0.8rem;">—</span>'
+      : `<button type="button" class="btn-action-reject" data-delete-plan-id="${escapeAttr(plan.id)}" data-delete-plan-label="${escapeAttr(plan.label)}" style="padding:0.35rem 0.65rem;font-size:0.8rem;" title="Delete membership type"><i class="fas fa-trash-alt"></i>${withLabel ? ' Delete' : ''}</button>`;
+
+    if (tableBody) {
+      tableBody.innerHTML = plans.map(plan => `
+        <tr>
+          <td><div style="font-weight:700;color:var(--primary);">${escapeHtml(plan.name)}</div><small style="color:#64748B;">${escapeHtml(plan.label)}</small></td>
+          <td><strong style="color:var(--primary);">${escapeHtml(formatMembershipFee(plan.fee))}</strong></td>
+          <td>${typeBadge(plan)}</td>
+          <td>${deleteButton(plan, false)}</td>
+        </tr>
+      `).join('');
+    }
+
+    if (cardsEl) {
+      cardsEl.innerHTML = plans.map(plan => `
+        <div class="admin-mobile-card">
+          <div class="admin-card-header">
+            <div class="admin-card-company">${escapeHtml(plan.name)}</div>
+            <strong style="color:var(--primary);white-space:nowrap;">${escapeHtml(formatMembershipFee(plan.fee))}</strong>
+          </div>
+          <div class="admin-card-meta"><div>${typeBadge(plan)}</div></div>
+          ${plan.builtIn ? '' : `<div class="admin-card-actions">${deleteButton(plan, true)}</div>`}
+        </div>
+      `).join('');
+    }
+
+    document.querySelectorAll('[data-delete-plan-id]').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-delete-plan-id');
+        const label = btn.getAttribute('data-delete-plan-label');
+        if (!confirm(`Delete "${label}"? It will no longer be offered on the application form. Members who already joined on it keep their membership.`)) {
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await this.store.deleteMembershipPlan(id);
+          this.showToast(`"${label}" removed from the membership types.`, 'success');
+          await this.renderAdminMembershipPlans();
+        } catch (err) {
+          this.showToast(err.message || 'Failed to delete the membership type.', 'error');
+          btn.disabled = false;
+        }
+      };
+    });
+  }
+
+  setupAdminPlanForm() {
+    const form = document.getElementById('membershipPlanForm');
+    if (!form) return;
+    const nameInput = document.getElementById('planNameInput');
+    const feeInput = document.getElementById('planFeeInput');
+    const preview = document.getElementById('planLabelPreview');
+    const submitBtn = document.getElementById('btnAddPlan');
+
+    const readInput = () => {
+      const name = (nameInput?.value || '').replace(/\s+/g, ' ').trim();
+      const fee = Number(feeInput?.value);
+      return { name, fee };
+    };
+    const updatePreview = () => {
+      if (!preview) return;
+      const { name, fee } = readInput();
+      preview.textContent = name && Number.isInteger(fee) && fee > 0
+        ? `${name} - ${formatMembershipFee(fee)}`
+        : 'Enter a name and amount to preview';
+    };
+    nameInput?.addEventListener('input', updatePreview);
+    feeInput?.addEventListener('input', updatePreview);
+    updatePreview();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const { name, fee } = readInput();
+      if (name.length < 3 || name.length > 60) {
+        this.showToast('Membership type name must be 3–60 characters.', 'warning');
+        nameInput?.focus();
+        return;
+      }
+      if (!Number.isInteger(fee) || fee < 1 || fee > 10000000) {
+        this.showToast('Amount must be a whole number of rupees between ₹1 and ₹1,00,00,000.', 'warning');
+        feeInput?.focus();
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding…';
+      }
+      try {
+        const plan = await this.store.addMembershipPlan(name, fee);
+        form.reset();
+        updatePreview();
+        this.showToast(`"${plan.label}" added. It is now on the application form.`, 'success');
+        await this.renderAdminMembershipPlans();
+      } catch (err) {
+        this.showToast(err.message || 'Failed to add the membership type.', 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="fas fa-plus"></i> Add Membership Type';
+        }
+      }
     });
   }
 

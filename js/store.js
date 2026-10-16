@@ -240,6 +240,32 @@ export class Store {
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     MEMBERSHIP PLANS
+     ════════════════════════════════════════════════════════════════════ */
+
+  /** Every membership type on offer: built-ins plus admin-added ones. */
+  async getMembershipPlans() {
+    const result = await this.apiCall('/api/membership-plans');
+    return Array.isArray(result.plans) ? result.plans : [];
+  }
+
+  async addMembershipPlan(name, fee) {
+    const result = await this.apiCall('/api/membership-plans', {
+      method: 'POST',
+      body: { name, fee },
+      auth: 'admin',
+    });
+    return result.plan;
+  }
+
+  async deleteMembershipPlan(id) {
+    return this.apiCall(`/api/membership-plans?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      auth: 'admin',
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      EVENTS
      ════════════════════════════════════════════════════════════════════ */
 

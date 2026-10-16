@@ -38,6 +38,9 @@ export const KEYS = {
   eventIndex: 'bcci:event_index',
   eventAttendees: (id) => `bcci:event_attendees:${id}`,
 
+  plan: (id) => `bcci:plan:${id}`,
+  planIndex: 'bcci:plan_index',
+
   migrated: (what) => `bcci:migrated:${what}`,
 };
 
@@ -393,6 +396,41 @@ export async function deleteEvent(id) {
     await redis.del(KEYS.event(id), KEYS.eventAttendees(id));
     await redis.zrem(KEYS.eventIndex, id);
     return true;
+  });
+}
+
+// ── Membership plans (admin-added tiers; built-ins live in code) ───
+
+/** Admin-added membership plans, oldest first. */
+export async function listCustomPlans() {
+  return withRetry(async () => {
+    const ids = await redis.zrange(KEYS.planIndex, 0, -1);
+    if (!ids || !ids.length) return [];
+    const records = await redis.mget(...ids.map(KEYS.plan));
+    return records.filter(Boolean).map(r => (typeof r === 'string' ? JSON.parse(r) : r));
+  });
+}
+
+/** Stores a new plan; false when a plan with the same id already exists. */
+export async function insertCustomPlan(plan) {
+  if (!plan || !plan.id) throw new Error('Membership plan must have an ID');
+  return withRetry(async () => {
+    // NX makes the id (a slug of the name) the uniqueness guarantee, so two
+    // admins adding the same tier at once cannot both succeed.
+    const created = await redis.set(KEYS.plan(plan.id), plan, { nx: true });
+    if (!created) return false;
+    await redis.zadd(KEYS.planIndex, { score: Date.parse(plan.createdAt) || Date.now(), member: plan.id });
+    return true;
+  });
+}
+
+/** Removes a plan; false when it did not exist. */
+export async function deleteCustomPlan(id) {
+  if (!id) return false;
+  return withRetry(async () => {
+    const removed = await redis.del(KEYS.plan(id));
+    await redis.zrem(KEYS.planIndex, id);
+    return removed > 0;
   });
 }
 

@@ -19,6 +19,7 @@ const enquiries = (await import(`${BCCI}/enquiries.js`)).default;
 const sendOtp = (await import(`${BCCI}/send-otp.js`)).default;
 const verifyOtp = (await import(`${BCCI}/verify-otp.js`)).default;
 const sendEmailRoute = (await import(`${BCCI}/send-email.js`)).default;
+const membershipPlans = (await import(`${BCCI}/membership-plans.js`)).default;
 
 // ── Fake req/res ────────────────────────────────────────────────────
 function mockRes() {
@@ -604,6 +605,87 @@ r = await call(enquiries, {
 });
 check('enquiry with +91 phone succeeds (201)', r.statusCode === 201, `got ${r.statusCode}`);
 check('enquiry phone is normalized to 10 digits', r.body?.enquiry?.phone === '9898123456', `got ${r.body?.enquiry?.phone}`);
+
+// ════════════════════════════════════════════════════════════════════
+section('Admin-managed membership types');
+
+r = await call(membershipPlans, { method: 'GET' });
+const builtInPlans = r.body?.plans || [];
+check('GET /api/membership-plans is public → 200', r.statusCode === 200, `got ${r.statusCode}`);
+check('lists the 8 built-in types', builtInPlans.length === 8 && builtInPlans.every((p) => p.builtIn), JSON.stringify(builtInPlans.map((p) => p.label)));
+check('Corporate VIP is listed at ₹1,00,000', builtInPlans.some((p) => p.label === 'Corporate VIP Membership - ₹1,00,000/-' && p.fee === 100000));
+
+r = await call(membershipPlans, { method: 'POST', body: { name: 'Platinum Membership', fee: 50000 } });
+check('POST without a token → 401', r.statusCode === 401, `got ${r.statusCode}`);
+r = await call(membershipPlans, { method: 'POST', token: applicantToken, body: { name: 'Platinum Membership', fee: 50000 } });
+check('applicant cannot add a membership type → 401', r.statusCode === 401, `got ${r.statusCode}`);
+
+r = await call(membershipPlans, { method: 'POST', token: adminToken, body: { name: '  Platinum   Membership ', fee: '50,000' } });
+check('admin adds a membership type → 201', r.statusCode === 201, JSON.stringify(r.body));
+check('label is built from the name and amount', r.body?.plan?.label === 'Platinum Membership - ₹50,000/-', r.body?.plan?.label);
+const platinumId = r.body?.plan?.id;
+
+r = await call(membershipPlans, { method: 'GET' });
+const withPlatinum = r.body?.plans || [];
+const platinum = withPlatinum.find((p) => p.id === platinumId);
+check('new type is listed publicly as admin-added', platinum && platinum.builtIn === false && platinum.fee === 50000, JSON.stringify(platinum));
+check('public listing does not expose the admin who added it', !JSON.stringify(r.body).includes('admin@bccibharuch.in'));
+check('listing is ordered by amount', withPlatinum.every((p, i) => i === 0 || withPlatinum[i - 1].fee <= p.fee), JSON.stringify(withPlatinum.map((p) => p.fee)));
+
+r = await call(membershipPlans, { method: 'POST', token: adminToken, body: { name: 'platinum membership', fee: 60000 } });
+check('same name again (any case or amount) → 409', r.statusCode === 409, `got ${r.statusCode}`);
+r = await call(membershipPlans, { method: 'POST', token: adminToken, body: { name: 'Corporate VIP Membership', fee: 90000 } });
+check('name of a built-in type → 409', r.statusCode === 409, `got ${r.statusCode}`);
+
+for (const [label, body] of [
+  ['zero amount', { name: 'Zero Plan', fee: 0 }],
+  ['fractional amount', { name: 'Fraction Plan', fee: '1.5' }],
+  ['non-numeric amount', { name: 'Text Plan', fee: 'abc' }],
+  ['missing amount', { name: 'No Fee Plan' }],
+  ['amount over ₹1 crore', { name: 'Huge Plan', fee: 10000001 }],
+  ['too-short name', { name: 'ab', fee: 100 }],
+  ['markup in the name', { name: '<script>x</script>', fee: 100 }],
+  ['rupee sign in the name', { name: 'Gold ₹500', fee: 500 }],
+]) {
+  r = await call(membershipPlans, { method: 'POST', token: adminToken, body });
+  check(`rejects ${label} → 400`, r.statusCode === 400, `got ${r.statusCode} ${JSON.stringify(r.body)}`);
+}
+
+await call(sendOtp, { method: 'POST', ip: '203.0.113.91', body: { email: 'platinum@example.com' } });
+const otpPlatinum = JSON.parse(mock.store.get('bcci:otp:platinum@example.com'));
+r = await call(verifyOtp, { method: 'POST', ip: '203.0.113.91', body: { email: 'platinum@example.com', code: otpPlatinum, name: 'Platinum Member' } });
+const platinumToken = r.body?.session?.token;
+const platinumApp = (overrides) => validApp({
+  company: 'Platinum Polymers Pvt Ltd', repName: 'Meera Desai', gstNo: '24BBBBB1111B1Z5', panNo: 'BBBBB1111B',
+  membershipPlan: 'Platinum Membership - ₹50,000/-', ...overrides,
+});
+
+r = await call(applications, { method: 'POST', token: platinumToken, ip: '203.0.113.92', body: platinumApp({ paymentAmount: '5000' }) });
+check('application on the new type with the wrong amount → 400', r.statusCode === 400 && /expected ₹50,000\/-/.test(r.body?.error || ''), JSON.stringify(r.body));
+
+r = await call(applications, { method: 'POST', token: platinumToken, ip: '203.0.113.93', body: platinumApp({ paymentAmount: '50000' }) });
+check('application on the new type at its amount → 201', r.statusCode === 201, JSON.stringify(r.body));
+check('application stores the new type and its fee',
+  r.body?.application?.membershipPlan === 'Platinum Membership - ₹50,000/-' && String(r.body?.application?.paymentAmount) === '50000',
+  JSON.stringify({ plan: r.body?.application?.membershipPlan, amount: r.body?.application?.paymentAmount }));
+
+r = await call(membershipPlans, { method: 'DELETE', query: { id: platinumId } });
+check('DELETE without a token → 401', r.statusCode === 401, `got ${r.statusCode}`);
+r = await call(membershipPlans, { method: 'DELETE', token: adminToken, query: { id: 'corporate-vip-membership' } });
+check('built-in types cannot be deleted → 400', r.statusCode === 400, `got ${r.statusCode}`);
+r = await call(membershipPlans, { method: 'DELETE', token: adminToken, query: { id: platinumId } });
+check('admin deletes the added type → 200', r.statusCode === 200, JSON.stringify(r.body));
+r = await call(membershipPlans, { method: 'DELETE', token: adminToken, query: { id: platinumId } });
+check('deleting it again → 404', r.statusCode === 404, `got ${r.statusCode}`);
+
+r = await call(membershipPlans, { method: 'GET' });
+check('deleted type is no longer listed', !(r.body?.plans || []).some((p) => p.id === platinumId));
+
+r = await call(applications, { method: 'POST', token: applicantToken, ip: '203.0.113.94', body: validApp({ membershipPlan: 'Platinum Membership - ₹50,000/-' }) });
+check('application on a deleted type → 400', r.statusCode === 400 && /valid membership type/.test(r.body?.error || ''), JSON.stringify(r.body));
+
+r = await call(membershipPlans, { method: 'PUT', token: adminToken, body: {} });
+check('unsupported method → 405', r.statusCode === 405, `got ${r.statusCode}`);
 
 // ── Report ──────────────────────────────────────────────────────────
 process.on("exit",()=>{});

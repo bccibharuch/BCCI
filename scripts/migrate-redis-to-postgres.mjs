@@ -27,7 +27,7 @@ process.env.STORAGE_BACKEND = 'postgres';
 const pg = await import('../api/_lib/postgres.js');
 await pg.initSchema();
 
-const counts = { applications: 0, enquiries: 0, events: 0, attendees: 0, skipped: 0 };
+const counts = { applications: 0, enquiries: 0, events: 0, attendees: 0, membershipPlans: 0, skipped: 0 };
 
 async function migrateSet({ indexKey, recordKey, put, label }) {
   const ids = (await redis.zrange(indexKey, 0, -1)) || [];
@@ -57,6 +57,16 @@ await migrateSet({
   recordKey: (id) => `bcci:enq:${id}`,
   put: pg.putEnquiry,
   label: 'enquiries',
+});
+
+// Admin-added membership types. An id already in Postgres is left as it is.
+await migrateSet({
+  indexKey: 'bcci:plan_index',
+  recordKey: (id) => `bcci:plan:${id}`,
+  put: async (plan) => {
+    if (!(await pg.insertCustomPlan(plan))) throw Object.assign(new Error('exists'), { statusCode: 409 });
+  },
+  label: 'membershipPlans',
 });
 
 // Events + their attendee lists.
