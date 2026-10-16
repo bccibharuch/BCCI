@@ -274,6 +274,12 @@ r = await call(applications, {
 check('POST with unknown membership plan → 400', r.statusCode === 400, `got ${r.statusCode}`);
 
 r = await call(applications, {
+  method: 'POST', token: applicantToken, ip: '203.0.113.36',
+  body: validApp({ membershipPlan: 'Corporate VIP Membership - ₹1,00,000/-', paymentAmount: '25000' }),
+});
+check('Corporate VIP plan is priced at ₹1,00,000 server-side', r.statusCode === 400 && /expected ₹1,00,000\/-/.test(r.body?.error || ''), JSON.stringify(r.body));
+
+r = await call(applications, {
   method: 'POST', token: applicantToken, ip: '203.0.113.34',
   body: validApp({ repMobile: '123' }),
 });

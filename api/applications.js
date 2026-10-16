@@ -42,6 +42,7 @@ const MEMBERSHIP_FEES = {
   'Executive Membership - ₹10,000/-': 10000,
   'Executive VIP Membership - ₹15,000/-': 15000,
   'Corporate Membership - ₹25,000/-': 25000,
+  'Corporate VIP Membership - ₹1,00,000/-': 100000,
   'Micro & Small - ₹500 / Year': 500,
   'Medium - ₹1,000 / Year': 1000,
   'Large - ₹2,500 / Year': 2500,

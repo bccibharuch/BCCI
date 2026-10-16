@@ -35,6 +35,7 @@ const PLAN_BY_CATEGORY = {
   general: { label: 'General Membership - ₹5,000/-', fee: 5000 },
   executive: { label: 'Executive Membership - ₹10,000/-', fee: 10000 },
   'executive vip': { label: 'Executive VIP Membership - ₹15,000/-', fee: 15000 },
+  'corporate vip': { label: 'Corporate VIP Membership - ₹1,00,000/-', fee: 100000 },
 };
 
 const WARN_DOC_BYTES = 3 * 1024 * 1024;
