@@ -2775,6 +2775,17 @@ body.modal-open {
   max-width: 420px;
 }
 
+/* Reuses the card's amber .auth-inline-alert look; only spacing differs. */
+.auth-inline-alert.auth-gate-note {
+  margin: 1.1rem auto 0 auto;
+  max-width: 420px;
+}
+
+.auth-gate-note i {
+  color: #D97706;
+  margin-right: 0.25rem;
+}
+
 /* Mode Switcher Tabs */
 .auth-mode-tabs {
   display: flex;
