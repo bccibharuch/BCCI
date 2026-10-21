@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.1';
+import { Store } from './store.js?v=4.0.2';
 
 // ── Configuration ──────────────────────────────────────────────
 // Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
