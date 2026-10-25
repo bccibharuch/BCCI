@@ -131,6 +131,37 @@ ck('bulk registrations all succeed', bulkIds.length === 8, `${bulkIds.length} of
 ck('ticket IDs are unique within the event', new Set([paidReg.ticketId, ...bulkIds]).size === 9);
 ck('ticket IDs carry a 10-hex-char random suffix', bulkIds.every((t) => /-[0-9A-F]{10}$/.test(t)), bulkIds[0]);
 
+// Check-in at the venue
+const { setAttendeeCheckIn } = lib;
+const unpaid = bulk[0];
+const refused = await setAttendeeCheckIn('EVT-TEST-PAID', unpaid.ticketId, { by: 'desk@bcci.in' });
+ck('check-in refuses an unverified paid ticket', refused.success === false && refused.code === 'payment_pending');
+
+const first = await setAttendeeCheckIn('EVT-TEST-PAID', paidReg.ticketId, { by: 'desk@bcci.in', method: 'scan' });
+ck('check-in of a confirmed ticket succeeds', first.success === true && !first.alreadyCheckedIn);
+ck('check-in records time, desk and method',
+  !!first.attendee?.checkedInAt && first.attendee.checkedInBy === 'desk@bcci.in' && first.attendee.checkInMethod === 'scan');
+
+const again = await setAttendeeCheckIn('EVT-TEST-PAID', paidReg.ticketId, { by: 'other@bcci.in', method: 'manual' });
+ck('second scan reports already checked in', again.success === true && again.alreadyCheckedIn === true);
+ck('second scan keeps the original check-in', again.attendee?.checkedInAt === first.attendee.checkedInAt && again.attendee.checkedInBy === 'desk@bcci.in');
+
+const stored = (await getEventAttendees('EVT-TEST-PAID')).find((a) => a.ticketId === paidReg.ticketId);
+ck('check-in is persisted on the attendee', stored?.checkedInAt === first.attendee.checkedInAt);
+
+const parallel = await Promise.all(bulkIds.slice(1, 4).map((t) => confirmEventPayment('EVT-TEST-PAID', t, 'admin')
+  .then(() => Promise.all([setAttendeeCheckIn('EVT-TEST-PAID', t), setAttendeeCheckIn('EVT-TEST-PAID', t)]))));
+ck('concurrent scans of one ticket check it in exactly once',
+  parallel.every(([a, b]) => a.success && b.success && (a.alreadyCheckedIn !== b.alreadyCheckedIn)));
+
+const undone = await setAttendeeCheckIn('EVT-TEST-PAID', paidReg.ticketId, { checkedIn: false });
+ck('undo clears the check-in', undone.success === true && !undone.attendee?.checkedInAt && !undone.attendee?.checkedInBy);
+const reStored = (await getEventAttendees('EVT-TEST-PAID')).find((a) => a.ticketId === paidReg.ticketId);
+ck('undo is persisted', reStored && !reStored.checkedInAt);
+
+const missing = await setAttendeeCheckIn('EVT-TEST-PAID', 'TKT-NOPE-0000000000');
+ck('unknown ticket is reported as not_found', missing.success === false && missing.code === 'not_found');
+
 await deleteEvent('EVT-TEST-PAID');
 
 // 7. Delete event

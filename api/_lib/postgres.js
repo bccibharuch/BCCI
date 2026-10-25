@@ -12,7 +12,7 @@
 // record serialise instead of silently clobbering each other.
 
 import pg from 'pg';
-import { DOCUMENT_FIELDS, newTicketId } from './record-fields.js';
+import { DOCUMENT_FIELDS, newTicketId, applyCheckIn } from './record-fields.js';
 
 const { Pool } = pg;
 
@@ -573,6 +573,49 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
     }
     await client.query('COMMIT');
     return { success: true, event, attendee, alreadyConfirmed };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Marks an attendee present or clears it; see redis.js and applyCheckIn. */
+export async function setAttendeeCheckIn(id, ticketId, { checkedIn = true, by = 'admin', method = 'scan' } = {}) {
+  if (!id || !ticketId) {
+    return { success: false, code: 'invalid', error: 'Event ID and ticket ID are required.' };
+  }
+  // Locks only the attendee row: check-ins never change the seat count, so
+  // the desk scanning does not queue behind new registrations.
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const er = await client.query('SELECT id, registered_count, data FROM events WHERE id = $1', [id]);
+    if (!er.rows.length) {
+      await client.query('ROLLBACK');
+      return { success: false, code: 'not_found', error: 'Event not found.' };
+    }
+    const event = rowToEvent(er.rows[0]);
+    const ar = await client.query(
+      'SELECT data FROM event_attendees WHERE event_id = $1 AND ticket_id = $2 FOR UPDATE',
+      [id, ticketId]
+    );
+    if (!ar.rows.length) {
+      await client.query('ROLLBACK');
+      return { success: false, code: 'not_found', error: 'Attendee ticket not found.' };
+    }
+    const current = ar.rows[0].data && typeof ar.rows[0].data === 'object' ? ar.rows[0].data : {};
+    const outcome = applyCheckIn(current, { checkedIn, by, method });
+    if (outcome.success && outcome.changed) {
+      await client.query('UPDATE event_attendees SET data = $3 WHERE event_id = $1 AND ticket_id = $2', [
+        id,
+        ticketId,
+        outcome.attendee,
+      ]);
+    }
+    await client.query('COMMIT');
+    return outcome.success ? { ...outcome, event } : outcome;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;

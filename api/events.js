@@ -11,6 +11,7 @@ import {
   getEventAttendees,
   registerForEvent,
   confirmEventPayment,
+  setAttendeeCheckIn,
   removeEventAttendee,
 } from './_lib/records.js';
 import {
@@ -51,6 +52,21 @@ async function sendEmailWithin(message, ms = EMAIL_TIMEOUT_MS) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+const TICKET_ID_PATTERN = /^TKT-[A-Z0-9-]{6,80}$/;
+
+/** What the check-in desk needs to recognise the person in front of it. */
+function attendeeDeskView(a) {
+  return {
+    ticketId: a.ticketId,
+    name: a.name,
+    company: a.company,
+    status: a.status,
+    paymentStatus: a.paymentStatus,
+    checkedInAt: a.checkedInAt || null,
+    checkInMethod: a.checkInMethod || null,
+  };
 }
 
 function getPublicVenue(event, isAdmin = false) {
@@ -273,6 +289,51 @@ async function handler(req, res) {
         event: result.event,
         attendee: result.attendee,
         ticketId,
+      });
+    }
+
+    // ── 2d. Check an attendee in at the venue (Admin Only) ───────────
+    // The QR on a ticket holds only its ticket ID. That ID carries 40 random
+    // bits and is shown to nobody but its holder and the secretariat, so it
+    // works as the admission credential without a separate signature.
+    if (action === 'check-in') {
+      if (!(await requireAdmin(req, res))) return;
+
+      const body = req.body || {};
+      const eventId = str(body.eventId, 100);
+      const ticketId = str(body.ticketId, 100).toUpperCase();
+      const checkedIn = body.undo !== true;
+      const method = body.method === 'manual' ? 'manual' : 'scan';
+
+      if (!eventId) {
+        return res.status(400).json({ success: false, code: 'invalid', error: 'Event ID is required.' });
+      }
+      if (!TICKET_ID_PATTERN.test(ticketId)) {
+        return res.status(400).json({ success: false, code: 'invalid', error: 'That is not a BCCI ticket code.' });
+      }
+
+      const adminEmail = await getAdminSession(req);
+      const result = await setAttendeeCheckIn(eventId, ticketId, { checkedIn, by: adminEmail || 'admin', method });
+      if (!result.success) {
+        // Tickets embed their event's ID, so a pass for another event can be
+        // named as such rather than reported as an unknown code.
+        const otherEvent = result.code === 'not_found' && !ticketId.startsWith(`TKT-${eventId.replace(/^EVT-/, '')}-`);
+        const code = otherEvent ? 'wrong_event' : result.code;
+        const status = { invalid: 400, not_found: 404, wrong_event: 404, payment_pending: 409, busy: 503 }[code] || 400;
+        return res.status(status).json({
+          success: false,
+          code,
+          error: otherEvent ? 'This ticket belongs to a different event.' : result.error,
+          attendee: result.attendee ? attendeeDeskView(result.attendee) : undefined,
+        });
+      }
+
+      console.log(`[BCCI Event] ${checkedIn ? 'Checked in' : 'Cleared check-in for'} ticket ${ticketId} on event ${eventId} (${method}, already: ${!!result.alreadyCheckedIn})`);
+      return res.status(200).json({
+        success: true,
+        checkedIn,
+        alreadyCheckedIn: !!result.alreadyCheckedIn,
+        attendee: attendeeDeskView(result.attendee),
       });
     }
 

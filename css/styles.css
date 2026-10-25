@@ -3187,3 +3187,55 @@ body.modal-open {
 }
 
 
+
+/* ── Venue check-in desk ─────────────────────────────────────────── */
+.checkin-desk { display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.9rem; }
+.checkin-summary {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem;
+  background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.65rem 0.9rem;
+}
+.checkin-count { color: var(--primary); font-size: 1rem; }
+.checkin-sync { color: #92400E; background: #FEF3C7; border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.78rem; font-weight: 700; }
+.checkin-scanner { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; }
+.checkin-video {
+  width: 100%; max-width: 420px; aspect-ratio: 4 / 3; object-fit: cover;
+  background: #0F172A; border-radius: 10px;
+}
+.checkin-camera-btn { min-width: 180px; justify-content: center; }
+.checkin-result {
+  border-radius: 8px; padding: 0.85rem 1rem; font-weight: 700; font-size: 1rem; line-height: 1.4;
+  background: #F1F5F9; color: #334155; border: 2px solid #E2E8F0;
+}
+.checkin-result--ok { background: #ECFDF5; color: #065F46; border-color: #10B981; }
+.checkin-result--warn { background: #FFFBEB; color: #92400E; border-color: #F59E0B; }
+.checkin-result--error { background: #FEF2F2; color: #991B1B; border-color: #EF4444; }
+.checkin-list {
+  list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto;
+  border: 1px solid #E2E8F0; border-radius: 8px;
+}
+.checkin-row {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 0.75rem; border-bottom: 1px solid #F1F5F9;
+}
+.checkin-row:last-child { border-bottom: 0; }
+.checkin-row-who { display: flex; flex-direction: column; min-width: 0; }
+.checkin-row-who small { color: #64748B; overflow-wrap: anywhere; }
+.checkin-row-btn { padding: 0.3rem 0.7rem; font-size: 0.8rem; white-space: nowrap; }
+.checkin-badge { font-size: 0.75rem; font-weight: 700; border-radius: 4px; padding: 0.15rem 0.45rem; white-space: nowrap; }
+.checkin-badge--in { background: #DBEAFE; color: #1D4ED8; }
+.checkin-badge--pending { background: #FEF3C7; color: #92400E; }
+.checkin-badge--queued { background: #E2E8F0; color: #334155; }
+.checkin-empty { padding: 1rem; text-align: center; color: #94A3B8; }
+.checkin-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+@media (max-width: 480px) {
+  .checkin-row { grid-template-columns: 1fr auto; }
+  .checkin-row-btn { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* ── Ticket entry QR ─────────────────────────────────────────────── */
+.ticket-entry-qr { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin: 0 0 1.25rem; text-align: center; }
+.ticket-entry-qr p { margin: 0; font-size: 0.85rem; color: #64748B; }
+.ticket-entry-qr-code { background: #FFFFFF; padding: 10px; border-radius: 8px; border: 1px solid #E2E8F0; line-height: 0; }
+.ticket-entry-qr-code img, .ticket-entry-qr-code canvas { width: 180px; height: 180px; }
+.ticket-entry-qr--page code { font-size: 0.95rem; font-weight: 700; color: var(--primary); }
+.ticket-entry-qr-fallback { line-height: 1.4; max-width: 220px; }

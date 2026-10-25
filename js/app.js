@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.2';
+import { Store } from './store.js?v=4.0.3';
 
 // ── Configuration ──────────────────────────────────────────────
 // Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
@@ -174,6 +174,7 @@ class App {
     this.setupDraftPersistence();
     this.setupConnectivityWatch();
     this.setupDataActions();
+    this.showEntryPassFromUrl();
   }
 
   // Buttons declare behaviour with data-action instead of inline onclick,
@@ -4166,6 +4167,9 @@ class App {
                 <button type="button" class="btn-secondary" data-inspect-event-id="${escapeAttr(ev.id)}" style="padding:0.35rem 0.65rem;font-size:0.8rem;" title="View Registered Attendees">
                   <i class="fas fa-users"></i> (${reg})
                 </button>
+                <button type="button" class="btn-secondary" data-checkin-event-id="${escapeAttr(ev.id)}" style="padding:0.35rem 0.65rem;font-size:0.8rem;" title="Open the venue check-in desk" aria-label="Check-in desk for ${escapeAttr(ev.title)}">
+                  <i class="fas fa-qrcode"></i> Check-in
+                </button>
                 <button type="button" class="btn-action-reject" data-delete-event-id="${escapeAttr(ev.id)}" style="padding:0.35rem 0.65rem;font-size:0.8rem;" title="Delete Event">
                   <i class="fas fa-trash-alt"></i>
                 </button>
@@ -4197,6 +4201,7 @@ class App {
             </div>
             <div class="admin-card-actions">
               <button class="btn-secondary" data-inspect-event-id="${escapeAttr(ev.id)}"><i class="fas fa-users"></i> Attendees (${reg})</button>
+              <button class="btn-secondary" data-checkin-event-id="${escapeAttr(ev.id)}"><i class="fas fa-qrcode"></i> Check-in</button>
               <button class="btn-action-reject" data-delete-event-id="${escapeAttr(ev.id)}"><i class="fas fa-trash-alt"></i> Delete</button>
             </div>
           </div>
@@ -4207,7 +4212,45 @@ class App {
     this.bindAdminEventItemActions();
   }
 
+  async openCheckInDesk(eventId) {
+    let event;
+    let CheckInDesk;
+    try {
+      [event, { CheckInDesk }] = await Promise.all([
+        this.store.getEventWithAttendees(eventId),
+        import('./checkin.js?v=1.0.0'),
+      ]);
+    } catch (err) {
+      this.showToast(err.message || 'Could not open the check-in desk.', 'error');
+      return;
+    }
+    if (!event) {
+      this.showToast('Event not found.', 'error');
+      return;
+    }
+
+    this.showModal({
+      title: `<i class="fas fa-qrcode" style="color:var(--primary);"></i> Check-in: ${escapeHtml(event.title)}`,
+      wide: true,
+      content: '<div id="checkinDeskRoot"></div>',
+    });
+    const root = document.getElementById('checkinDeskRoot');
+    if (!root) return;
+    const desk = new CheckInDesk({ root, store: this.store, event, attendees: event.attendees || [] });
+    desk.mount();
+    document.getElementById('modalCloseBtn')?.addEventListener('click', () => this.closeModal());
+    // The camera must be released whichever way the dialog closes.
+    this._modalCleanup = () => {
+      desk.destroy();
+      this.renderAdminEvents();
+    };
+  }
+
   bindAdminEventItemActions() {
+    document.querySelectorAll('[data-checkin-event-id]').forEach(btn => {
+      btn.onclick = () => this.openCheckInDesk(btn.getAttribute('data-checkin-event-id'));
+    });
+
     // Inspect attendees
     document.querySelectorAll('[data-inspect-event-id]').forEach(btn => {
       btn.onclick = async () => {
@@ -4258,6 +4301,7 @@ class App {
                               ` : `
                                 <span style="color:#059669;font-weight:700;"><i class="fas fa-check-circle"></i> Confirmed</span>
                                 ${a.paymentRef ? `<br/><small style="color:#64748B;font-family:monospace;">UTR: ${escapeHtml(a.paymentRef)}</small>` : '<br/><small style="color:#64748B;">Complimentary</small>'}
+                                ${a.checkedInAt ? `<br/><small style="color:#1D4ED8;font-weight:700;"><i class="fas fa-door-open"></i> Attended · ${escapeHtml(new Date(a.checkedInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))}</small>` : ''}
                               `}
                             </td>
                             <td><small>${escapeHtml(formatDate(a.registeredAt))}</small>
@@ -5021,6 +5065,12 @@ class App {
             </div>
           </div>
 
+          ${event.mode === 'online' ? '' : `
+          <div class="ticket-entry-qr">
+            <div id="ticketEntryQR" class="ticket-entry-qr-code"></div>
+            <p>Show this code at the registration desk for entry.</p>
+          </div>`}
+
           <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
             <button type="button" class="btn-primary" data-action="print" style="flex: 1; min-width: 160px; justify-content: center; font-size: 0.88rem;">
               <i class="fas fa-print"></i> Print / Save Ticket PDF
@@ -5030,16 +5080,91 @@ class App {
         </div>
       `,
     });
+    this.renderTicketQR(document.getElementById('ticketEntryQR'), tktId);
+  }
+
+  /**
+   * Draws the entry QR for a ticket. It encodes the bare ticket ID, which is
+   * all the check-in desk needs, so nothing personal is in the code.
+   */
+  renderTicketQR(container, ticketId) {
+    if (!container) return;
+    container.replaceChildren();
+    if (typeof QRCode === 'undefined') {
+      const note = document.createElement('p');
+      note.className = 'ticket-entry-qr-fallback';
+      note.textContent = `QR unavailable — quote ticket code ${ticketId} at the desk.`;
+      container.append(note);
+      return;
+    }
+    new QRCode(container, {
+      text: ticketId,
+      width: 180,
+      height: 180,
+      colorDark: '#0a1628',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+    container.removeAttribute('title');
+    container.querySelectorAll('img').forEach((img) => {
+      img.alt = `Entry QR code for ticket ${ticketId}`;
+    });
+    container.querySelectorAll('canvas').forEach((c) => c.setAttribute('aria-hidden', 'true'));
+  }
+
+  /**
+   * /pass?t=TKT-… is the link in the e-ticket email. Email clients cannot
+   * draw a QR, so the page draws it from the code in the link. No lookup is
+   * made: the QR is the code itself.
+   */
+  showEntryPassFromUrl() {
+    if (window.location.pathname.replace(/\/+$/, '') !== '/pass') return;
+    const ticketId = String(new URLSearchParams(window.location.search).get('t') || '').trim().toUpperCase();
+    if (!/^TKT-[A-Z0-9-]{6,80}$/.test(ticketId)) {
+      this.showToast('That entry pass link is incomplete. Open it again from your e-ticket email.', 'error');
+      return;
+    }
+    this.showModal({
+      title: '<i class="fas fa-ticket-alt" style="color: var(--accent-gold);"></i> Your Entry Pass',
+      content: `
+        <div class="ticket-entry-qr ticket-entry-qr--page">
+          <div id="ticketEntryQR" class="ticket-entry-qr-code"></div>
+          <code>${escapeHtml(ticketId)}</code>
+          <p>Show this code at the registration desk. Turn your screen brightness up if it does not scan.</p>
+          <button type="button" class="btn-secondary" id="modalCloseBtn">Close</button>
+        </div>
+      `,
+    });
+    // qrcodejs loads with defer, after this module may have run.
+    const draw = () => this.renderTicketQR(document.getElementById('ticketEntryQR'), ticketId);
+    if (typeof QRCode === 'undefined' && document.readyState !== 'complete') {
+      window.addEventListener('load', draw, { once: true });
+    } else {
+      draw();
+    }
   }
 
   /* ════════════════════════════════════════════════════════════════════
      MODAL, TOAST, LIGHTBOX — UI Utilities
      ════════════════════════════════════════════════════════════════════ */
 
+  /** Releases whatever the open dialog holds (a camera, timers) exactly once. */
+  runModalCleanup() {
+    const cleanup = this._modalCleanup;
+    this._modalCleanup = null;
+    if (!cleanup) return;
+    try {
+      cleanup();
+    } catch (err) {
+      console.error('[Modal] cleanup failed:', err);
+    }
+  }
+
   showModal({ title, content, wide = false }) {
     const backdrop = document.getElementById('modalBackdrop');
     const container = document.getElementById('modalContainer');
     if (!backdrop || !container) return;
+    this.runModalCleanup();
     // Wide dialogs hold tables (e.g. event attendees) that do not fit 560px.
     container.classList.toggle('modal-box--wide', Boolean(wide));
 
@@ -5079,6 +5204,7 @@ class App {
   closeModal() {
     const backdrop = document.getElementById('modalBackdrop');
     if (!backdrop) return;
+    this.runModalCleanup();
     const container = document.getElementById('modalContainer');
     if (container && this._modalKeydown) {
       container.removeEventListener('keydown', this._modalKeydown);

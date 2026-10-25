@@ -116,6 +116,15 @@ check('attendee listed', (await lib.getEventAttendees('PG-EVT-1')).length === 1)
 const conf = await lib.confirmEventPayment('PG-EVT-1', reg1.ticketId, 'admin@test');
 check('confirm is idempotent on confirmed tickets', conf.success && conf.alreadyConfirmed === true);
 
+const ci = await lib.setAttendeeCheckIn('PG-EVT-1', reg1.ticketId, { by: 'desk@test', method: 'manual' });
+check('check-in records time and method', ci.success && !!ci.attendee.checkedInAt && ci.attendee.checkInMethod === 'manual', JSON.stringify(ci).slice(0, 160));
+const ciRace = await Promise.all([lib.setAttendeeCheckIn('PG-EVT-1', reg1.ticketId), lib.setAttendeeCheckIn('PG-EVT-1', reg1.ticketId)]);
+check('repeat scans keep the first check-in', ciRace.every((r) => r.success && r.alreadyCheckedIn && r.attendee.checkedInAt === ci.attendee.checkedInAt));
+const ciUndo = await lib.setAttendeeCheckIn('PG-EVT-1', reg1.ticketId, { checkedIn: false });
+check('undo clears the check-in', ciUndo.success && !ciUndo.attendee.checkedInAt && !(await lib.getEventAttendees('PG-EVT-1'))[0].checkedInAt);
+const ciMissing = await lib.setAttendeeCheckIn('PG-EVT-1', 'TKT-NOPE');
+check('check-in of an unknown ticket → not_found', !ciMissing.success && ciMissing.code === 'not_found');
+
 const rmMissing = await lib.removeEventAttendee('PG-EVT-1', 'TKT-NOPE');
 check('remove of an unknown ticket → not found', !rmMissing.success && /not found/i.test(rmMissing.error || ''));
 const rm = await lib.removeEventAttendee('PG-EVT-1', reg1.ticketId);

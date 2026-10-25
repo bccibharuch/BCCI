@@ -9,7 +9,7 @@
 // first access. The old key is left in place as a backup.
 
 import { Redis } from '@upstash/redis';
-import { summarizeApplication, newTicketId } from './record-fields.js';
+import { summarizeApplication, newTicketId, applyCheckIn } from './record-fields.js';
 
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -560,6 +560,53 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
         attendee: attendees[idx],
         alreadyConfirmed,
       };
+    } finally {
+      await releaseLock(`eventreg:${id}`, lockToken);
+    }
+  });
+}
+
+/**
+ * Marks an attendee present (or clears a mistaken check-in). Idempotent: a
+ * second scan of the same ticket reports the original time instead of
+ * overwriting it. A paid ticket whose payment is still unverified is refused
+ * with code 'payment_pending' so the desk can settle it first.
+ */
+export async function setAttendeeCheckIn(id, ticketId, { checkedIn = true, by = 'admin', method = 'scan' } = {}) {
+  if (!id || !ticketId) {
+    return { success: false, code: 'invalid', error: 'Event ID and ticket ID are required.' };
+  }
+  return withRetry(async () => {
+    const lockToken = await acquireLock(`eventreg:${id}`);
+    if (!lockToken) {
+      return { success: false, code: 'busy', error: 'Event service is busy. Please try again in a moment.' };
+    }
+
+    try {
+      const rawEvent = await redis.get(KEYS.event(id));
+      if (!rawEvent) {
+        return { success: false, code: 'not_found', error: 'Event not found.' };
+      }
+      const event = typeof rawEvent === 'string' ? JSON.parse(rawEvent) : rawEvent;
+
+      const rawAttendees = await redis.get(KEYS.eventAttendees(id));
+      let attendees = [];
+      if (rawAttendees) {
+        attendees = Array.isArray(rawAttendees) ? rawAttendees : (typeof rawAttendees === 'string' ? JSON.parse(rawAttendees) : []);
+      }
+
+      const idx = attendees.findIndex(a => a.ticketId === ticketId);
+      if (idx === -1) {
+        return { success: false, code: 'not_found', error: 'Attendee ticket not found.' };
+      }
+
+      const outcome = applyCheckIn(attendees[idx], { checkedIn, by, method });
+      if (!outcome.success) return outcome;
+      if (outcome.changed) {
+        attendees[idx] = outcome.attendee;
+        await redis.set(KEYS.eventAttendees(id), attendees);
+      }
+      return { ...outcome, event };
     } finally {
       await releaseLock(`eventreg:${id}`, lockToken);
     }

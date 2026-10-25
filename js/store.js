@@ -325,6 +325,17 @@ export class Store {
     return result;
   }
 
+  // Idempotent on the server, so one retry after a dropped connection
+  // cannot check anyone in twice.
+  async checkInAttendee(eventId, ticketId, { method = 'scan', undo = false } = {}) {
+    return this.apiCall('/api/events?action=check-in', {
+      method: 'POST',
+      body: { eventId, ticketId, method, undo },
+      auth: 'admin',
+      retries: 1,
+    });
+  }
+
   async removeEventAttendee(eventId, ticketId) {
     return this.apiCall('/api/events?action=remove-attendee', {
       method: 'POST',

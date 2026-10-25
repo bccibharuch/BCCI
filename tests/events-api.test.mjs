@@ -321,6 +321,52 @@ let firstTicketId = null;
   ck('the freed seat can be taken by the next registrant', third.getStatus() === 200, JSON.stringify(third.getJson()));
 }
 
+// 7d. Venue check-in desk
+{
+  const checkIn = async (body, token = adminToken) => {
+    const r = mockReqRes({ method: 'POST', query: { action: 'check-in' }, body, headers: token ? { authorization: `Bearer ${token}` } : {} });
+    await eventsHandler(r.req, r.res);
+    return r;
+  };
+  const stored = await redis.get(KEYS.eventAttendees(createdEventId));
+  const list = Array.isArray(stored) ? stored : JSON.parse(stored || '[]');
+  const confirmedTicket = list.find(a => a.paymentStatus === 'confirmed')?.ticketId;
+  const pendingTicket = list.find(a => a.paymentStatus === 'pending_verification')?.ticketId;
+
+  const anon = await checkIn({ eventId: createdEventId, ticketId: confirmedTicket }, null);
+  ck('check-in without admin auth returns 401', anon.getStatus() === 401);
+
+  const garbage = await checkIn({ eventId: createdEventId, ticketId: 'https://evil.example/x' });
+  ck('check-in rejects a QR that is not a ticket code (400)', garbage.getStatus() === 400 && garbage.getJson()?.code === 'invalid');
+
+  const ok = await checkIn({ eventId: createdEventId, ticketId: confirmedTicket.toLowerCase(), method: 'scan' });
+  ck('check-in of a verified ticket returns 200 (case-insensitive code)', ok.getStatus() === 200 && ok.getJson()?.alreadyCheckedIn === false, JSON.stringify(ok.getJson()));
+  ck('check-in response carries name and time, not contact details',
+    !!ok.getJson()?.attendee?.name && !!ok.getJson()?.attendee?.checkedInAt && ok.getJson()?.attendee?.email === undefined && ok.getJson()?.attendee?.phone === undefined);
+
+  const twice = await checkIn({ eventId: createdEventId, ticketId: confirmedTicket });
+  ck('second scan returns 200 with alreadyCheckedIn', twice.getStatus() === 200 && twice.getJson()?.alreadyCheckedIn === true);
+
+  const pending = await checkIn({ eventId: createdEventId, ticketId: pendingTicket });
+  ck('unverified paid ticket returns 409 payment_pending', pending.getStatus() === 409 && pending.getJson()?.code === 'payment_pending');
+  ck('payment_pending response still names the attendee', !!pending.getJson()?.attendee?.name);
+
+  const otherEvent = await checkIn({ eventId: createdEventId, ticketId: 'TKT-SOMEOTHER-AB12-0123456789' });
+  ck('ticket for another event returns 404 wrong_event', otherEvent.getStatus() === 404 && otherEvent.getJson()?.code === 'wrong_event');
+
+  const unknown = await checkIn({ eventId: createdEventId, ticketId: `TKT-${createdEventId.replace(/^EVT-/, '')}-0000000000` });
+  ck('unknown ticket for this event returns 404 not_found', unknown.getStatus() === 404 && unknown.getJson()?.code === 'not_found');
+
+  const undo = await checkIn({ eventId: createdEventId, ticketId: confirmedTicket, undo: true });
+  ck('undo returns 200 and clears the time', undo.getStatus() === 200 && undo.getJson()?.attendee?.checkedInAt === null);
+
+  const attendeesView = mockReqRes({ method: 'GET', query: { id: createdEventId, includeAttendees: 'true' }, headers: { authorization: `Bearer ${adminToken}` } });
+  await checkIn({ eventId: createdEventId, ticketId: confirmedTicket, method: 'manual' });
+  await eventsHandler(attendeesView.req, attendeesView.res);
+  const row = attendeesView.getJson()?.event?.attendees?.find(a => a.ticketId === confirmedTicket);
+  ck('admin attendee list shows check-in time and method', !!row?.checkedInAt && row?.checkInMethod === 'manual');
+}
+
 // 7c. Abuse limits: one network cannot fill an event, one address cannot be emailed endlessly
 {
   const c = mockReqRes({

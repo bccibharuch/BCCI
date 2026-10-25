@@ -31,3 +31,44 @@ export function summarizeApplication(app) {
 export function newTicketId(eventId) {
   return `TKT-${String(eventId).replace(/^EVT-/, '')}-${randomBytes(5).toString('hex').toUpperCase()}`;
 }
+
+const CHECK_IN_METHODS = ['scan', 'manual'];
+
+/**
+ * The check-in transition for one attendee, shared by both backends so they
+ * agree on every rule. Returns { success, attendee, changed,
+ * alreadyCheckedIn } or { success: false, code, error } without mutating
+ * the input.
+ */
+export function applyCheckIn(attendee, { checkedIn = true, by = 'admin', method = 'scan' } = {}) {
+  const wasCheckedIn = Boolean(attendee.checkedInAt);
+
+  if (!checkedIn) {
+    if (!wasCheckedIn) return { success: true, attendee, changed: false, alreadyCheckedIn: false };
+    const { checkedInAt, checkedInBy, checkInMethod, ...rest } = attendee;
+    return { success: true, attendee: rest, changed: true, alreadyCheckedIn: false };
+  }
+
+  if (wasCheckedIn) return { success: true, attendee, changed: false, alreadyCheckedIn: true };
+
+  if (attendee.status === 'pending' || attendee.paymentStatus === 'pending_verification') {
+    return {
+      success: false,
+      code: 'payment_pending',
+      error: 'Payment for this ticket has not been verified yet.',
+      attendee,
+    };
+  }
+
+  return {
+    success: true,
+    attendee: {
+      ...attendee,
+      checkedInAt: new Date().toISOString(),
+      checkedInBy: String(by || 'admin'),
+      checkInMethod: CHECK_IN_METHODS.includes(method) ? method : 'scan',
+    },
+    changed: true,
+    alreadyCheckedIn: false,
+  };
+}

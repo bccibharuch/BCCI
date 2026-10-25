@@ -14,6 +14,12 @@ const LOG_KEY = 'bcci:email_log';
 const SUPPORT_EMAIL = 'admin@bccibharuch.in';
 const SUPPORT_PHONE = '+91 7861906384';
 
+/** The public site, for links in emails: the first ALLOWED_ORIGIN entry. */
+function siteUrl() {
+  const first = String(process.env.ALLOWED_ORIGIN || '').split(',').map((o) => o.trim()).find(Boolean);
+  return (first || 'https://bccibharuch.in').replace(/\/+$/, '');
+}
+
 // ── Shared chrome ──────────────────────────────────────────────────
 
 const shell = ({ accent, heading, sub, body, footer }) => `<!DOCTYPE html>
@@ -234,6 +240,14 @@ export const TEMPLATES = {
             </tr>
           </table>
         </div>
+
+        ${d.mode === 'online' ? '' : `
+        <div style="text-align:center;margin:0 0 24px;">
+          <a href="${esc(`${siteUrl()}/pass?t=${encodeURIComponent(d.ticketId || '')}`)}" style="display:inline-block;background:#0F2C59;color:#FFD700;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;border:1px solid #D4AF37;">
+            Show my entry QR code
+          </a>
+          <div style="font-size:12px;color:#64748B;margin-top:8px;">Open this at the venue and show the QR at the registration desk.</div>
+        </div>`}
 
         ${panel(
           `<tr><td style="font-size:13px;color:#1E3E62;line-height:1.6;">

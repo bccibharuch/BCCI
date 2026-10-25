@@ -43,6 +43,7 @@ export const {
   getEventAttendees,
   registerForEvent,
   confirmEventPayment,
+  setAttendeeCheckIn,
   removeEventAttendee,
   listCustomPlans,
   insertCustomPlan,
