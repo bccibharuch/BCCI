@@ -1,0 +1,29 @@
+# Caddy obtains and renews the HTTPS certificate for SITE_DOMAIN on its own
+# (Let's Encrypt). Ports 80 and 443 must be open and the domain's A record
+# must point at this server before the first start.
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	# Applications carry scanned documents; the app itself caps bodies at
+	# 3.5 MB, so anything larger is turned away here first.
+	request_body {
+		max_size 5MB
+	}
+
+	# Caddy replaces any X-Forwarded-For a visitor sends with their real
+	# address, which is what the app's per-visitor rate limits key on.
+	reverse_proxy app:3000
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# www.<domain> redirects to the bare domain. Needs its own DNS record; until
+# it has one, Caddy logs a certificate error for it and the main site is
+# unaffected.
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}

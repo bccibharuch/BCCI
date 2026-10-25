@@ -11,3 +11,5 @@ node_modules/
 .superpowers/
 .DS_Store
 *.log
+.deploy.lock
+.last-good

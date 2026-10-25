@@ -7,6 +7,8 @@ The app runs in two places without code changes:
 
 Nothing host-specific lives in the application logic. Moving from Vercel to a VPS is: set the same environment variables, run `node server.js`, put TLS in front.
 
+**Recommended VPS setup:** one server running Caddy, the app and Postgres via `docker compose`, with no Upstash at all. Setup, backups, deploys, alerts and recovery are in [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md).
+
 ---
 
 ## Environment variables
@@ -17,8 +19,8 @@ Copy `.env.example` to `.env.local` and fill it in. Never commit it — `.gitign
 
 | Variable | What it does |
 |---|---|
-| `UPSTASH_REDIS_REST_URL` | Upstash database endpoint |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash token |
+| `UPSTASH_REDIS_REST_URL` | Upstash database endpoint. Serverless only: not needed with `STORAGE_BACKEND=postgres`. |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash token. Serverless only. |
 | `ADMIN_EMAILS` | Comma-separated addresses allowed to sign in as admin. Also where new-application alerts go. |
 | `ADMIN_PASSWORD` | Admin password. Use ≥ 20 random characters: `openssl rand -base64 24` |
 | `SMTP_USER` / `SMTP_PASS` | Mailbox credentials. For Gmail this must be an [App Password](https://myaccount.google.com/apppasswords), not the account password. |
@@ -172,22 +174,22 @@ docker run -d --name bcci -p 3000:3000 --env-file .env.local \
   -e TRUST_PROXY=1 --restart unless-stopped bcci-portal
 ```
 
-### Docker Compose (Postgres records — recommended for the VPS)
+### Docker Compose (everything in Postgres — recommended for the VPS)
 
-Durable records (applications, enquiries, events) move to Postgres running
-alongside the app. OTP codes, sessions and rate limits stay in Upstash
-Redis in both modes.
+Caddy, the app and Postgres. Postgres holds the records *and* the OTP codes,
+sessions, rate limits and applicant accounts (a `kv` table), so the server
+needs no Upstash. Use `deploy/setup-vps.sh` and follow
+[`deploy/RUNBOOK.md`](deploy/RUNBOOK.md); by hand it is:
 
 ```bash
-cp .env.example .env   # fill in Upstash + SMTP + admin secrets + POSTGRES_PASSWORD
+cp deploy/env.example .env   # fill in SITE_DOMAIN, admin, SMTP, POSTGRES_PASSWORD
 docker compose up -d --build
-docker compose exec app npm run migrate:pg   # one-time copy from Redis
 curl http://localhost:3000/api/health        # expect {"status":"ok"}
 ```
 
-`STORAGE_BACKEND=postgres` is set for the app container by compose;
-`DATABASE_URL` is wired to the `db` service automatically. Data survives
-restarts in the `pgdata` volume.
+`STORAGE_BACKEND=postgres` and `DATABASE_URL` are set for the app container
+by compose. Data survives restarts in the `pgdata` volume. To bring the data
+over from Upstash, see RUNBOOK section 2.
 
 ---
 
@@ -208,9 +210,9 @@ Two backends, selected by `STORAGE_BACKEND` (`redis` default, `postgres` on the 
 
 | Backend | Holds | Where |
 |---|---|---|
-| Redis (always) | OTP codes, sessions, rate limits, email log | Upstash |
-| Redis records (`STORAGE_BACKEND=redis`) | applications, enquiries, events | Upstash keys below |
-| Postgres records (`STORAGE_BACKEND=postgres`) | applications, enquiries, events, attendees | `applications`, `enquiries`, `events`, `event_attendees` tables |
+| Redis (`STORAGE_BACKEND=redis`) | everything: records, accounts, OTP codes, sessions, rate limits, email log | Upstash keys below |
+| Postgres (`STORAGE_BACKEND=postgres`) | records | `applications`, `enquiries`, `events`, `event_attendees`, `membership_plans` tables |
+| Postgres (`STORAGE_BACKEND=postgres`) | accounts, OTP codes, sessions, rate limits, email log | `kv` table: same keys as Redis, with an `expires_at` column; the server sweeps expired rows every 10 minutes |
 
 Redis record layout (serverless mode):
 
@@ -231,11 +233,7 @@ At 20–30 members a month, expect well under 1 MB of data in the first year and
 
 ### Backups
 
-Postgres (VPS):
-
-```bash
-docker compose exec db pg_dump -U bcci bcci > backup-$(date +%F).sql
-```
+Postgres (VPS): `deploy/backup.sh` runs every 6 hours from a systemd timer, checks each dump can be read back, keeps 14 days, and can copy off-site. Restore with `deploy/restore.sh`. Details: RUNBOOK section 3.
 
 Redis mode (either host), as an admin:
 # Applications and enquiries, as an admin

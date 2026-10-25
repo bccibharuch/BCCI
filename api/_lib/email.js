@@ -288,6 +288,21 @@ export const TEMPLATES = {
     }),
   }),
 
+  // Sent by the server's own maintenance scripts (backups, deploys) when
+  // something needs a person: deploy/notify.sh posts here.
+  ops_alert: (d) => ({
+    subject: `[BCCI portal] ${d.title || 'Server alert'}`,
+    html: shell({
+      accent: '#B91C1C',
+      heading: esc(d.title || 'Server alert'),
+      sub: esc(d.host || ''),
+      body: `
+        <p style="margin:0 0 16px;font-size:14px;color:#1E293B;line-height:1.6;white-space:pre-wrap;">${esc(d.message || '')}</p>
+        ${panel(row('Server', d.host) + row('Time', d.at || new Date().toISOString()))}
+        <p style="margin:0;font-size:12px;color:#64748B;">The steps for each alert are in deploy/RUNBOOK.md.</p>`,
+    }),
+  }),
+
 };
 
 // ── Delivery ───────────────────────────────────────────────────────

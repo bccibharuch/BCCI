@@ -25,7 +25,7 @@ A digital membership card with a QR code that encodes the member ID for verifica
 |---|---|
 | Frontend | Vanilla JS, no framework, no build step |
 | API | Serverless functions in `api/` (Vercel), or `server.js` on any Node host |
-| Storage | Upstash Redis, one key per record with a sorted-set index |
+| Storage | Upstash Redis on Vercel; on a VPS, one Postgres database for everything (see [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md)) |
 | Email | SMTP via Nodemailer — OTP, confirmations, approvals, declines |
 
 Two runtime dependencies: `@upstash/redis` and `nodemailer`.

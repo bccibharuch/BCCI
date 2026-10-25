@@ -1,0 +1,11 @@
+[Unit]
+Description=BCCI portal database backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=APP_DIR=/opt/bcci
+ExecStart=/opt/bcci/deploy/backup.sh
+Nice=10
+IOSchedulingClass=idle

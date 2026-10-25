@@ -1,12 +1,21 @@
-# BCCI Bharuch portal — app + Postgres on any VPS with Docker.
-# Redis (Upstash) is still required for OTP codes, sessions and rate limits.
+# BCCI Bharuch portal on one VPS: Caddy (HTTPS) → app → Postgres.
 #
-#   cp .env.example .env        # fill in Upstash + SMTP + admin secrets
-#   docker compose up -d --build
-#   docker compose exec app npm run migrate:pg   # one-time copy from Redis
+# Postgres holds everything: records, applicant accounts, sessions, OTP codes
+# and rate limits. No Upstash, no other service. First-time setup is
+# deploy/setup-vps.sh; day-to-day commands are in deploy/RUNBOOK.md.
 #
-# Data survives restarts in the pgdata volume. Back up with:
-#   docker compose exec db pg_dump -U bcci bcci > backup.sql
+#   docker compose up -d --build        # start or update
+#   docker compose ps                   # what is running, and its health
+#   docker compose logs -f app          # live app log
+#
+# Backups: deploy/backup.sh (a systemd timer runs it every 6 hours).
+
+x-logging: &logging
+  # Without a cap, container logs grow until the disk is full.
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
 
 services:
   db:
@@ -23,6 +32,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *logging
 
   app:
     build: .
@@ -38,13 +48,35 @@ services:
       TRUST_PROXY: 1
       PORT: 3000
       HOST: 0.0.0.0
+    # Reachable only from the server itself (deploy health checks); the
+    # public reaches it through Caddy.
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     healthcheck:
       test: ['CMD-SHELL', 'node -e "fetch(`http://localhost:3000/api/health`).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"']
       interval: 30s
       timeout: 10s
       retries: 3
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?Set SITE_DOMAIN in .env, e.g. bccibharuch.in}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

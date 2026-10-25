@@ -1,0 +1,53 @@
+name: Deploy to VPS
+
+# Deploys main to the VPS after the Tests workflow passes on it, using the
+# exact commit that was tested. Does nothing until the repository variable
+# VPS_HOST is set (Settings → Secrets and variables → Actions), so it is
+# safe to merge before the server exists. Setup steps: deploy/RUNBOOK.md.
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit to deploy (default: latest main)'
+        required: false
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.VPS_HOST != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy over SSH
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          REF: ${{ github.event.workflow_run.head_sha || inputs.ref || 'origin/main' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SSH_KEY" || -z "$KNOWN_HOSTS" ]]; then
+            echo "::error::Set the VPS_SSH_KEY and VPS_KNOWN_HOSTS secrets (see deploy/RUNBOOK.md)."
+            exit 1
+          fi
+          if [[ ! "$REF" =~ ^([0-9a-f]{7,40}|origin/main)$ ]]; then
+            echo "::error::Refusing to deploy '$REF': give a commit hash."
+            exit 1
+          fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "deploy@$VPS_HOST" "/opt/bcci/deploy/deploy.sh '$REF'"

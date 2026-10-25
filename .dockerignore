@@ -14,3 +14,5 @@ docs/
 tests/
 *.log
 .DS_Store
+.deploy.lock
+.last-good
