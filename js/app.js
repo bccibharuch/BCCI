@@ -4218,7 +4218,7 @@ class App {
     try {
       [event, { CheckInDesk }] = await Promise.all([
         this.store.getEventWithAttendees(eventId),
-        import('./checkin.js?v=1.0.0'),
+        import('./checkin.js?v=1.1.0'),
       ]);
     } catch (err) {
       this.showToast(err.message || 'Could not open the check-in desk.', 'error');

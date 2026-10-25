@@ -27,31 +27,13 @@ import {
   cleanPhone,
   withErrorHandling,
 } from './_lib/http.js';
-import { sendEmail } from './_lib/email.js';
+import { sendEmailWithin } from './_lib/email.js';
 
 function newEventId() {
   return `EVT-${Date.now().toString(36).toUpperCase()}-${crypto
     .randomBytes(2)
     .toString('hex')
     .toUpperCase()}`;
-}
-
-// The attendee is already stored when the email goes out, so a slow SMTP
-// server (its own timeouts allow ~35s) must not push the response past the
-// function time limit and hide the ticket from the attendee.
-const EMAIL_TIMEOUT_MS = Number(process.env.EVENT_EMAIL_TIMEOUT_MS) || 5000;
-
-/** sendEmail() with a deadline; resolves { success: false } when it passes. */
-async function sendEmailWithin(message, ms = EMAIL_TIMEOUT_MS) {
-  let timer;
-  const deadline = new Promise((resolve) => {
-    timer = setTimeout(() => resolve({ success: false, error: `timed out after ${ms}ms` }), ms);
-  });
-  try {
-    return await Promise.race([sendEmail(message), deadline]);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 const TICKET_ID_PATTERN = /^TKT-[A-Z0-9-]{6,80}$/;

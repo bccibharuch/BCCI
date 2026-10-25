@@ -6,9 +6,10 @@
 // Every value from the server is written with textContent, never innerHTML:
 // attendee names are typed in by the public.
 
-const JSQR_SRC = '/assets/vendor/jsqr/jsQR.js';
+import { el, timeLabel as timeOf } from './dom.js?v=1.0.0';
+import { QrScanner } from './qr-scanner.js?v=1.0.0';
+
 const QUEUE_KEY = 'bcci:checkin-queue';
-const SCAN_INTERVAL_MS = 180;
 const RESCAN_COOLDOWN_MS = 3000;
 const SYNC_INTERVAL_MS = 15000;
 const MAX_LIST_ROWS = 60;
@@ -40,78 +41,6 @@ function writeQueue(queue) {
   }
 }
 
-let jsQRLoading = null;
-function loadJsQR() {
-  if (window.jsQR) return Promise.resolve(window.jsQR);
-  if (!jsQRLoading) {
-    jsQRLoading = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = JSQR_SRC;
-      s.onload = () => (window.jsQR ? resolve(window.jsQR) : reject(new Error('QR decoder failed to initialise.')));
-      s.onerror = () => {
-        jsQRLoading = null;
-        reject(new Error('Could not load the QR decoder.'));
-      };
-      document.head.appendChild(s);
-    });
-  }
-  return jsQRLoading;
-}
-
-/**
- * Picks the fastest decoder the browser offers: the native BarcodeDetector
- * (Chrome on Android) or jsQR on a canvas (iPhone Safari, Firefox).
- * Returns async (video) => string | null.
- */
-async function createDecoder() {
-  if ('BarcodeDetector' in window) {
-    try {
-      const formats = await window.BarcodeDetector.getSupportedFormats();
-      if (formats.includes('qr_code')) {
-        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        return async (video) => {
-          const codes = await detector.detect(video);
-          return codes[0]?.rawValue || null;
-        };
-      }
-    } catch (err) {
-      console.warn('[CheckIn] BarcodeDetector unavailable, using jsQR:', err.message);
-    }
-  }
-
-  const jsQR = await loadJsQR();
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  return async (video) => {
-    if (!video.videoWidth) return null;
-    // Downscaled frames decode several times faster and a ticket QR held up
-    // to the camera stays well within range at 640px.
-    const scale = Math.min(1, 640 / video.videoWidth);
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' })?.data || null;
-  };
-}
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k === 'className') node.className = v;
-    else if (k === 'text') node.textContent = v;
-    else node.setAttribute(k, v === true ? '' : v);
-  }
-  for (const child of children) if (child) node.append(child);
-  return node;
-}
-
-function timeOf(iso) {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-}
-
 export class CheckInDesk {
   /**
    * @param {{ root: HTMLElement, store: { checkInAttendee: Function }, event: object, attendees: object[] }} opts
@@ -121,12 +50,8 @@ export class CheckInDesk {
     this.store = store;
     this.event = event;
     this.attendees = new Map(attendees.map((a) => [a.ticketId, { ...a }]));
-    this.stream = null;
-    this.scanTimer = null;
+    this.scanner = null;
     this.syncTimer = null;
-    this.decode = null;
-    this.lastCode = null;
-    this.lastCodeAt = 0;
     this.busy = false;
     this.syncing = false;
     this.onOnline = () => this.flushQueue();
@@ -165,7 +90,8 @@ export class CheckInDesk {
     );
     this.ui = ui;
 
-    ui.cameraBtn.addEventListener('click', () => (this.stream ? this.stopCamera() : this.startCamera()));
+    this.scanner = new QrScanner({ video: ui.video, onText: (text) => this.onDecoded(text), repeatMs: RESCAN_COOLDOWN_MS });
+    ui.cameraBtn.addEventListener('click', () => (this.scanner.running ? this.stopCamera() : this.startCamera()));
     ui.search.addEventListener('input', () => this.renderList());
     ui.search.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -198,75 +124,33 @@ export class CheckInDesk {
   // ── Camera ──────────────────────────────────────────────────────
 
   async startCamera() {
-    const { cameraBtn, video } = this.ui;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      this.show('error', 'This browser cannot use the camera here. Type the ticket code or search by name instead.');
-      return;
-    }
+    const { cameraBtn } = this.ui;
     cameraBtn.disabled = true;
     cameraBtn.textContent = 'Starting camera…';
     try {
-      this.decode = this.decode || await createDecoder();
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      });
-      video.srcObject = this.stream;
-      await video.play();
+      await this.scanner.start();
       cameraBtn.textContent = 'Stop camera';
       this.show('idle', 'Point the camera at a ticket QR code.');
-      this.scheduleScan();
     } catch (err) {
       this.stopCamera();
-      const denied = err?.name === 'NotAllowedError' || err?.name === 'SecurityError';
-      this.show('error', denied
-        ? 'Camera permission was refused. Allow camera access for this site in the browser settings, or type codes below.'
-        : `Could not start the camera (${err?.message || 'unknown error'}). Type the ticket code or search by name instead.`);
+      this.show('error', `${err.message} Type the ticket code or search by name instead.`);
     } finally {
       cameraBtn.disabled = false;
     }
   }
 
   stopCamera() {
-    clearTimeout(this.scanTimer);
-    this.scanTimer = null;
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
-    if (this.ui) {
-      this.ui.video.srcObject = null;
-      this.ui.cameraBtn.textContent = 'Start camera';
-    }
+    this.scanner?.stop();
+    if (this.ui) this.ui.cameraBtn.textContent = 'Start camera';
   }
 
-  scheduleScan() {
-    this.scanTimer = setTimeout(() => this.scanFrame(), SCAN_INTERVAL_MS);
-  }
-
-  async scanFrame() {
-    if (!this.stream) return;
-    try {
-      if (!this.busy) {
-        const text = await this.decode(this.ui.video);
-        if (text) this.onDecoded(text);
-      }
-    } catch (err) {
-      // A single unreadable frame is normal while the camera refocuses.
-      console.debug('[CheckIn] frame decode failed:', err?.message);
-    }
-    if (this.stream) this.scheduleScan();
-  }
-
-  onDecoded(text) {
+  async onDecoded(text) {
     const code = extractTicketId(text);
-    const now = Date.now();
-    if (code && code === this.lastCode && now - this.lastCodeAt < RESCAN_COOLDOWN_MS) return;
-    this.lastCode = code || text;
-    this.lastCodeAt = now;
     if (!code) {
       this.show('error', 'That QR code is not a BCCI event ticket.');
       return;
     }
-    this.submit(code, 'scan');
+    await this.submit(code, 'scan');
   }
 
   // ── Check-in ────────────────────────────────────────────────────

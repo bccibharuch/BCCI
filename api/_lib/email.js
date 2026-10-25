@@ -456,6 +456,24 @@ export async function sendEmail({ type, to, data }) {
 }
 
 /** Where admin notifications go. Server-side only. */
+// The record is already stored when its email goes out, so a slow SMTP
+// server (its own timeouts allow ~35s) must not push the response past the
+// function time limit and hide the result from the person waiting.
+const EMAIL_DEADLINE_MS = Number(process.env.EVENT_EMAIL_TIMEOUT_MS) || 5000;
+
+/** sendEmail() with a deadline; resolves { success: false } when it passes. */
+export async function sendEmailWithin(message, ms = EMAIL_DEADLINE_MS) {
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ success: false, error: `timed out after ${ms}ms` }), ms);
+  });
+  try {
+    return await Promise.race([sendEmail(message), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function adminRecipients() {
   const raw = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || SUPPORT_EMAIL;
   return raw.split(',').map((e) => e.trim()).filter(Boolean);
