@@ -83,7 +83,7 @@ let seen = 0;
 setInterval(() => {
   while (seen < smtp.received.length) {
     const mail = smtp.received[seen++];
-    const otp = (mail.raw.match(/letter-spacing:12px[^>]*>(\d{6})</) || [])[1];
+    const otp = (mail.raw.match(/letter-spacing:\d+px[^>]*>(\d{6})</) || [])[1];
     console.log('\n  ┌─ EMAIL ─────────────────────────────────────────');
     console.log(`  │ to:      ${mail.to.join(', ')}`);
     console.log(`  │ subject: ${mail.subject}`);

@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.3';
+import { Store } from './store.js?v=4.0.4';
 
 // ── Configuration ──────────────────────────────────────────────
 // Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
@@ -103,6 +103,7 @@ const VIEW_PATHS = {
   signin: '/signin',
   admin: '/admin-bcci',
   verify: '/verify',
+  board: '/board',
 };
 
 const PATH_VIEWS = Object.fromEntries(
@@ -122,6 +123,7 @@ const PAGE_TITLES = {
   signin: 'Secretariat Sign In — BCCI Bharuch',
   admin: 'Admin Portal — BCCI Bharuch',
   verify: 'Member Verification — BCCI Bharuch',
+  board: 'Board Portal — BCCI Bharuch',
 };
 
 /** Resolves the view for the current URL, tolerating the old #hash links. */
@@ -1824,6 +1826,8 @@ class App {
     }
 
     this.currentView = viewId;
+    // Leaving the board portal must release the camera if it is scanning.
+    if (viewId !== 'board') this._boardPortal?.destroy();
 
     // The admin entry pages are a walled garden: no public navigation,
     // no apply/sign-in calls to action — just the brand mark, with its
@@ -1906,6 +1910,61 @@ class App {
     if (viewId === 'card') this.renderMembershipCard();
     if (viewId === 'verify') await this.renderVerificationView();
     if (viewId === 'admin') await this.renderAdminPortal();
+    if (viewId === 'board') await this.renderBoardPortal();
+  }
+
+  /**
+   * /board: a board member's sign-in, QR attendance and history. A QR opened
+   * with the phone's own camera arrives as /board?attend=…; it is marked once
+   * and dropped from the address bar so a refresh cannot resubmit it.
+   */
+  async renderBoardPortal() {
+    const root = document.getElementById('boardPortalRoot');
+    if (!root) return;
+    let BoardPortal;
+    let parseAttendQr;
+    try {
+      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.0.0'));
+    } catch (err) {
+      root.textContent = 'The Board Portal could not load. Check your connection and reload the page.';
+      console.error('[Board] portal failed to load:', err);
+      return;
+    }
+    const attend = parseAttendQr(window.location.search);
+    if (attend) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('attend');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    }
+    this._boardPortal?.destroy();
+    this._boardPortal = new BoardPortal({ root, store: this.store, toast: (m, t) => this.showToast(m, t) });
+    await this._boardPortal.mount({ attend });
+  }
+
+  /** The admin portal's "Board & Meetings" tab, mounted once and refreshed after. */
+  async renderBoardAdmin() {
+    const root = document.getElementById('boardAdminRoot');
+    if (!root) return;
+    if (this._boardAdmin) {
+      await this._boardAdmin.refresh();
+      return;
+    }
+    try {
+      const { BoardAdmin } = await import('./board-admin.js?v=1.0.0');
+      this._boardAdmin = new BoardAdmin({
+        root,
+        store: this.store,
+        ui: {
+          toast: (m, t) => this.showToast(m, t),
+          showModal: (o) => this.showModal(o),
+          closeModal: () => this.closeModal(),
+        },
+      });
+      await this._boardAdmin.mount();
+    } catch (err) {
+      root.textContent = 'The board section could not load. Reload the page to try again.';
+      console.error('[Board] admin failed to load:', err);
+    }
   }
 
   renderLeadership() {
@@ -3660,6 +3719,7 @@ class App {
     this.bindAdminActions();
     this.renderAdminEvents();
     this.renderAdminMembershipPlans();
+    this.renderBoardAdmin();
   }
 
   async handleApproveApplication(id) {

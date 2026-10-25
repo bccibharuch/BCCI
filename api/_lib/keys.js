@@ -29,6 +29,17 @@ export const KEYS = {
   planIndex: 'bcci:plan_index',
 
   migrated: (what) => `bcci:migrated:${what}`,
+
+  boardMemberSeq: 'bcci:board:seq:member',
+  boardMember: (id) => `bcci:board:member:${id}`,
+  boardMemberByEmail: (email) => `bcci:board:member_email:${String(email).trim().toLowerCase()}`,
+  boardMeetingSeq: 'bcci:board:seq:meeting',
+  boardMeeting: (id) => `bcci:board:meeting:${id}`,
+  boardAttendance: (meetingId, memberId) => `bcci:board:att:${meetingId}:${memberId}`,
+  boardSession: (token) => `board:${token}`,
+  boardOtp: (email) => `bcci:board:otp:${String(email).trim().toLowerCase()}`,
+  boardOtpTries: (email) => `bcci:board:otp_tries:${String(email).trim().toLowerCase()}`,
+  boardOtpClaim: (email) => `bcci:board:otp_claim:${String(email).trim().toLowerCase()}`,
 };
 
 /**

@@ -288,6 +288,42 @@ export const TEMPLATES = {
     }),
   }),
 
+  board_welcome: (d) => ({
+    subject: 'You have been added to the BCCI Board Portal',
+    html: shell({
+      accent: '#0F2C59',
+      heading: 'Welcome to the BCCI Board Portal',
+      sub: esc(d.designation || ''),
+      body: `
+        <p style="margin:0 0 8px;font-size:15px;color:#1E293B;">Dear <strong>${esc(d.name || 'Board Member')}</strong>,</p>
+        <p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+          The BCCI Secretariat has created your board profile as <strong>${esc(d.designation)}</strong>.
+          At board meetings you will mark your attendance by scanning the QR code shown on the screen.
+        </p>
+        ${panel(
+          row('Portal', `${siteUrl()}/board`) +
+          row('Sign in with', d.email) +
+          `<tr><td style="padding:4px 0;font-size:13px;color:#475569;">Sign in once on your phone before the meeting. It stays signed in for 6 months.</td></tr>`
+        )}
+        <div style="text-align:center;margin:0 0 20px;">
+          <a href="${esc(`${siteUrl()}/board`)}" style="display:inline-block;background:#0F2C59;color:#FFD700;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;border:1px solid #D4AF37;">Open the Board Portal</a>
+        </div>
+        ${helpBox}`,
+    }),
+  }),
+
+  board_signin_code: (d) => ({
+    subject: 'Your BCCI Board Portal sign-in code',
+    html: shell({
+      accent: '#0F2C59',
+      heading: 'Board Portal sign-in',
+      body: `
+        <p style="margin:0 0 16px;font-size:14px;color:#475569;text-align:center;">Enter this code to sign in as <strong>${esc(d.name || '')}</strong>.</p>
+        <div style="font-size:34px;font-weight:bold;letter-spacing:10px;color:#0F2C59;background:#F8FAFC;padding:16px;border-radius:8px;border:2px dashed #D4AF37;text-align:center;margin-bottom:16px;">${esc(d.code)}</div>
+        <p style="margin:0;font-size:12px;color:#94A3B8;text-align:center;">The code expires in 10 minutes. If you did not ask for it, you can ignore this email.</p>`,
+    }),
+  }),
+
   // Sent by the server's own maintenance scripts (backups, deploys) when
   // something needs a person: deploy/notify.sh posts here.
   ops_alert: (d) => ({

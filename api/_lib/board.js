@@ -1,0 +1,406 @@
+// api/_lib/board.js
+// Board members, board meetings and meeting attendance.
+//
+// Built on kv (Upstash on Vercel, Postgres on the VPS), so both deployments
+// share one implementation. The data is small: a few dozen profiles and a
+// couple of meetings a month.
+//
+// Every record has its own key, and no read-modify-write is shared between
+// people acting at the same time:
+//   - ids come from INCR counters (BM-1, BM-2…; MTG-1…), and listing is an
+//     MGET of 1..counter;
+//   - an email belongs to one profile through SET NX on its email key;
+//   - each attendance mark is its own key, written with SET NX, so fifteen
+//     members scanning in the same second cannot overwrite one another.
+//
+// A meeting's QR code is an HMAC of the meeting's secret and the current
+// 20-second window. It only works inside that window (and the one before),
+// so a photo forwarded to someone outside the room stops working quickly.
+
+import crypto from 'node:crypto';
+import { kv, KEYS, withRetry } from './kv.js';
+
+export const QR_WINDOW_MS = 20_000;
+const MEMBER_STATUS = ['active', 'inactive'];
+export const ATTENDANCE_STATUS = ['present', 'leave', 'absent'];
+
+/** A failure the caller should show the person, with an HTTP status. */
+export class BoardError extends Error {
+  constructor(status, message, code) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const nowIso = () => new Date().toISOString();
+
+async function listByCounter(seqKey, keyFor, prefix) {
+  const count = Number(await withRetry(() => kv.get(seqKey))) || 0;
+  if (!count) return [];
+  const ids = Array.from({ length: count }, (_, i) => `${prefix}-${i + 1}`);
+  const records = [];
+  // Chunks keep each MGET (one HTTP call on Upstash) a sensible size.
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+    const values = await withRetry(() => kv.mget(...chunk.map(keyFor)));
+    values.forEach((v) => v && records.push(typeof v === 'string' ? JSON.parse(v) : v));
+  }
+  return records;
+}
+
+const idNumber = (id) => Number(String(id).split('-').pop()) || 0;
+
+// ── Members ────────────────────────────────────────────────────────
+
+export async function listMembers() {
+  const members = await listByCounter(KEYS.boardMemberSeq, KEYS.boardMember, 'BM');
+  return members.sort((a, b) => idNumber(a.id) - idNumber(b.id));
+}
+
+export async function getMember(id) {
+  if (!/^BM-\d{1,6}$/.test(String(id || ''))) return null;
+  const raw = await withRetry(() => kv.get(KEYS.boardMember(id)));
+  return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+}
+
+export async function getMemberByEmail(email) {
+  const id = await withRetry(() => kv.get(KEYS.boardMemberByEmail(email)));
+  if (!id) return null;
+  const member = await getMember(String(id));
+  // The email key may outlive a profile write that failed half-way.
+  return member && member.email === String(email).trim().toLowerCase() ? member : null;
+}
+
+/** Claims an email for a profile; false when another profile holds it. */
+async function claimEmail(email, id) {
+  const key = KEYS.boardMemberByEmail(email);
+  if (await withRetry(() => kv.set(key, id, { nx: true }))) return true;
+  const holder = String(await withRetry(() => kv.get(key)) || '');
+  if (holder === id) return true;
+  const holderProfile = holder ? await getMember(holder) : null;
+  if (holderProfile && holderProfile.email === email) return false;
+  // A claim left by a write that never completed: take it over.
+  await withRetry(() => kv.set(key, id));
+  return true;
+}
+
+/**
+ * Creates a profile, or updates one when `fields.id` is given.
+ * `fields` must already be validated (see validateMemberFields).
+ */
+export async function saveMember(fields, { by = 'admin' } = {}) {
+  if (fields.id) {
+    const existing = await getMember(fields.id);
+    if (!existing) throw new BoardError(404, 'Board member not found.', 'not_found');
+    if (fields.email !== existing.email && !(await claimEmail(fields.email, existing.id))) {
+      throw new BoardError(409, 'Another board member already uses this email address.', 'email_taken');
+    }
+    const updated = { ...existing, ...fields, id: existing.id, status: existing.status, updatedAt: nowIso(), updatedBy: by };
+    await withRetry(() => kv.set(KEYS.boardMember(existing.id), updated));
+    if (fields.email !== existing.email) {
+      const oldKey = KEYS.boardMemberByEmail(existing.email);
+      if (String(await kv.get(oldKey) || '') === existing.id) await kv.del(oldKey);
+    }
+    return { member: updated, created: false };
+  }
+
+  // Checked first so a refused duplicate does not use up a member number;
+  // the claim below is still what guarantees uniqueness under a race.
+  if (await getMemberByEmail(fields.email)) {
+    throw new BoardError(409, 'A board member with this email address already exists.', 'email_taken');
+  }
+  const id = `BM-${await withRetry(() => kv.incr(KEYS.boardMemberSeq))}`;
+  if (!(await claimEmail(fields.email, id))) {
+    throw new BoardError(409, 'A board member with this email address already exists.', 'email_taken');
+  }
+  const member = { ...fields, id, status: 'active', createdAt: nowIso(), createdBy: by };
+  await withRetry(() => kv.set(KEYS.boardMember(id), member));
+  return { member, created: true };
+}
+
+export async function setMemberStatus(id, status, { by = 'admin' } = {}) {
+  if (!MEMBER_STATUS.includes(status)) throw new BoardError(400, 'Status must be active or inactive.', 'invalid');
+  const member = await getMember(id);
+  if (!member) throw new BoardError(404, 'Board member not found.', 'not_found');
+  const updated = { ...member, status, updatedAt: nowIso(), updatedBy: by };
+  await withRetry(() => kv.set(KEYS.boardMember(id), updated));
+  return updated;
+}
+
+/**
+ * Validates and normalises a profile from a request body. Returns
+ * { fields } or { error }.
+ */
+export function validateMemberFields(body, { cleanPhone, isEmail, str }) {
+  const fields = {
+    name: str(body.name, 120),
+    designation: str(body.designation, 80),
+    email: str(body.email, 254).toLowerCase(),
+    mobile: cleanPhone(body.mobile),
+    company: str(body.company, 200),
+  };
+  if (body.id) fields.id = str(body.id, 20);
+  if (fields.name.length < 2) return { error: 'Full name is required (at least 2 characters).' };
+  if (fields.designation.length < 2) return { error: 'Designation is required, e.g. President or Hon. Treasurer.' };
+  if (!isEmail(fields.email)) return { error: 'A valid email address is required. Board members sign in with it.' };
+  if (!/^[6-9]\d{9}$/.test(fields.mobile)) return { error: 'A valid 10-digit Indian mobile number is required.' };
+  return { fields };
+}
+
+// ── Meetings ───────────────────────────────────────────────────────
+
+export async function listMeetings() {
+  const meetings = await listByCounter(KEYS.boardMeetingSeq, KEYS.boardMeeting, 'MTG');
+  return meetings.filter((m) => !m.deleted).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+}
+
+export async function getMeeting(id) {
+  if (!/^MTG-\d{1,6}$/.test(String(id || ''))) return null;
+  const raw = await withRetry(() => kv.get(KEYS.boardMeeting(id)));
+  const meeting = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+  return meeting && !meeting.deleted ? meeting : null;
+}
+
+export function validateMeetingFields(body, { str }) {
+  const fields = {
+    title: str(body.title, 160),
+    date: str(body.date, 10),
+    time: str(body.time, 5),
+    venue: str(body.venue, 200),
+  };
+  if (body.id) fields.id = str(body.id, 20);
+  if (fields.title.length < 3) return { error: 'Meeting title is required (at least 3 characters).' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date) || Number.isNaN(Date.parse(`${fields.date}T00:00:00Z`))) {
+    return { error: 'Meeting date is required.' };
+  }
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.time)) return { error: 'Meeting start time is required (HH:MM).' };
+  return { fields };
+}
+
+export async function saveMeeting(fields, { by = 'admin' } = {}) {
+  if (fields.id) {
+    const existing = await getMeeting(fields.id);
+    if (!existing) throw new BoardError(404, 'Meeting not found.', 'not_found');
+    if (existing.status === 'closed') throw new BoardError(409, 'A closed meeting cannot be edited. Reopen it first.', 'closed');
+    const updated = { ...existing, ...fields, id: existing.id, updatedAt: nowIso(), updatedBy: by };
+    await withRetry(() => kv.set(KEYS.boardMeeting(existing.id), updated));
+    return updated;
+  }
+  const id = `MTG-${await withRetry(() => kv.incr(KEYS.boardMeetingSeq))}`;
+  const meeting = {
+    ...fields,
+    id,
+    status: 'scheduled',
+    secret: crypto.randomBytes(32).toString('hex'),
+    roster: null,
+    createdAt: nowIso(),
+    createdBy: by,
+  };
+  await withRetry(() => kv.set(KEYS.boardMeeting(id), meeting));
+  return meeting;
+}
+
+export async function attendanceFor(meetingId, memberIds) {
+  if (!memberIds.length) return new Map();
+  const values = await withRetry(() => kv.mget(...memberIds.map((id) => KEYS.boardAttendance(meetingId, id))));
+  const map = new Map();
+  values.forEach((v, i) => v && map.set(memberIds[i], typeof v === 'string' ? JSON.parse(v) : v));
+  return map;
+}
+
+/**
+ * Who belongs to a meeting, and their marks. Frozen when the meeting closes;
+ * until then, the active board plus anyone already marked, so a profile
+ * deactivated mid-meeting cannot take its mark with it.
+ */
+export async function rosterAndMarks(meeting, members) {
+  if (Array.isArray(meeting.roster)) {
+    const byId = new Map(members.map((m) => [m.id, m]));
+    const roster = meeting.roster.map((id) => byId.get(id)).filter(Boolean);
+    return { roster, marks: await attendanceFor(meeting.id, roster.map((m) => m.id)) };
+  }
+  const marks = await attendanceFor(meeting.id, members.map((m) => m.id));
+  return { roster: members.filter((m) => m.status === 'active' || marks.has(m.id)), marks };
+}
+
+export async function setMeetingStatus(id, action, { by = 'admin' } = {}) {
+  const meeting = await getMeeting(id);
+  if (!meeting) throw new BoardError(404, 'Meeting not found.', 'not_found');
+  const at = nowIso();
+  let updated;
+  if (action === 'open') {
+    if (meeting.status === 'closed') throw new BoardError(409, 'This meeting is closed. Reopen it to take attendance again.', 'closed');
+    updated = { ...meeting, status: 'open', openedAt: meeting.openedAt || at, openedBy: meeting.openedBy || by };
+  } else if (action === 'close') {
+    if (meeting.status !== 'open') throw new BoardError(409, 'Only a meeting that is taking attendance can be closed.', 'not_open');
+    // Freeze who belonged, so a later profile change never rewrites history.
+    const { roster } = await rosterAndMarks(meeting, await listMembers());
+    updated = { ...meeting, status: 'closed', roster: roster.map((m) => m.id), closedAt: at, closedBy: by };
+  } else if (action === 'reopen') {
+    if (meeting.status !== 'closed') throw new BoardError(409, 'Only a closed meeting can be reopened.', 'not_closed');
+    updated = { ...meeting, status: 'open', roster: null, reopenedAt: at, reopenedBy: by };
+  } else {
+    throw new BoardError(400, 'Unknown meeting action.', 'invalid');
+  }
+  await withRetry(() => kv.set(KEYS.boardMeeting(id), updated));
+  return updated;
+}
+
+/** Removes a meeting created by mistake; refused once anyone has been marked. */
+export async function deleteMeeting(id, { by = 'admin' } = {}) {
+  const meeting = await getMeeting(id);
+  if (!meeting) throw new BoardError(404, 'Meeting not found.', 'not_found');
+  const members = await listMembers();
+  const marks = await attendanceFor(id, members.map((m) => m.id));
+  if (marks.size) throw new BoardError(409, 'Attendance has been recorded for this meeting, so it cannot be deleted.', 'has_attendance');
+  await withRetry(() => kv.set(KEYS.boardMeeting(id), { ...meeting, deleted: true, deletedAt: nowIso(), deletedBy: by }));
+}
+
+// ── The rotating QR code ───────────────────────────────────────────
+
+function codeFor(meeting, window) {
+  return crypto.createHmac('sha256', meeting.secret).update(`${meeting.id}:${window}`).digest('base64url').slice(0, 12);
+}
+
+/** The code the projector shows now, and how long until it changes. */
+export function currentCode(meeting, now = Date.now()) {
+  const window = Math.floor(now / QR_WINDOW_MS);
+  return { code: codeFor(meeting, window), refreshInMs: (window + 1) * QR_WINDOW_MS - now };
+}
+
+/** True for the code shown now or in the window just before. */
+export function isCodeValid(meeting, code, now = Date.now()) {
+  if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{12}$/.test(code)) return false;
+  const window = Math.floor(now / QR_WINDOW_MS);
+  return [window, window - 1].some((w) => crypto.timingSafeEqual(Buffer.from(codeFor(meeting, w)), Buffer.from(code)));
+}
+
+// ── Attendance ─────────────────────────────────────────────────────
+
+/** A board member marking themselves present by scanning the projector. */
+export async function markBySelf(meetingId, member, code, { userAgent = '' } = {}) {
+  const meeting = await getMeeting(meetingId);
+  if (!meeting) throw new BoardError(404, 'This QR code is not for a BCCI board meeting.', 'not_found');
+  if (meeting.status !== 'open') {
+    throw new BoardError(409, meeting.status === 'closed' ? 'Attendance for this meeting has closed.' : 'Attendance for this meeting has not opened yet.', 'not_open');
+  }
+  if (member.status !== 'active') throw new BoardError(403, 'Your board profile is not active.', 'inactive');
+  if (!isCodeValid(meeting, code)) {
+    throw new BoardError(410, 'This QR code has expired. Scan the code on the screen again.', 'expired');
+  }
+
+  const key = KEYS.boardAttendance(meeting.id, member.id);
+  const at = nowIso();
+  const entry = { status: 'present', at, method: 'qr', by: member.email };
+  const record = { meetingId: meeting.id, memberId: member.id, status: 'present', at, method: 'qr', userAgent: String(userAgent).slice(0, 160), history: [entry] };
+
+  if (await withRetry(() => kv.set(key, record, { nx: true }))) return { meeting, record, alreadyMarked: false };
+
+  const existing = await withRetry(() => kv.get(key));
+  const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
+  if (current?.status === 'present') return { meeting, record: current, alreadyMarked: true };
+  // Marked on leave or absent by the secretary, but here in the room after all.
+  const upgraded = { ...current, ...record, history: [...(current?.history || []), entry] };
+  await withRetry(() => kv.set(key, upgraded));
+  return { meeting, record: upgraded, alreadyMarked: false };
+}
+
+/** The superadmin setting someone present, on leave or absent, with a reason. */
+export async function markBySecretary(meetingId, memberId, status, reason, { by = 'admin' } = {}) {
+  if (!ATTENDANCE_STATUS.includes(status)) throw new BoardError(400, 'Status must be present, leave or absent.', 'invalid');
+  if (String(reason || '').trim().length < 3) throw new BoardError(400, 'Give a short reason for the record, e.g. "No phone with them".', 'reason_required');
+  const meeting = await getMeeting(meetingId);
+  if (!meeting) throw new BoardError(404, 'Meeting not found.', 'not_found');
+  const member = await getMember(memberId);
+  if (!member) throw new BoardError(404, 'Board member not found.', 'not_found');
+  const onRoster = Array.isArray(meeting.roster) ? meeting.roster.includes(member.id) : member.status === 'active';
+  if (!onRoster) throw new BoardError(409, `${member.name} is not on the board for this meeting.`, 'not_on_roster');
+
+  const key = KEYS.boardAttendance(meeting.id, member.id);
+  const existing = await withRetry(() => kv.get(key));
+  const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
+  const at = nowIso();
+  const entry = { status, at, method: 'secretary', by, reason: String(reason).trim().slice(0, 300) };
+  const record = {
+    meetingId: meeting.id,
+    memberId: member.id,
+    status,
+    at: status === 'present' && current?.status === 'present' ? current.at : at,
+    method: 'secretary',
+    reason: entry.reason,
+    history: [...(current?.history || []), entry],
+  };
+  await withRetry(() => kv.set(key, record));
+  return { meeting, member, record };
+}
+
+/** One meeting with each roster member's status, for the superadmin. */
+export async function meetingDetail(meetingId) {
+  const meeting = await getMeeting(meetingId);
+  if (!meeting) throw new BoardError(404, 'Meeting not found.', 'not_found');
+  const { roster, marks } = await rosterAndMarks(meeting, await listMembers());
+  const rows = roster.map((m) => {
+    const rec = marks.get(m.id);
+    return {
+      memberId: m.id,
+      name: m.name,
+      designation: m.designation,
+      status: rec?.status || 'absent',
+      at: rec?.at || null,
+      method: rec?.method || null,
+      reason: rec?.reason || null,
+      history: rec?.history || [],
+    };
+  });
+  return { meeting: publicMeeting(meeting), rows, counts: countRows(rows) };
+}
+
+export function countRows(rows) {
+  const counts = { roster: rows.length, present: 0, leave: 0, absent: 0 };
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+  return counts;
+}
+
+/** A meeting without its QR secret, for anything sent to a browser. */
+export function publicMeeting(m) {
+  const { secret, ...rest } = m;
+  return rest;
+}
+
+/** A board member's own meetings and statuses, for their portal. */
+export async function memberHistory(member) {
+  const meetings = await listMeetings();
+  const started = meetings.filter((m) => m.status !== 'scheduled');
+  // One read for this member's marks across every meeting.
+  const marks = started.length
+    ? await withRetry(() => kv.mget(...started.map((m) => KEYS.boardAttendance(m.id, member.id))))
+    : [];
+  const markFor = new Map(started.map((m, i) => [m.id, typeof marks[i] === 'string' ? JSON.parse(marks[i]) : marks[i]]));
+  const items = [];
+  for (const meeting of meetings) {
+    if (meeting.status === 'scheduled') {
+      items.push({ meeting: publicMeeting(meeting), status: null, at: null });
+      continue;
+    }
+    const rec = markFor.get(meeting.id);
+    const onRoster = Array.isArray(meeting.roster) ? meeting.roster.includes(member.id) : member.status === 'active' || Boolean(rec);
+    if (!onRoster) continue;
+    items.push({ meeting: publicMeeting(meeting), status: rec?.status || 'absent', at: rec?.at || null });
+  }
+  const held = items.filter((i) => i.meeting.status === 'closed');
+  const attended = held.filter((i) => i.status === 'present').length;
+  return { items, stats: { held: held.length, attended, rate: held.length ? attended / held.length : null } };
+}
+
+/** Everything the attendance register workbook needs, oldest meeting first. */
+export async function registerData() {
+  const [meetings, members] = await Promise.all([listMeetings(), listMembers()]);
+  const held = meetings.filter((m) => m.status !== 'scheduled').sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+  const columns = [];
+  for (const meeting of held) {
+    const { roster, marks } = await rosterAndMarks(meeting, members);
+    columns.push({ meeting, rosterIds: new Set(roster.map((m) => m.id)), marks });
+  }
+  return { members, columns };
+}

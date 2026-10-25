@@ -79,7 +79,7 @@
   <script src="/assets/vendor/qrcodejs/qrcode.min.js" defer
     integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA=="></script>
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/css/styles.css?v=3.2.7" />
+  <link rel="stylesheet" href="/css/styles.css?v=3.2.10" />
   <!-- Premium Membership Card Styles -->
   <link rel="stylesheet" href="/css/membership-card.css?v=3.2.0" />
 </head><body>
@@ -1557,6 +1557,15 @@
     </section>
   </main>
 
+  <!-- BOARD PORTAL: board members sign in and mark meeting attendance -->
+  <main id="view-board" class="view-page" style="display: none;">
+    <section class="section-padding board-portal-section">
+      <div class="container board-portal-container">
+        <div id="boardPortalRoot" class="board-portal"></div>
+      </div>
+    </section>
+  </main>
+
   <!-- 9. ADMIN DASHBOARD VIEW PORTAL -->
   <main id="view-admin" class="view-page" style="display: none;">
     <section class="section-padding">
@@ -1596,6 +1605,9 @@
               </li>
               <li class="admin-menu-item" data-tab="plans">
                 <i class="fas fa-id-card"></i> Membership Types
+              </li>
+              <li class="admin-menu-item" data-tab="board">
+                <i class="fas fa-user-tie"></i> Board &amp; Meetings
               </li>
             </ul>
           </div>
@@ -1885,6 +1897,10 @@
               </div>
               <div class="admin-mobile-cards" id="adminPlansCards"></div>
             </div>
+
+            <div id="tab-board" class="admin-tab-pane" style="display: none;">
+              <div id="boardAdminRoot"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1925,6 +1941,7 @@
           <ul class="footer-links">
             <li><a href="#" data-view-nav="membership">Apply for Membership</a></li>
             <li><a href="#" data-view-nav="enquiry">Enquiry Form</a></li>
+            <li><a href="/board" data-view-nav="board">Board Portal</a></li>
           </ul>
         </div>
 
@@ -1966,7 +1983,7 @@
   </nav>
 
   <!-- App Main ES Module -->
-  <script type="module" src="/js/app.js?v=5.0.11"></script>
+  <script type="module" src="/js/app.js?v=5.0.12"></script>
 </body>
 
 </html>

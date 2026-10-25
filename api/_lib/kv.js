@@ -6,8 +6,8 @@
 //   STORAGE_BACKEND=postgres  a `kv` table in the records database (the VPS)
 //
 // On a single server that keeps everything in one database with one backup.
-// Only the Redis commands the routes use are offered — get, set (ex / nx),
-// del, incr, expire, ttl — with Redis semantics, so callers cannot tell
+// Only the Redis commands the routes use are offered — get, mget, set
+// (ex / nx), del, incr, expire, ttl — with Redis semantics, so callers cannot tell
 // which backend answered. Expired rows read as absent and are swept on a
 // timer by the long-running server.
 
@@ -46,6 +46,14 @@ function postgresKv(query) {
            RETURNING key`;
       const r = await query(sql, params);
       return r.rows.length ? 'OK' : null;
+    },
+
+    /** Values for each key, in order; null where a key is absent. */
+    async mget(...keys) {
+      if (!keys.length) return [];
+      const r = await query(`SELECT key, value FROM kv WHERE key = ANY($1::text[]) AND ${live}`, [keys]);
+      const byKey = new Map(r.rows.map((row) => [row.key, row.value]));
+      return keys.map((k) => (byKey.has(k) ? byKey.get(k) : null));
     },
 
     /** Number of live keys removed. */

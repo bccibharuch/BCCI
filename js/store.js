@@ -9,6 +9,7 @@ const API_BASE = ''; // same origin
 const STORAGE_KEYS = {
   ADMIN_SESSION: 'bcci_admin_session',
   APPLICANT_SESSION: 'bcci_applicant_session',
+  BOARD_SESSION: 'bcci_board_session',
 };
 
 const REQUEST_TIMEOUT_MS = 20000;
@@ -18,7 +19,7 @@ export class Store {
 
   /**
    * @param {string} endpoint
-   * @param {{method?: string, body?: any, auth?: 'admin'|'applicant'|null, retries?: number}} options
+   * @param {{method?: string, body?: any, auth?: 'admin'|'applicant'|'board'|null, retries?: number}} options
    */
   async apiCall(endpoint, options = {}) {
     const { method = 'GET', body, auth = null, retries = method === 'GET' ? 2 : 0 } = options;
@@ -29,6 +30,9 @@ export class Store {
       if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
     } else if (auth === 'applicant') {
       const session = this.getApplicantSession();
+      if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
+    } else if (auth === 'board') {
+      const session = this.getBoardSession();
       if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
     }
 
@@ -58,6 +62,7 @@ export class Store {
           if (res.status === 401) {
             if (auth === 'admin') this.forgetAdminSession();
             if (auth === 'applicant') this.forgetApplicantSession();
+            if (auth === 'board') this.forgetBoardSession();
           }
           const error = new Error(data.error || `Request failed (${res.status}).`);
           error.status = res.status;
@@ -509,6 +514,68 @@ export class Store {
 
   forgetApplicantSession() {
     try { localStorage.removeItem(STORAGE_KEYS.APPLICANT_SESSION); } catch {}
+  }
+
+  /* ── Board portal session ─────────────────────────────────────────── */
+
+  getBoardSession() {
+    return this._readSession(STORAGE_KEYS.BOARD_SESSION);
+  }
+
+  setBoardSession(session, member) {
+    this._writeSession(STORAGE_KEYS.BOARD_SESSION, { ...session, member });
+  }
+
+  async clearBoardSession() {
+    if (this.getBoardSession()) {
+      try {
+        await this.apiCall('/api/board?action=sign-out', { method: 'POST', auth: 'board' });
+      } catch (err) {
+        console.warn('[Store] Could not end the board session server-side:', err.message);
+      }
+    }
+    this.forgetBoardSession();
+  }
+
+  forgetBoardSession() {
+    try { localStorage.removeItem(STORAGE_KEYS.BOARD_SESSION); } catch {}
+  }
+
+  /**
+   * Downloads a file the API returns (not JSON), e.g. the attendance
+   * register. Saves it under the server's filename.
+   */
+  async downloadFile(endpoint, { auth = 'admin', fallbackName = 'download' } = {}) {
+    const headers = {};
+    const session = auth === 'admin' ? this.getAdminSession() : null;
+    if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${endpoint}`, { headers, signal: controller.signal });
+    } catch (err) {
+      throw new Error('Could not reach the server. Check your connection and try again.', { cause: err });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      let message = `Download failed (${res.status}).`;
+      try { message = (await res.json()).error || message; } catch {}
+      if (res.status === 401 && auth === 'admin') this.forgetAdminSession();
+      throw Object.assign(new Error(message), { status: res.status });
+    }
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] || fallbackName;
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return name;
   }
 
   /* ── Session storage plumbing ─────────────────────────────────────── */
