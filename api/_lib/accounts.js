@@ -1,7 +1,7 @@
 // api/_lib/accounts.js
 // Secure credential hashing and Upstash Redis account persistence.
 import crypto from 'node:crypto';
-import { redis, KEYS, withRetry } from './redis.js';
+import { kv, KEYS, withRetry } from './kv.js';
 
 import util from 'node:util';
 const scryptAsync = util.promisify(crypto.scrypt);
@@ -67,7 +67,7 @@ export async function getAccount(email) {
   if (!email) return null;
   const key = KEYS.account(email);
   return withRetry(async () => {
-    const raw = await redis.get(key);
+    const raw = await kv.get(key);
     if (!raw) return null;
     if (typeof raw === 'string') {
       try {
@@ -100,7 +100,7 @@ export async function saveAccount(email, password) {
     passwordUpdatedAt: now,
   };
   await withRetry(async () => {
-    await redis.set(KEYS.account(cleanEmail), account);
+    await kv.set(KEYS.account(cleanEmail), account);
   });
   return account;
 }

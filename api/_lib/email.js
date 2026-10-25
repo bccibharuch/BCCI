@@ -7,7 +7,7 @@
 // own sender reputation.
 
 import nodemailer from 'nodemailer';
-import { redis } from './redis.js';
+import { kv } from './kv.js';
 import { esc } from './http.js';
 
 const LOG_KEY = 'bcci:email_log';
@@ -417,7 +417,7 @@ export async function sendEmail({ type, to, data }) {
 
     // Audit trail, capped so it cannot grow without bound.
     try {
-      const logs = (await redis.get(LOG_KEY)) || [];
+      const logs = (await kv.get(LOG_KEY)) || [];
       logs.unshift({
         id: `EMAIL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         type,
@@ -427,7 +427,7 @@ export async function sendEmail({ type, to, data }) {
         provider: result.provider,
         sentAt: new Date().toISOString(),
       });
-      await redis.set(LOG_KEY, logs.slice(0, 300));
+      await kv.set(LOG_KEY, logs.slice(0, 300));
     } catch (err) {
       console.warn('[Email] audit log write failed:', err.message);
     }

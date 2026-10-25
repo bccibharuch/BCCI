@@ -27,7 +27,7 @@ process.env.STORAGE_BACKEND = 'postgres';
 const pg = await import('../api/_lib/postgres.js');
 await pg.initSchema();
 
-const counts = { applications: 0, enquiries: 0, events: 0, attendees: 0, membershipPlans: 0, skipped: 0 };
+const counts = { applications: 0, enquiries: 0, events: 0, attendees: 0, membershipPlans: 0, accounts: 0, emailLog: 0, skipped: 0 };
 
 async function migrateSet({ indexKey, recordKey, put, label }) {
   const ids = (await redis.zrange(indexKey, 0, -1)) || [];
@@ -97,6 +97,31 @@ for (const id of eventIds) {
     [id]
   );
 }
+
+// Applicant password accounts and the email log live in the kv table on
+// Postgres. Sessions and OTP codes are deliberately not copied: they expire
+// within hours, so people simply sign in again after the switch.
+async function copyToKv(key) {
+  const value = await redis.get(key);
+  if (value === null || value === undefined) return false;
+  const r = await pg.query(
+    'INSERT INTO kv (key, value, expires_at) VALUES ($1, $2::jsonb, NULL) ON CONFLICT (key) DO NOTHING',
+    [key, JSON.stringify(value)]
+  );
+  return r.rowCount === 1;
+}
+
+let cursor = '0';
+do {
+  const [next, keys] = await redis.scan(cursor, { match: 'bcci:account:*', count: 500 });
+  for (const key of keys) {
+    if (await copyToKv(key)) counts.accounts++;
+    else counts.skipped++;
+  }
+  cursor = String(next);
+} while (cursor !== '0');
+
+if (await copyToKv('bcci:email_log')) counts.emailLog = 1;
 
 console.log('Migration complete:', counts);
 process.exit(0);

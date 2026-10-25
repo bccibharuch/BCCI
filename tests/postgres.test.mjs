@@ -179,6 +179,50 @@ check('deleteCustomPlan removes a plan', (await lib.deleteCustomPlan('pg-gold'))
 check('deleteCustomPlan reports a missing plan', (await lib.deleteCustomPlan('pg-gold')) === false);
 check('only the remaining plan is listed', (await lib.listCustomPlans()).map((p) => p.id).join() === 'pg-silver');
 
+// ── Key-value state (sessions, OTP codes, rate limits) ──────────
+section('Postgres kv (Redis command subset)');
+
+const { kv, sweepExpiredKv } = await import('../api/_lib/kv.js');
+await lib.query('TRUNCATE kv');
+
+check('get of a missing key → null', (await kv.get('t:none')) === null);
+check('set → OK', (await kv.set('t:obj', { email: 'a@b.in', n: 2 })) === 'OK');
+const obj = await kv.get('t:obj');
+check('objects round-trip', obj?.email === 'a@b.in' && obj?.n === 2, JSON.stringify(obj));
+await kv.set('t:otp', '048213', { ex: 600 });
+check('a code with a leading zero stays a string', (await kv.get('t:otp')) === '048213');
+check('ttl of a key with expiry is its seconds left', (await kv.ttl('t:otp')) > 595);
+check('ttl of a key without expiry → -1', (await kv.ttl('t:obj')) === -1);
+check('ttl of a missing key → -2', (await kv.ttl('t:none')) === -2);
+
+check('set nx on a live key → null', (await kv.set('t:obj', 'x', { nx: true })) === null);
+check('set nx did not overwrite', (await kv.get('t:obj'))?.email === 'a@b.in');
+check('set nx on a new key → OK', (await kv.set('t:claim', '1', { nx: true, ex: 60 })) === 'OK');
+const claims = await Promise.all(Array.from({ length: 8 }, () => kv.set('t:race', '1', { nx: true, ex: 60 })));
+check('concurrent set nx: exactly one wins', claims.filter((c) => c === 'OK').length === 1, JSON.stringify(claims));
+
+await lib.query("INSERT INTO kv (key, value, expires_at) VALUES ('t:old', '\"stale\"', now() - interval '1 second')");
+check('an expired key reads as absent', (await kv.get('t:old')) === null && (await kv.ttl('t:old')) === -2);
+check('set nx may claim an expired key', (await kv.set('t:old', 'fresh', { nx: true })) === 'OK' && (await kv.get('t:old')) === 'fresh');
+
+check('incr on a new key → 1', (await kv.incr('t:rl')) === 1);
+check('expire on a live key → 1', (await kv.expire('t:rl', 120)) === 1);
+check('incr keeps the existing ttl', (await kv.incr('t:rl')) === 2 && (await kv.ttl('t:rl')) > 115);
+const counts = await Promise.all(Array.from({ length: 20 }, () => kv.incr('t:rl')));
+check('20 concurrent incr all count', Math.max(...counts) === 22 && new Set(counts).size === 20, JSON.stringify(counts));
+check('expire on a missing key → 0', (await kv.expire('t:none', 30)) === 0);
+await lib.query("UPDATE kv SET expires_at = now() - interval '1 second' WHERE key = 't:rl'");
+check('incr after expiry restarts at 1 with no ttl', (await kv.incr('t:rl')) === 1 && (await kv.ttl('t:rl')) === -1);
+
+check('del counts live keys removed', (await kv.del('t:obj', 't:otp', 't:none')) === 2);
+check('deleted keys are gone', (await kv.get('t:obj')) === null);
+await lib.query("INSERT INTO kv (key, value, expires_at) VALUES ('t:gone', '1', now() - interval '1 second')");
+check('sweep removes expired rows only', (await sweepExpiredKv()) === 1 && (await kv.get('t:claim')) === '1');
+let refused = false;
+try { await kv.set('t:bad', 'x', { ex: 0 }); } catch { refused = true; }
+check('a zero expiry is refused rather than stored forever', refused);
+await lib.query('TRUNCATE kv');
+
 // ── Storage switch ───────────────────────────────────────────────
 section('records.js switch');
 

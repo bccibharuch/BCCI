@@ -88,6 +88,13 @@ export async function initSchema() {
       data JSONB NOT NULL DEFAULT '{}'
     );
 
+    CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      expires_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS kv_expires_idx ON kv (expires_at) WHERE expires_at IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS locks (
       name TEXT PRIMARY KEY,
       token TEXT NOT NULL,

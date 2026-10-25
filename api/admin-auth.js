@@ -2,7 +2,7 @@
 // Admin sign-in / sign-out. Issues an opaque session token stored in Redis.
 
 import crypto from 'crypto';
-import { redis, KEYS, withRetry } from './_lib/redis.js';
+import { kv, KEYS, withRetry } from './_lib/kv.js';
 import {
   applyCors,
   handlePreflight,
@@ -24,7 +24,7 @@ async function handler(req, res) {
   // ── Sign out ─────────────────────────────────────────────────────
   if (req.method === 'DELETE') {
     const token = bearerToken(req);
-    if (token) await redis.del(KEYS.adminSession(token)).catch(() => {});
+    if (token) await kv.del(KEYS.adminSession(token)).catch(() => {});
     return res.status(200).json({ success: true, message: 'Signed out' });
   }
 
@@ -72,7 +72,7 @@ async function handler(req, res) {
 
   const token = crypto.randomUUID();
   await withRetry(() =>
-    redis.set(KEYS.adminSession(token), email, { ex: SESSION_TTL_SECONDS })
+    kv.set(KEYS.adminSession(token), email, { ex: SESSION_TTL_SECONDS })
   );
 
   return res.status(200).json({

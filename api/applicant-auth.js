@@ -3,7 +3,7 @@
 // and OTP-driven password reset.
 
 import crypto from 'crypto';
-import { redis, KEYS, withRetry } from './_lib/redis.js';
+import { kv, KEYS, withRetry } from './_lib/kv.js';
 import { getApplicationByEmail } from './_lib/records.js';
 import { getAccount, saveAccount, verifyPasswordAsync } from './_lib/accounts.js';
 import { sendRaw } from './_lib/email.js';
@@ -88,7 +88,7 @@ async function handler(req, res) {
     const token = crypto.randomUUID();
     const sessionData = { email, issuedAt: Date.now() };
     await withRetry(() =>
-      redis.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
+      kv.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
     );
 
     return res.status(200).json({
@@ -122,11 +122,11 @@ async function handler(req, res) {
 
     const attempt = await rateLimit(`otpverify:${email}`, { max: MAX_OTP_ATTEMPTS, windowSec: 600 });
     if (!attempt.ok) {
-      await redis.del(`bcci:otp:${email}`).catch(() => {});
+      await kv.del(`bcci:otp:${email}`).catch(() => {});
       return tooManyRequests(res, attempt.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
     }
 
-    const storedOtp = await withRetry(() => redis.get(`bcci:otp:${email}`));
+    const storedOtp = await withRetry(() => kv.get(`bcci:otp:${email}`));
     if (!storedOtp) {
       return res.status(400).json({
         success: false,
@@ -145,7 +145,7 @@ async function handler(req, res) {
     }
 
     // Atomic single-use claim: only the first concurrent request can claim this OTP
-    const claimed = await redis.set(`bcci:otp:claimed:${email}`, '1', { nx: true, ex: 60 });
+    const claimed = await kv.set(`bcci:otp:claimed:${email}`, '1', { nx: true, ex: 60 });
     if (!claimed) {
       return res.status(400).json({
         success: false,
@@ -157,14 +157,14 @@ async function handler(req, res) {
     await saveAccount(email, password);
 
     // Clean up OTP and rate limiter
-    await redis.del(`bcci:otp:${email}`).catch(() => {});
-    await redis.del(`bcci:rl:otpverify:${email}`).catch(() => {});
+    await kv.del(`bcci:otp:${email}`).catch(() => {});
+    await kv.del(`bcci:rl:otpverify:${email}`).catch(() => {});
 
     // Issue session token
     const token = crypto.randomUUID();
     const sessionData = { email, issuedAt: Date.now() };
     await withRetry(() =>
-      redis.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
+      kv.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
     );
 
     return res.status(201).json({
@@ -207,9 +207,9 @@ async function handler(req, res) {
 
     if (account || legacyApp) {
       const otp = crypto.randomInt(100000, 1000000).toString();
-      await withRetry(() => redis.set(KEYS.otpReset(email), otp, { ex: OTP_TTL_SECONDS }));
-      await redis.del(`bcci:rl:otpresetverify:${email}`).catch(() => {});
-      await redis.del(`bcci:otp:reset:claimed:${email}`).catch(() => {});
+      await withRetry(() => kv.set(KEYS.otpReset(email), otp, { ex: OTP_TTL_SECONDS }));
+      await kv.del(`bcci:rl:otpresetverify:${email}`).catch(() => {});
+      await kv.del(`bcci:otp:reset:claimed:${email}`).catch(() => {});
 
       const result = await sendRaw({
         to: email,
@@ -218,7 +218,7 @@ async function handler(req, res) {
       });
 
       if (!result.success) {
-        await redis.del(KEYS.otpReset(email)).catch(() => {});
+        await kv.del(KEYS.otpReset(email)).catch(() => {});
         return res.status(502).json({
           success: false,
           error: 'We could not send the password reset email. Please try again in a moment.',
@@ -250,11 +250,11 @@ async function handler(req, res) {
 
     const attempt = await rateLimit(`otpresetverify:${email}`, { max: MAX_OTP_ATTEMPTS, windowSec: 600 });
     if (!attempt.ok) {
-      await redis.del(KEYS.otpReset(email)).catch(() => {});
+      await kv.del(KEYS.otpReset(email)).catch(() => {});
       return tooManyRequests(res, attempt.retryAfter, 'Too many incorrect attempts. Please request a new reset code.');
     }
 
-    const storedOtp = await withRetry(() => redis.get(KEYS.otpReset(email)));
+    const storedOtp = await withRetry(() => kv.get(KEYS.otpReset(email)));
     if (!storedOtp) {
       return res.status(400).json({
         success: false,
@@ -273,7 +273,7 @@ async function handler(req, res) {
     }
 
     // Atomic single-use claim: only the first concurrent request can claim this reset OTP
-    const claimed = await redis.set(`bcci:otp:reset:claimed:${email}`, '1', { nx: true, ex: 60 });
+    const claimed = await kv.set(`bcci:otp:reset:claimed:${email}`, '1', { nx: true, ex: 60 });
     if (!claimed) {
       return res.status(400).json({
         success: false,
@@ -285,14 +285,14 @@ async function handler(req, res) {
     await saveAccount(email, newPassword);
 
     // Clean up reset OTP and attempt counter
-    await redis.del(KEYS.otpReset(email)).catch(() => {});
-    await redis.del(`bcci:rl:otpresetverify:${email}`).catch(() => {});
+    await kv.del(KEYS.otpReset(email)).catch(() => {});
+    await kv.del(`bcci:rl:otpresetverify:${email}`).catch(() => {});
 
     // Issue session token
     const token = crypto.randomUUID();
     const sessionData = { email, issuedAt: Date.now() };
     await withRetry(() =>
-      redis.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
+      kv.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
     );
 
     return res.status(200).json({

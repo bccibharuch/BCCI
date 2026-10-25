@@ -10,59 +10,14 @@
 
 import { Redis } from '@upstash/redis';
 import { summarizeApplication, newTicketId, applyCheckIn } from './record-fields.js';
+import { KEYS, withRetry } from './keys.js';
 
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-// ── Key layout ─────────────────────────────────────────────────────
-export const KEYS = {
-  app: (id) => `bcci:app:${id}`,
-  appSummary: (id) => `bcci:app_summary:${id}`,
-  appIndex: 'bcci:app_index',
-  appByEmail: (email) => `bcci:app_email:${String(email).trim().toLowerCase()}`,
-  appLegacy: 'bcci:applications',
-
-  enq: (id) => `bcci:enq:${id}`,
-  enqIndex: 'bcci:enq_index',
-  enqLegacy: 'bcci:enquiries',
-
-  adminSession: (token) => `admin:${token}`,
-  applicantSession: (token) => `applicant:${token}`,
-
-  account: (email) => `bcci:account:${String(email).trim().toLowerCase()}`,
-  otpReset: (email) => `bcci:otp:reset:${String(email).trim().toLowerCase()}`,
-
-  event: (id) => `bcci:event:${id}`,
-  eventIndex: 'bcci:event_index',
-  eventAttendees: (id) => `bcci:event_attendees:${id}`,
-
-  plan: (id) => `bcci:plan:${id}`,
-  planIndex: 'bcci:plan_index',
-
-  migrated: (what) => `bcci:migrated:${what}`,
-};
-
-/**
- * Retry a Redis operation a couple of times before giving up. Upstash is a
- * network hop; a single transient failure should not surface as a 500 to an
- * applicant who is halfway through a form.
- */
-export async function withRetry(fn, attempts = 3) {
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (i < attempts - 1) {
-        await new Promise((r) => setTimeout(r, 120 * Math.pow(2, i)));
-      }
-    }
-  }
-  throw lastErr;
-}
+export { KEYS, withRetry };
 
 /** Redis is reachable and responding. Used by /api/health. */
 export async function ping() {

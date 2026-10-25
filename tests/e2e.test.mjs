@@ -1,14 +1,54 @@
 // Full-stack exercise: the real server.js, the real handlers, a mock Upstash
 // and a real SMTP conversation. This is the "does it actually work" test.
+//
+//   E2E_BACKEND=postgres node tests/e2e.test.mjs
+// runs the same flow the way the VPS does: one Postgres database holding
+// records, sessions and OTP codes, and no Upstash configured at all. Skips
+// (exit 0) when no Postgres is reachable at TEST_DATABASE_URL.
 
 import { startMockRedis } from './mock-redis.mjs';
 import { startMockSmtp } from './smtp-server.mjs';
 
-const redis = await startMockRedis();
+const PG_MODE = process.env.E2E_BACKEND === 'postgres';
+let redis = null;
+let pgLib = null;
+
+if (PG_MODE) {
+  const url = process.env.TEST_DATABASE_URL || 'postgresql://bcci:testpw@localhost:5433/bcci';
+  const pg = (await import('pg')).default;
+  const probe = new pg.Pool({ connectionString: url, connectionTimeoutMillis: 3000 });
+  try {
+    await probe.query('SELECT 1');
+  } catch {
+    console.log('SKIP  e2e on postgres — no database reachable at ' + url.replace(/:[^:@/]+@/, ':***@'));
+    process.exit(0);
+  } finally {
+    await probe.end().catch(() => {});
+  }
+  process.env.STORAGE_BACKEND = 'postgres';
+  process.env.DATABASE_URL = url;
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  pgLib = await import('../api/_lib/postgres.js');
+  await pgLib.initSchema();
+  await pgLib.query('TRUNCATE event_attendees, events, enquiries, applications, membership_plans, locks, kv');
+} else {
+  redis = await startMockRedis();
+  process.env.UPSTASH_REDIS_REST_URL = redis.url;
+  process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
+}
 const smtp = await startMockSmtp();
 
-process.env.UPSTASH_REDIS_REST_URL = redis.url;
-process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
+/** A value the server stored (an OTP code), from whichever backend holds it. */
+async function storedValue(key) {
+  if (PG_MODE) {
+    const r = await pgLib.query('SELECT value FROM kv WHERE key = $1', [key]);
+    return r.rows.length ? String(r.rows[0].value) : null;
+  }
+  const raw = redis.store.get(key);
+  return raw === undefined ? null : String(JSON.parse(raw));
+}
+
 process.env.ADMIN_EMAILS = 'secretariat@bccibharuch.in';
 process.env.ADMIN_PASSWORD = 'a-long-random-admin-secret';
 process.env.INTERNAL_API_SECRET = 'internal-secret-value';
@@ -98,7 +138,12 @@ ck('CSP allows Google Fonts', (r.headers.get('content-security-policy') || '').i
 sec('Health check');
 r = await req('/api/health');
 ck('/api/health returns JSON, not the SPA', r.json !== null, r.text.slice(0, 60));
-ck('reports redis reachable', r.json?.checks?.redis?.reachable === true, JSON.stringify(r.json?.checks?.redis));
+if (PG_MODE) {
+  ck('reports postgres reachable', r.json?.checks?.postgres?.reachable === true, JSON.stringify(r.json?.checks?.postgres));
+  ck('does not depend on redis at all', r.json?.checks?.redis === undefined, JSON.stringify(r.json?.checks?.redis));
+} else {
+  ck('reports redis reachable', r.json?.checks?.redis?.reachable === true, JSON.stringify(r.json?.checks?.redis));
+}
 ck('reports smtp configured', r.json?.checks?.smtp?.configured === true);
 ck('overall status ok', r.json?.status === 'ok', JSON.stringify(r.json?.status));
 
@@ -114,7 +159,7 @@ ck('a real SMTP message was delivered', await waitForMail(1), `${smtp.received.l
 const otpMail = smtp.received[0];
 ck('OTP mail addressed to the applicant', otpMail?.to?.includes(MEMBER), JSON.stringify(otpMail?.to));
 ck('OTP mail has the right subject', /verification code/i.test(otpMail?.subject || ''), otpMail?.subject);
-const code = JSON.parse(redis.store.get(`bcci:otp:${MEMBER}`));
+const code = await storedValue(`bcci:otp:${MEMBER}`);
 ck('the 6-digit code is in the email body', otpMail?.raw?.includes(code), 'code not found in message');
 
 r = await req('/api/verify-otp', { method: 'POST', body: { email: MEMBER, code, name: 'Priya Shah' } });
@@ -211,7 +256,7 @@ const NEW_APPLICANT = 'kavita@sunrisechem.example';
 // 1. Send OTP for registration
 r = await req('/api/send-otp', { method: 'POST', body: { email: NEW_APPLICANT } });
 ck('registration OTP requested', r.status === 200, JSON.stringify(r.json));
-const regCode = String(JSON.parse(redis.store.get(`bcci:otp:${NEW_APPLICANT}`)));
+const regCode = await storedValue(`bcci:otp:${NEW_APPLICANT}`);
 ck('registration OTP generated in redis', typeof regCode === 'string' && regCode.length === 6);
 
 // 2. Register with OTP & password
@@ -241,7 +286,7 @@ r = await req('/api/applicant-auth', {
   body: { action: 'forgot-password-request', email: NEW_APPLICANT },
 });
 ck('forgot password request succeeds', r.status === 200);
-const resetCode = String(JSON.parse(redis.store.get(`bcci:otp:reset:${NEW_APPLICANT}`)));
+const resetCode = await storedValue(`bcci:otp:reset:${NEW_APPLICANT}`);
 ck('reset OTP generated in redis', typeof resetCode === 'string' && resetCode.length === 6);
 
 // 6. Reset password with code
@@ -273,10 +318,12 @@ ck('all 30 concurrent requests handled', created + limited === 30, `${created} c
 ck('none errored', results.every((x) => x.status === 201 || x.status === 429), results.map(x=>x.status).join(','));
 console.log(`         (${elapsed}ms for 30 concurrent submissions)`);
 
+console.log(`\n  backend: ${PG_MODE ? 'postgres (no Upstash)' : 'upstash mock'}`);
 console.log(`\n${'═'.repeat(54)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(54)}`);
 console.log(`  ${smtp.received.length} emails delivered over real SMTP during this run\n`);
 
 server.close();
 smtp.server.close();
-redis.server.close();
+redis?.server.close();
+if (pgLib) await pgLib.query('TRUNCATE event_attendees, events, enquiries, applications, membership_plans, locks, kv');
 process.exit(fail ? 1 : 0);

@@ -21,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { applySecurityHeaders, reportConfig } from './api/_lib/security.js';
 import { STORAGE_BACKEND, initStorage } from './api/_lib/records.js';
+import { sweepExpiredKv } from './api/_lib/kv.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -247,6 +248,11 @@ if (STORAGE_BACKEND === 'postgres') {
   try {
     await initStorage();
     console.log('  [storage] postgres schema ready');
+    // OTP codes, sessions and rate-limit counters expire by time; Redis
+    // drops them itself, Postgres needs them swept.
+    const sweep = () => sweepExpiredKv().catch((err) => console.error('  [storage] expired-key sweep failed:', err?.message || err));
+    setInterval(sweep, 10 * 60 * 1000).unref();
+    sweep();
   } catch (err) {
     console.error('  [storage] ERROR: could not reach Postgres:', err?.message || err);
     if (process.env.ALLOW_INCOMPLETE_CONFIG !== '1') process.exit(1);

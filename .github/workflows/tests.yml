@@ -21,7 +21,8 @@ jobs:
         # maintained LTS that nodemailer 10 and --env-file support.
         node-version: ['22', '24']
 
-    # Runs tests/postgres.test.mjs against a real database instead of skipping it.
+    # Runs tests/postgres.test.mjs, and the full e2e flow in Postgres-only
+    # (VPS) mode, against a real database instead of skipping them.
     services:
       postgres:
         image: postgres:17-alpine

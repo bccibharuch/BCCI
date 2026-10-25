@@ -2,7 +2,7 @@
 // Emails a six-digit verification code to an applicant.
 
 import crypto from 'crypto';
-import { redis, withRetry } from './_lib/redis.js';
+import { kv, withRetry } from './_lib/kv.js';
 import { sendRaw } from './_lib/email.js';
 import {
   applyCors,
@@ -60,10 +60,10 @@ async function handler(req, res) {
 
   const otp = crypto.randomInt(100000, 1000000).toString();
 
-  await withRetry(() => redis.set(`bcci:otp:${email}`, otp, { ex: OTP_TTL_SECONDS }));
+  await withRetry(() => kv.set(`bcci:otp:${email}`, otp, { ex: OTP_TTL_SECONDS }));
   // A fresh code clears the failed-attempt counter for the previous one and any consumption lock.
-  await redis.del(`bcci:rl:otpverify:${email}`).catch(() => {});
-  await redis.del(`bcci:otp:claimed:${email}`).catch(() => {});
+  await kv.del(`bcci:rl:otpverify:${email}`).catch(() => {});
+  await kv.del(`bcci:otp:claimed:${email}`).catch(() => {});
 
   const result = await sendRaw({
     to: email,
@@ -73,7 +73,7 @@ async function handler(req, res) {
 
   if (!result.success) {
     // Don't leave a code the applicant can never receive.
-    await redis.del(`bcci:otp:${email}`).catch(() => {});
+    await kv.del(`bcci:otp:${email}`).catch(() => {});
     return res.status(502).json({
       error: 'We could not send the verification email. Please try again in a moment.',
     });

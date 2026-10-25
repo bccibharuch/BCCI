@@ -2,7 +2,7 @@
 // CORS, session verification, rate limiting and HTML escaping.
 
 import crypto from 'crypto';
-import { redis, KEYS, withRetry } from './redis.js';
+import { kv, KEYS, withRetry } from './kv.js';
 
 // ── CORS ───────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ export function bearerToken(req) {
 export async function getAdminSession(req) {
   const token = bearerToken(req);
   if (!token) return null;
-  const email = await withRetry(() => redis.get(KEYS.adminSession(token)));
+  const email = await withRetry(() => kv.get(KEYS.adminSession(token)));
   return email || null;
 }
 
@@ -62,7 +62,7 @@ export async function getAdminSession(req) {
 export async function getApplicantSession(req) {
   const token = bearerToken(req);
   if (!token) return null;
-  const raw = await withRetry(() => redis.get(KEYS.applicantSession(token)));
+  const raw = await withRetry(() => kv.get(KEYS.applicantSession(token)));
   if (!raw) return null;
 
   let email = null;
@@ -88,14 +88,14 @@ export async function getApplicantSession(req) {
 
   // No catch here: treating a lookup error as "no account" would accept a
   // session that a password reset should have revoked. Let it fail closed.
-  const accountRaw = await withRetry(() => redis.get(KEYS.account(cleanEmail)));
+  const accountRaw = await withRetry(() => kv.get(KEYS.account(cleanEmail)));
   if (accountRaw) {
     const account = typeof accountRaw === 'string' ? JSON.parse(accountRaw) : accountRaw;
     if (account?.passwordUpdatedAt) {
       const pwdUpdatedMs = Date.parse(account.passwordUpdatedAt);
       const issuedMs = typeof issuedAt === 'number' ? issuedAt : (issuedAt ? Date.parse(issuedAt) : NaN);
       if (!Number.isFinite(issuedMs) || issuedMs < pwdUpdatedMs) {
-        await redis.del(KEYS.applicantSession(token)).catch(() => {});
+        await kv.del(KEYS.applicantSession(token)).catch(() => {});
         return null;
       }
     }
@@ -129,13 +129,13 @@ export function clientIp(req) {
  */
 export async function rateLimit(key, { max, windowSec }) {
   const k = `bcci:rl:${key}`;
-  const count = await withRetry(() => redis.incr(k));
+  const count = await withRetry(() => kv.incr(k));
   if (count === 1) {
-    await redis.expire(k, windowSec);
+    await kv.expire(k, windowSec);
     return { ok: true, remaining: max - 1 };
   }
   if (count > max) {
-    const ttl = await redis.ttl(k);
+    const ttl = await kv.ttl(k);
     return { ok: false, retryAfter: ttl > 0 ? ttl : windowSec };
   }
   return { ok: true, remaining: max - count };

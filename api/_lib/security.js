@@ -54,9 +54,14 @@ export function applySecurityHeaders(res, { https = false } = {}) {
 // ── Startup configuration check ────────────────────────────────────
 
 const REQUIRED = [
+  ['ADMIN_PASSWORD', 'admin sign-in is disabled'],
+];
+
+// Serverless keeps OTP codes, sessions and rate limits in Upstash; with
+// STORAGE_BACKEND=postgres they live in the records database instead.
+const REQUIRED_REDIS = [
   ['UPSTASH_REDIS_REST_URL', 'Redis — OTP codes, sessions and rate limits cannot be saved'],
   ['UPSTASH_REDIS_REST_TOKEN', 'Redis — OTP codes, sessions and rate limits cannot be saved'],
-  ['ADMIN_PASSWORD', 'admin sign-in is disabled'],
 ];
 
 const RECOMMENDED = [
@@ -75,13 +80,12 @@ export function checkConfig(env = process.env) {
   const errors = [];
   const warnings = [];
 
-  for (const [key, why] of REQUIRED) {
+  const pgMode = (env.STORAGE_BACKEND || 'redis').trim().toLowerCase() === 'postgres';
+  for (const [key, why] of pgMode ? REQUIRED : [...REQUIRED_REDIS, ...REQUIRED]) {
     if (!env[key]) errors.push(`${key} is not set — ${why}.`);
   }
-  // Postgres holds the durable records on the VPS (docker-compose). Redis
-  // alone still covers everything on serverless.
-  if ((env.STORAGE_BACKEND || 'redis').trim().toLowerCase() === 'postgres' && !env.DATABASE_URL) {
-    errors.push('DATABASE_URL is not set — STORAGE_BACKEND=postgres has nowhere to save records.');
+  if (pgMode && !env.DATABASE_URL) {
+    errors.push('DATABASE_URL is not set — STORAGE_BACKEND=postgres has nowhere to save records, sessions or OTP codes.');
   }
   for (const [key, why] of RECOMMENDED) {
     const fallback = key === 'SMTP_USER' ? env.GMAIL_USER

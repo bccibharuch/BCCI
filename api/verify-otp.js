@@ -2,7 +2,7 @@
 // Checks a verification code and issues a server-side applicant session.
 
 import crypto from 'crypto';
-import { redis, KEYS, withRetry } from './_lib/redis.js';
+import { kv, KEYS, withRetry } from './_lib/kv.js';
 import {
   applyCors,
   handlePreflight,
@@ -25,7 +25,7 @@ async function handler(req, res) {
   // Sign out — invalidate the applicant's session server-side.
   if (req.method === 'DELETE') {
     const token = bearerToken(req);
-    if (token) await redis.del(KEYS.applicantSession(token)).catch(() => {});
+    if (token) await kv.del(KEYS.applicantSession(token)).catch(() => {});
     return res.status(200).json({ success: true, message: 'Signed out' });
   }
 
@@ -49,11 +49,11 @@ async function handler(req, res) {
   const attempt = await rateLimit(`otpverify:${email}`, { max: MAX_ATTEMPTS, windowSec: 600 });
   if (!attempt.ok) {
     // Burn the code as well, so a lockout genuinely forces a new one.
-    await redis.del(`bcci:otp:${email}`).catch(() => {});
+    await kv.del(`bcci:otp:${email}`).catch(() => {});
     return tooManyRequests(res, attempt.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
   }
 
-  const storedOtp = await withRetry(() => redis.get(`bcci:otp:${email}`));
+  const storedOtp = await withRetry(() => kv.get(`bcci:otp:${email}`));
   if (!storedOtp) {
     return res.status(400).json({
       success: false,
@@ -72,7 +72,7 @@ async function handler(req, res) {
   }
 
   // Atomic single-use claim: only the first concurrent request can claim this OTP
-  const claimed = await redis.set(`bcci:otp:claimed:${email}`, '1', { nx: true, ex: 60 });
+  const claimed = await kv.set(`bcci:otp:claimed:${email}`, '1', { nx: true, ex: 60 });
   if (!claimed) {
     return res.status(400).json({
       success: false,
@@ -81,8 +81,8 @@ async function handler(req, res) {
   }
 
   // Success — clear the code and the attempt counter.
-  await redis.del(`bcci:otp:${email}`).catch(() => {});
-  await redis.del(`bcci:rl:otpverify:${email}`).catch(() => {});
+  await kv.del(`bcci:otp:${email}`).catch(() => {});
+  await kv.del(`bcci:rl:otpverify:${email}`).catch(() => {});
 
   // Issue an opaque server-side token. The old response was an unsigned JSON
   // object the browser simply stored, so anyone could hand-write one in the
@@ -90,7 +90,7 @@ async function handler(req, res) {
   const token = crypto.randomUUID();
   const sessionData = { email, issuedAt: Date.now() };
   await withRetry(() =>
-    redis.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
+    kv.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
   );
 
   console.log(`[OTP] verified ${email}`);
