@@ -44,6 +44,10 @@ const OPERATIONAL = [
   ['bcci:ratelimit:*', 'legacy rate-limit counters'],
   ['bcci:email_log', 'email audit log'],
   ['bcci:health:*', 'health check probes'],
+  ['board:*', 'board portal sessions'],
+  ['bcci:board:otp:*', 'board sign-in codes'],
+  ['bcci:board:otp_tries:*', 'board sign-in attempt counters'],
+  ['bcci:board:otp_claim:*', 'board sign-in claims'],
 ];
 
 async function keysMatching(pattern) {

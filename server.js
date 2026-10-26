@@ -17,6 +17,9 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import crypto from 'node:crypto';
+import os from 'node:os';
+import cluster from 'node:cluster';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { applySecurityHeaders, reportConfig } from './api/_lib/security.js';
@@ -28,6 +31,15 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const BEHIND_TLS = process.env.BEHIND_TLS === '1' || TRUST_PROXY;
+
+// Horizontal scale: fork one worker per CPU (override with WEB_CONCURRENCY).
+// Off unless CLUSTER=1 so the test suite and `node server.js` stay single-process.
+const CLUSTER = process.env.CLUSTER === '1';
+const WORKERS = Math.max(1, Number(process.env.WEB_CONCURRENCY) || os.cpus().length);
+// A handler that hangs must not pin a worker forever.
+const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 15000);
+// Structured one-line-per-request logs (requestId + duration) for p95/p99 work.
+const LOG_JSON = process.env.LOG_JSON === '1';
 
 // Only these directories are served. Everything else 404s, so a stray file in
 // the project root can never be fetched.
@@ -153,6 +165,32 @@ const server = http.createServer(async (req, res) => {
   decorate(res);
   applySecurityHeaders(res, { https: BEHIND_TLS });
 
+  // Request-scoped tracing + a hard ceiling so a hung handler cannot pin a
+  // worker. requestId ties every log line for one request together.
+  const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
+  res.setHeader('X-Request-Id', requestId);
+  const timeout = setTimeout(() => {
+    if (res.writableEnded) return;
+    if (!res.headersSent) res.statusCode = 503;
+    res.end(JSON.stringify({ error: 'Request timed out' }));
+  }, REQUEST_TIMEOUT_MS);
+  timeout.unref?.();
+  res.on('close', () => {
+    clearTimeout(timeout);
+    if (LOG_JSON) {
+      console.log(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: 'info',
+        requestId,
+        method: req.method,
+        path: req.url,
+        status: res.statusCode,
+        durationMs: Date.now() - startedAt,
+      }));
+    }
+  });
+
   if (!TRUST_PROXY) {
     // Without a trusted proxy, a client-supplied X-Forwarded-For would let
     // anyone forge their IP and sidestep every rate limit.
@@ -165,7 +203,12 @@ const server = http.createServer(async (req, res) => {
   } catch {
     return res.status(400).json({ error: 'Bad request' });
   }
-  const pathname = decodeURIComponent(url.pathname);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return res.status(400).json({ error: 'Bad request' });
+  }
 
   try {
     // ── API ────────────────────────────────────────────────────────
@@ -232,53 +275,78 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Keep-alive tuning: behind Caddy, reused connections avoid a TCP+handshake per
+// request. headersTimeout must stay above keepAliveTimeout.
+server.keepAliveTimeout = Number(process.env.KEEP_ALIVE_TIMEOUT_MS || 65000);
+server.headersTimeout = server.keepAliveTimeout + 1000;
+
 // ── Boot ───────────────────────────────────────────────────────────
 
-console.log('\nBCCI Bharuch portal');
-console.log('───────────────────');
-console.log(`  storage backend: ${STORAGE_BACKEND}`);
-const configOk = reportConfig();
-if (!configOk && process.env.ALLOW_INCOMPLETE_CONFIG !== '1') {
-  console.error('\nRefusing to start with missing required settings.');
-  console.error('Fix the errors above, or set ALLOW_INCOMPLETE_CONFIG=1 to start anyway.\n');
-  process.exit(1);
-}
-
-if (STORAGE_BACKEND === 'postgres') {
-  try {
-    await initStorage();
-    console.log('  [storage] postgres schema ready');
-    // OTP codes, sessions and rate-limit counters expire by time; Redis
-    // drops them itself, Postgres needs them swept.
-    const sweep = () => sweepExpiredKv().catch((err) => console.error('  [storage] expired-key sweep failed:', err?.message || err));
-    setInterval(sweep, 10 * 60 * 1000).unref();
-    sweep();
-  } catch (err) {
-    console.error('  [storage] ERROR: could not reach Postgres:', err?.message || err);
-    if (process.env.ALLOW_INCOMPLETE_CONFIG !== '1') process.exit(1);
+async function boot() {
+  console.log('\nBCCI Bharuch portal');
+  console.log('───────────────────');
+  console.log(`  storage backend: ${STORAGE_BACKEND}`);
+  if (cluster.isWorker) console.log(`  worker ${cluster.worker.id} · pid ${process.pid}`);
+  const configOk = reportConfig();
+  if (!configOk && process.env.ALLOW_INCOMPLETE_CONFIG !== '1') {
+    console.error('\nRefusing to start with missing required settings.');
+    console.error('Fix the errors above, or set ALLOW_INCOMPLETE_CONFIG=1 to start anyway.\n');
+    process.exit(1);
   }
+
+  if (STORAGE_BACKEND === 'postgres') {
+    try {
+      await initStorage();
+      console.log('  [storage] postgres schema ready');
+      // OTP codes, sessions and rate-limit counters expire by time; Redis
+      // drops them itself, Postgres needs them swept. Every worker sweeping is
+      // harmless (the delete is idempotent) and survives a worker restart.
+      const sweep = () => sweepExpiredKv().catch((err) => console.error('  [storage] expired-key sweep failed:', err?.message || err));
+      setInterval(sweep, 10 * 60 * 1000).unref();
+      sweep();
+    } catch (err) {
+      console.error('  [storage] ERROR: could not reach Postgres:', err?.message || err);
+      if (process.env.ALLOW_INCOMPLETE_CONFIG !== '1') process.exit(1);
+    }
+  }
+
+  if (!TRUST_PROXY) {
+    console.warn(
+      '  [config] warning: TRUST_PROXY is not set. If this runs behind nginx,\n' +
+      '                    Caddy or any reverse proxy, set TRUST_PROXY=1 — otherwise\n' +
+      '                    every visitor looks like 127.0.0.1 and they all share one\n' +
+      '                    rate-limit bucket, locking each other out.'
+    );
+  }
+
+  server.listen(PORT, HOST, () => {
+    console.log(`  listening on http://${HOST}:${PORT}`);
+    console.log(`  health check: http://${HOST}:${PORT}/api/health\n`);
+  });
+
+  const shutdown = (signal) => {
+    console.log(`\n${signal} received, shutting down`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 10000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-if (!TRUST_PROXY) {
-  console.warn(
-    '  [config] warning: TRUST_PROXY is not set. If this runs behind nginx,\n' +
-    '                    Caddy or any reverse proxy, set TRUST_PROXY=1 — otherwise\n' +
-    '                    every visitor looks like 127.0.0.1 and they all share one\n' +
-    '                    rate-limit bucket, locking each other out.'
-  );
+// The cluster primary forks a worker per CPU and replaces any that die; each
+// worker runs the full boot path and shares the listening socket, so the app
+// scales across cores. CLUSTER=0 (default) keeps a single process — used by the
+// test suite and local runs.
+if (CLUSTER && cluster.isPrimary && WORKERS > 1) {
+  console.log('\nBCCI Bharuch portal — cluster primary');
+  console.log(`  forking ${WORKERS} workers (${os.cpus().length} CPUs)`);
+  for (let i = 0; i < WORKERS; i += 1) cluster.fork();
+  cluster.on('exit', (worker, code, signal) => {
+    console.error(`  [cluster] worker ${worker.process.pid} exited (${signal || code}); replacing`);
+    cluster.fork();
+  });
+} else {
+  await boot();
 }
-
-server.listen(PORT, HOST, () => {
-  console.log(`  listening on http://${HOST}:${PORT}`);
-  console.log(`  health check: http://${HOST}:${PORT}/api/health\n`);
-});
-
-const shutdown = (signal) => {
-  console.log(`\n${signal} received, shutting down`);
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 10000).unref();
-};
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
 
 export default server;

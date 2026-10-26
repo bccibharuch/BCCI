@@ -18,17 +18,23 @@ const { Pool } = pg;
 
 let pool = null;
 
-/** Override the pool (tests inject an in-memory database here). */
-export function setPool(p) {
-  pool = p;
-}
-
 function getPool() {
   if (!pool) {
+    const statementTimeout = Number(process.env.PG_STATEMENT_TIMEOUT_MS || 10000);
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      max: Number(process.env.PG_POOL_MAX || 10),
-      idleTimeoutMillis: 30000,
+      // Sized for a handful of app replicas. Keep (replicas × PG_POOL_MAX) below
+      // the server's max_connections, or front Postgres with PgBouncer — see
+      // docs/SCALING.md.
+      max: Number(process.env.PG_POOL_MAX || 20),
+      idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
+      // Never wait unbounded for a pooled connection: fail fast and let the
+      // caller's retry/timeout handling take over.
+      connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 5000),
+      // A runaway query cannot pin a connection for the whole request budget.
+      statement_timeout: statementTimeout,
+      query_timeout: statementTimeout,
+      keepAlive: true,
     });
     pool.on('error', (err) => console.error('[postgres] idle client error', err?.message || err));
   }
@@ -54,6 +60,9 @@ export async function initSchema() {
       ON applications (lower(email)) WHERE email IS NOT NULL AND email <> '';
     CREATE INDEX IF NOT EXISTS applications_status_idx ON applications (status);
     CREATE INDEX IF NOT EXISTS applications_submitted_idx ON applications (submitted_at DESC);
+    -- Serves the admin "filter by status, newest first" list without a sort step.
+    CREATE INDEX IF NOT EXISTS applications_status_submitted_idx
+      ON applications (status, submitted_at DESC);
 
     CREATE TABLE IF NOT EXISTS enquiries (
       id TEXT PRIMARY KEY,

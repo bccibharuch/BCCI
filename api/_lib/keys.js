@@ -42,16 +42,38 @@ export const KEYS = {
   boardOtpClaim: (email) => `bcci:board:otp_claim:${String(email).trim().toLowerCase()}`,
 };
 
+// A storage call that hangs must fail fast: without a deadline, one slow
+// Upstash/Postgres hop holds the request (and its pool connection) for the
+// client's full patience. Retries then stack on top of it.
+const STORAGE_TIMEOUT_MS = Number(process.env.STORAGE_TIMEOUT_MS || 8000);
+
+function withTimeout(run, ms) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(Object.assign(new Error(`storage call exceeded ${ms}ms`), { code: 'STORAGE_TIMEOUT' })),
+      ms
+    );
+  });
+  const attempt = Promise.resolve().then(run);
+  // If the deadline wins the race, the still-pending attempt must not surface
+  // later as an unhandled rejection.
+  attempt.catch(() => {});
+  return Promise.race([attempt, deadline]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Retry a storage operation a couple of times before giving up. Upstash and
  * Postgres are network hops; a single transient failure should not surface
- * as a 500 to an applicant who is halfway through a form.
+ * as a 500 to an applicant who is halfway through a form. Each attempt is
+ * bounded by STORAGE_TIMEOUT_MS so a hung backend fails fast instead of
+ * holding the request open.
  */
 export async function withRetry(fn, attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
-      return await fn();
+      return await withTimeout(fn, STORAGE_TIMEOUT_MS);
     } catch (err) {
       lastErr = err;
       if (i < attempts - 1) {

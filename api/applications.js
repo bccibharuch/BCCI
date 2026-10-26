@@ -28,7 +28,7 @@ import {
   withErrorHandling,
 } from './_lib/http.js';
 import { UPLOADED_CERTIFICATES } from './_lib/record-fields.js';
-import { sendEmail, adminRecipients } from './_lib/email.js';
+import { sendEmailWithin, adminRecipients } from './_lib/email.js';
 import { validateFileSignature } from './_lib/validation.js';
 import adminStatsHandler from './_lib/admin-stats.js';
 import { getMembershipFee } from './_lib/membership-plans.js';
@@ -448,8 +448,8 @@ async function handler(req, res) {
     };
 
     await Promise.allSettled([
-      sendEmail({ type: 'application_submitted', to: saved.email, data: shared }),
-      sendEmail({
+      sendEmailWithin({ type: 'application_submitted', to: saved.email, data: shared }),
+      sendEmailWithin({
         type: 'admin_new_application',
         to: adminRecipients(),
         data: {
@@ -649,7 +649,7 @@ async function handler(req, res) {
           };
         });
 
-        await sendEmail({
+        await sendEmailWithin({
           type: 'application_approved',
           to: updated.email,
           data: {
@@ -695,7 +695,7 @@ async function handler(req, res) {
         };
       });
 
-      await sendEmail({
+      await sendEmailWithin({
         type: 'application_declined',
         to: updated.email,
         data: {
@@ -738,7 +738,7 @@ async function handler(req, res) {
 
     // Tell the applicant what was decided.
     if (nextStatus === STATUS.APPROVED) {
-      await sendEmail({
+      await sendEmailWithin({
         type: 'application_approved',
         to: updated.email,
         data: {
@@ -749,7 +749,7 @@ async function handler(req, res) {
         },
       });
     } else if (nextStatus === STATUS.REJECTED) {
-      await sendEmail({
+      await sendEmailWithin({
         type: 'application_declined',
         to: updated.email,
         data: {

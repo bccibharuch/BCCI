@@ -11,6 +11,13 @@ async function handler(req, res) {
   applyCors(req, res, 'GET, OPTIONS');
   if (handlePreflight(req, res)) return;
 
+  // Liveness: is the process up? Touches no dependency, so a load balancer /
+  // orchestrator can tell "restart me" apart from "temporarily can't reach the
+  // DB" (which should shed load, not kill the process).
+  if (req.query?.probe === 'live') {
+    return res.status(200).json({ status: 'ok', probe: 'live', uptimeSec: Math.round(process.uptime()) });
+  }
+
   const pgMode = STORAGE_BACKEND === 'postgres';
   const checks = {
     storageBackend: STORAGE_BACKEND,
