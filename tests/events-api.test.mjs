@@ -49,7 +49,7 @@ function mockReqRes({ method = 'GET', query = {}, body = {}, headers = {} }) {
 
 // 2. POST /api/events without admin auth returns 401
 {
-  const { req, res, getStatus, getJson } = mockReqRes({
+  const { req, res, getStatus } = mockReqRes({
     method: 'POST',
     body: { title: 'Unauthorized Event', date: '2026-12-01', capacity: 50 },
   });
@@ -83,7 +83,7 @@ let createdEventId = null;
 
 // 4. GET /api/events now lists the created event with seatsLeft
 {
-  const { req, res, getStatus, getJson } = mockReqRes({ method: 'GET' });
+  const { req, res, getJson } = mockReqRes({ method: 'GET' });
   await eventsHandler(req, res);
   const ev = getJson()?.events?.find(e => e.id === createdEventId);
   ck('Event present in listing', !!ev);
@@ -120,7 +120,7 @@ let onlineEventId = '';
   onlineEventId = getJson()?.event?.id;
 }
 {
-  const { req, res, getStatus, getJson } = mockReqRes({ method: 'GET' });
+  const { req, res, getJson } = mockReqRes({ method: 'GET' });
   await eventsHandler(req, res);
   const ev = getJson()?.events?.find(e => e.id === onlineEventId);
   ck('SEC-05: Public GET redacts online meeting URL', !ev?.venue?.includes('meet.google.com') && ev?.venue?.includes('Meeting details will be sent to registered attendees'));
@@ -398,7 +398,7 @@ let firstTicketId = null;
 
 // 8. Admin DELETE /api/events deletes the event
 {
-  const { req, res, getStatus, getJson } = mockReqRes({
+  const { req, res, getStatus } = mockReqRes({
     method: 'DELETE',
     query: { id: createdEventId },
     headers: { authorization: `Bearer ${adminToken}` },

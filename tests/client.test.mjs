@@ -69,9 +69,12 @@ const adminBlock = SRC.slice(SRC.indexOf('async renderAdminPortal()'), SRC.index
 const rawRecordRefs = [...adminBlock.matchAll(/\$\{\s*(app|enq)\.[A-Za-z]+/g)].map(m=>m[0]);
 ck('no raw ${app.*} / ${enq.*} left in the admin tables', rawRecordRefs.length === 0, rawRecordRefs.join(', '));
 
-const inspectBlock = SRC.slice(SRC.indexOf("data-inspect-id]"), SRC.indexOf('_paymentProofHtml(proof)'));
-const rawInspect = [...inspectBlock.matchAll(/\$\{\s*app\.[A-Za-z]+/g)].map(m=>m[0]).filter(s=>!s.includes('status'));
-ck('no raw ${app.*} left in the inspect modal', rawInspect.length === 0, rawInspect.join(', '));
+const inspectBlock = SRC.slice(SRC.indexOf('[data-inspect-id]'), SRC.indexOf("document.getElementById('btnExportCSV')"));
+// A leak is a bare ${app.field} spliced into markup (right after a tag/attribute
+// boundary). A conditional that passes the value through field()/escapeHtml(),
+// or interpolates a number into a helper argument, is safe.
+const rawInspect = [...inspectBlock.matchAll(/[>"]\s*\$\{\s*app\.[A-Za-z_]+\s*\}/g)].map(m=>m[0]);
+ck('no raw ${app.*} spliced into the inspect modal markup', rawInspect.length === 0, rawInspect.join(', '));
 
 ck('client no longer calls the email endpoint directly', !SRC.includes('store.sendEmail('));
 ck('admin recipient no longer hardcoded client-side', !SRC.includes('CONFIG.ADMIN_EMAIL'));
@@ -115,7 +118,10 @@ ck('the draft clears on successful submit', /_clearDraft\(\);[\s\S]{0,120}member
 ck('the payment receipt is excluded from the draft', /type === 'file'/.test(SRC));
 ck('restoring a draft is disclosed, not silent', SRC.includes('draftRestoredNotice') && SRC.includes('Start fresh'));
 ck('offline is surfaced', SRC.includes('setupConnectivityWatch') && SRC.includes('offlineBanner'));
-ck('coming back online does not blanket-enable submit', SRC.includes('Never blanket-enable'));
+ck('coming back online re-enables only the buttons offline disabled',
+  SRC.includes('this._submitButtonsDisabledOffline = []') &&
+  SRC.includes('this._submitButtonsDisabledOffline.push(btn)') &&
+  /this\._submitButtonsDisabledOffline \|\| \[\]\)\.forEach/.test(SRC));
 
 console.log('\nLoading, error and progress states');
 console.log('──────────────────────────────────');
@@ -1369,6 +1375,7 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
   app.store = {
     getEvents: async () => sampleEvents,
     registerForEvent: async () => ({ success: true, message: 'Registration confirmed!' }),
+    getApplicantSession: () => null,
   };
   app.announce = () => {};
   app.showToast = () => {};

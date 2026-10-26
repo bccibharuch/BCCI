@@ -1,7 +1,10 @@
 // Full-website browser test — drives real Chrome against a running server.
 //
-//   1. node scripts/dev-sandbox.mjs        # terminal 1 (port 3000)
-//   2. npm run test:browser                 # terminal 2 (this file)
+//   1. node scripts/dev-sandbox.mjs > /tmp/bcci-sandbox.log 2>&1   # terminal 1 (port 3000)
+//   2. npm run test:browser                                        # terminal 2 (this file)
+//
+// This file reads OTP codes out of the sandbox log, so that redirect is
+// required; set SANDBOX_LOG to point somewhere else.
 //
 // Covers every public route, the member journey (register → apply with
 // files → track), the admin journey (signin → approve / reject-with-reason
@@ -14,7 +17,11 @@ import fs from 'node:fs';
 const BASE = process.env.SITE_URL || 'http://localhost:3000';
 // Defaults to macOS Chrome; set CHROME_PATH for any other Chrome or Chromium.
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const SANDBOX_LOG = '/tmp/bcci-sandbox.log';
+const SANDBOX_LOG = process.env.SANDBOX_LOG || '/tmp/bcci-sandbox.log';
+function readSandboxLog() {
+  try { return fs.readFileSync(SANDBOX_LOG, 'utf8'); }
+  catch { return ''; }
+}
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = '') {
@@ -41,7 +48,7 @@ fs.writeFileSync('/tmp/site-cert.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEA
 fs.writeFileSync('/tmp/site-cert.pdf', Buffer.from('%PDF-1.4\n1 0 obj<</>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\npadding-padding-padding-padding'));
 
 function readOtpSince(mark) {
-  const log = fs.readFileSync(SANDBOX_LOG, 'utf8').slice(mark);
+  const log = readSandboxLog().slice(mark);
   const m = log.match(/CODE:\s*(\d{6})/);
   return m ? m[1] : null;
 }
@@ -121,7 +128,7 @@ await member.fill('#applicantRegEmail', MEMAIL);
 await member.fill('#applicantRegPassword', 'site-test-pass-123');
 await member.fill('#applicantRegPasswordConfirm', 'site-test-pass-123');
 {
-  const mark = fs.readFileSync(SANDBOX_LOG, 'utf8').length;
+  const mark = readSandboxLog().length;
   await member.click('#applicantSendRegOtpBtn');
   const code = await waitOtp(mark);
   check('register OTP arrives in sandbox mail', !!code);
@@ -194,7 +201,7 @@ await admin.click('#modalCloseBtn').catch(() => {});
 const stamp2 = `${stamp}b`;
 const MEMAIL2 = `sitetest-${stamp2}@example.com`;
 {
-  const mark = fs.readFileSync(SANDBOX_LOG, 'utf8').length;
+  const mark = readSandboxLog().length;
   const r = await admin.request.post(`${BASE}/api/send-otp`, { data: { email: MEMAIL2 } });
   check('otp api for second applicant', r.ok());
   const code = await waitOtp(mark);
