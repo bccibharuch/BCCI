@@ -919,26 +919,8 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 /* ==========================================================================
    TEAM GRID
    ========================================================================== */
-.team-group + .team-group { margin-top: var(--space-2xl); }
-.team-group-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--gray-500);
-  margin: 0 0 var(--space-lg);
-}
-.team-group-title::before,
-.team-group-title::after { content: ''; flex: 1; height: 1px; background: var(--gray-200); }
-
-/* Equal-height rows: every card in a group matches the tallest one. */
-.team-grid { display: grid; gap: var(--space-md); grid-auto-rows: 1fr; }
-.team-grid--lead { grid-template-columns: repeat(3, minmax(0, 260px)); justify-content: center; }
-.team-grid--compact { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+/* Four equal columns with equal-height rows, so every card lines up. */
+.team-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--space-md); }
 
 .team-card {
   display: flex;
@@ -951,7 +933,6 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
   text-align: center;
   transition: var(--transition-slow);
 }
-.team-grid--compact .team-card { padding: var(--space-lg) var(--space-md); }
 
 .team-card:hover { background: var(--gray-50); border-top-color: var(--navy); }
 
@@ -985,9 +966,6 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 }
 
 .team-avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
-.team-grid--compact .team-avatar,
-.team-grid--compact .team-avatar-img-wrap { width: 112px; height: 112px; }
-.team-grid--compact .team-avatar { font-size: 1.5rem; }
 .team-name { font-size: 1rem; margin-bottom: 0.35rem; line-height: 1.3; }
 /* Room for two lines, so badges line up across a row. */
 .team-title { font-family: var(--font-mono); font-size: 0.68rem; line-height: 1.5; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.06em; min-height: 3em; margin-bottom: 0.75rem; }
@@ -2239,11 +2217,8 @@ footer h4 {
   .about-info-grid > div { padding: 1.5rem !important; }
 
   /* ── Leadership section ────────────────────────────────────── */
-  .team-grid { gap: var(--space-sm); }
-  .team-grid--lead,
-  .team-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .team-card,
-  .team-grid--compact .team-card { padding: var(--space-lg) var(--space-md); }
+  .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }
+  .team-card { padding: var(--space-lg) var(--space-md); }
 
   /* ── Sign-in ───────────────────────────────────────────────── */
   .signin-container { padding: var(--space-2xl) var(--space-xl); }
@@ -2288,12 +2263,9 @@ footer h4 {
   .president-quote { font-size: 0.9rem; line-height: 1.7; }
 
   /* ── Grids ─────────────────────────────────────────────────── */
-  .team-card,
-  .team-grid--compact .team-card { padding: var(--space-lg) var(--space-sm); }
+  .team-card { padding: var(--space-lg) var(--space-sm); }
   .team-avatar,
-  .team-avatar-img-wrap,
-  .team-grid--compact .team-avatar,
-  .team-grid--compact .team-avatar-img-wrap { width: 88px; height: 88px; font-size: 1.2rem; }
+  .team-avatar-img-wrap { width: 88px; height: 88px; font-size: 1.2rem; }
   .team-name { font-size: 0.85rem; }
   .team-title { font-size: 0.6rem; }
   .team-badge { font-size: 0.58rem; padding: 0.15rem 0.5rem; }

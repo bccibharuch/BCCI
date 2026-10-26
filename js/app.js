@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.4';
+import { Store } from './store.js?v=4.0.5';
 
 // ── Membership tiers ───────────────────────────────────────────
 // Built-in plans: label → fee in INR. The form starts with these and swaps in
@@ -1858,12 +1858,7 @@ class App {
         ` : ''}
       </div>
     `;
-    container.innerHTML = this.store.getLeadership().map((g, i) => `
-      <div class="team-group">
-        <h3 class="team-group-title">${escapeHtml(g.group)}</h3>
-        <div class="team-grid ${i === 0 ? 'team-grid--lead' : 'team-grid--compact'}">${g.members.map(card).join('')}</div>
-      </div>
-    `).join('');
+    container.innerHTML = this.store.getLeadership().map(card).join('');
   }
 
   renderServicesAndFaqs() {

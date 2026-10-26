@@ -541,35 +541,25 @@ export class Store {
      STATIC CONTENT
      ════════════════════════════════════════════════════════════════════ */
 
-  /** Leadership shown on the About page, grouped in display order. Committees per the 24 Oct 2026 board minutes. */
+  /** Leadership shown on the About page, in display order. Committees per the 24 Oct 2026 board minutes. */
   getLeadership() {
     return [
-      {
-        group: 'Office Bearers',
-        members: [
-          { name: 'MR. KIRAN K. MAJMUDAR', role: 'President', category: 'Executive Board', initials: 'KM', image: 'assets/President_photo.webp', linkedin: 'https://www.linkedin.com/in/kiran-k-majmudar-52b235308/' },
-          { name: 'MR. KAMAL KUMAR', role: 'Joint Vice President', category: 'Executive Board', initials: 'KK', image: 'assets/KAmal.webp', linkedin: 'https://www.linkedin.com/in/kamal-kumar-165a5b86' },
-          { name: 'MR. ANISH PARIKH', role: 'Joint Vice President', category: 'Executive Board', initials: 'AP', image: 'assets/anish.webp', linkedin: 'https://www.linkedin.com/in/anish-parikh-4a5156b6/' },
-          { name: 'MR. TUSHAR P. SHAH', role: 'Secretary', category: 'Executive Board', initials: 'TS', image: 'assets/tushar.webp' },
-          { name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/' },
-          { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
-        ],
-      },
-      {
-        group: 'Committee Chairpersons',
-        members: [
-          { name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Committee Chair', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/' },
-          { name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Committee Chair', initials: 'NS' },
-          { name: 'DR. TRUPTI ALMOLA', role: 'Women Empowerment & Entrepreneurship', category: 'Committee Chair', initials: 'TA' },
-          { name: 'MR. RAJESH DUDHAT', role: 'MSME & Capacity Building', category: 'Committee Chair', initials: 'RD' },
-          { name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Committee Chair', initials: 'BS', image: 'assets/bharat-shah.webp' },
-          { name: 'MR. NIRMAL YADAV', role: 'Government Licensing & Media', category: 'Committee Chair', initials: 'NY' },
-          { name: 'DR. MAHESH VASHI', role: 'CSR & Skill Development', category: 'Committee Chair', initials: 'MV' },
-          { name: 'MR. URJIT PATEL', role: 'Event Management & Exhibitions', category: 'Committee Chair', initials: 'UP' },
-          { name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Committee Chair', initials: 'RM' },
-          { name: 'ADV. JIGAR PATEL', role: 'Legal Activities', category: 'Committee Chair', initials: 'JP' },
-        ],
-      },
+      { name: 'MR. KIRAN K. MAJMUDAR', role: 'President', category: 'Executive Board', initials: 'KM', image: 'assets/President_photo.webp', linkedin: 'https://www.linkedin.com/in/kiran-k-majmudar-52b235308/' },
+      { name: 'MR. KAMAL KUMAR', role: 'Joint Vice President', category: 'Executive Board', initials: 'KK', image: 'assets/KAmal.webp', linkedin: 'https://www.linkedin.com/in/kamal-kumar-165a5b86' },
+      { name: 'MR. ANISH PARIKH', role: 'Joint Vice President', category: 'Executive Board', initials: 'AP', image: 'assets/anish.webp', linkedin: 'https://www.linkedin.com/in/anish-parikh-4a5156b6/' },
+      { name: 'MR. TUSHAR P. SHAH', role: 'Secretary', category: 'Executive Board', initials: 'TS', image: 'assets/tushar.webp' },
+      { name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/' },
+      { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
+      { name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/' },
+      { name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Executive Board', initials: 'NS' },
+      { name: 'DR. TRUPTI ALMOLA', role: 'Women Empowerment & Entrepreneurship', category: 'Executive Board', initials: 'TA' },
+      { name: 'MR. RAJESH DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD' },
+      { name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp' },
+      { name: 'MR. NIRMAL YADAV', role: 'Government Licensing & Media', category: 'Executive Board', initials: 'NY' },
+      { name: 'DR. MAHESH VASHI', role: 'CSR & Skill Development', category: 'Executive Board', initials: 'MV' },
+      { name: 'MR. URJIT PATEL', role: 'Event Management & Exhibitions', category: 'Executive Board', initials: 'UP' },
+      { name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM' },
+      { name: 'ADV. JIGAR PATEL', role: 'Legal Activities', category: 'Executive Board', initials: 'JP' },
     ];
   }
 
