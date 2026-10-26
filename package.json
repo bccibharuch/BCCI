@@ -26,6 +26,7 @@
     "purge:data": "node --env-file=.env.local scripts/purge-data.mjs",
     "migrate:pg": "node --env-file=.env.local scripts/migrate-redis-to-postgres.mjs",
     "smoke:pg": "node scripts/smoke-postgres.mjs",
+    "graph:repair": "node scripts/graphify-repair.mjs && graphify export html",
     "test:e2e:pg": "E2E_BACKEND=postgres node tests/e2e.test.mjs",
     "test:board": "node tests/board.test.mjs && BOARD_BACKEND=postgres node tests/board.test.mjs"
   },
