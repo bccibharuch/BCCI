@@ -19,6 +19,7 @@
 
 import crypto from 'node:crypto';
 import { kv, KEYS, withRetry } from './kv.js';
+import { acquireLock, releaseLock } from './records.js';
 
 export const QR_WINDOW_MS = 20_000;
 const MEMBER_STATUS = ['active', 'inactive'];
@@ -297,13 +298,22 @@ export async function markBySelf(meetingId, member, code, { userAgent = '' } = {
 
   if (await withRetry(() => kv.set(key, record, { nx: true }))) return { meeting, record, alreadyMarked: false };
 
-  const existing = await withRetry(() => kv.get(key));
-  const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
-  if (current?.status === 'present') return { meeting, record: current, alreadyMarked: true };
-  // Marked on leave or absent by the secretary, but here in the room after all.
-  const upgraded = { ...current, ...record, history: [...(current?.history || []), entry] };
-  await withRetry(() => kv.set(key, upgraded));
-  return { meeting, record: upgraded, alreadyMarked: false };
+  // The record already exists. Upgrading it is a read-modify-write, so two
+  // writers on this same key (a double tap racing a secretary override) would
+  // otherwise drop a history entry — serialize them.
+  const lockName = `attendance:${key}`;
+  const lock = await acquireLock(lockName);
+  try {
+    const existing = await withRetry(() => kv.get(key));
+    const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
+    if (current?.status === 'present') return { meeting, record: current, alreadyMarked: true };
+    // Marked on leave or absent by the secretary, but here in the room after all.
+    const upgraded = { ...current, ...record, history: [...(current?.history || []), entry] };
+    await withRetry(() => kv.set(key, upgraded));
+    return { meeting, record: upgraded, alreadyMarked: false };
+  } finally {
+    if (lock) await releaseLock(lockName, lock);
+  }
 }
 
 /** The superadmin setting someone present, on leave or absent, with a reason. */
@@ -318,21 +328,29 @@ export async function markBySecretary(meetingId, memberId, status, reason, { by 
   if (!onRoster) throw new BoardError(409, `${member.name} is not on the board for this meeting.`, 'not_on_roster');
 
   const key = KEYS.boardAttendance(meeting.id, member.id);
-  const existing = await withRetry(() => kv.get(key));
-  const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
   const at = nowIso();
   const entry = { status, at, method: 'secretary', by, reason: String(reason).trim().slice(0, 300) };
-  const record = {
-    meetingId: meeting.id,
-    memberId: member.id,
-    status,
-    at: status === 'present' && current?.status === 'present' ? current.at : at,
-    method: 'secretary',
-    reason: entry.reason,
-    history: [...(current?.history || []), entry],
-  };
-  await withRetry(() => kv.set(key, record));
-  return { meeting, member, record };
+  // Serialize with the QR upgrade path so a concurrent scan and override on the
+  // same key cannot lose a history entry.
+  const lockName = `attendance:${key}`;
+  const lock = await acquireLock(lockName);
+  try {
+    const existing = await withRetry(() => kv.get(key));
+    const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
+    const record = {
+      meetingId: meeting.id,
+      memberId: member.id,
+      status,
+      at: status === 'present' && current?.status === 'present' ? current.at : at,
+      method: 'secretary',
+      reason: entry.reason,
+      history: [...(current?.history || []), entry],
+    };
+    await withRetry(() => kv.set(key, record));
+    return { meeting, member, record };
+  } finally {
+    if (lock) await releaseLock(lockName, lock);
+  }
 }
 
 /** One meeting with each roster member's status, for the superadmin. */

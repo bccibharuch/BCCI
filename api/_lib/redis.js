@@ -58,23 +58,30 @@ function timeOf(record) {
 
 // ── One-time migration from the legacy single-blob layout ──────────
 
+async function waitForMigration(markerKey) {
+  // A concurrent cold start holds the claim; wait for it to finish rather than
+  // serving an empty list.
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    const status = await redis.get(markerKey);
+    if (status === 'done' || !status) return;
+  }
+}
+
 async function migrateLegacy({ legacyKey, indexKey, recordKey, emailKey, marker }) {
-  const done = await redis.get(KEYS.migrated(marker));
-  if (done) return;
+  const markerKey = KEYS.migrated(marker);
+  const status = await redis.get(markerKey);
+  if (status === 'done') return;
+  if (status) {
+    // Another cold start is mid-migration ('running').
+    await waitForMigration(markerKey);
+    return;
+  }
 
   // Claim the migration so two concurrent cold starts don't both run it.
-  const claimed = await redis.set(KEYS.migrated(marker), 'running', {
-    nx: true,
-    ex: 300,
-  });
+  const claimed = await redis.set(markerKey, 'running', { nx: true, ex: 300 });
   if (!claimed) {
-    // Wait for the concurrent migration to finish instead of returning empty results
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      const status = await redis.get(KEYS.migrated(marker));
-      if (status === 'done') return;
-      if (!status) break;
-    }
+    await waitForMigration(markerKey);
     return;
   }
 
@@ -92,10 +99,10 @@ async function migrateLegacy({ legacyKey, indexKey, recordKey, emailKey, marker 
       }
       console.log(`[Migration] ${marker}: moved ${legacy.length} records to per-record keys`);
     }
-    await redis.set(KEYS.migrated(marker), 'done');
+    await redis.set(markerKey, 'done');
   } catch (err) {
     // Release the claim so the next request can retry.
-    await redis.del(KEYS.migrated(marker)).catch(() => {});
+    await redis.del(markerKey).catch(() => {});
     throw err;
   }
 }
@@ -244,22 +251,29 @@ export async function putApplication(app) {
 /**
  * Read-modify-write a single application. Because each record lives under its
  * own key, this only races with concurrent edits to the *same* application —
- * not with every other write in the system.
+ * and a per-id lock serializes those, so two admins acting at once can't
+ * clobber each other (Postgres does the same with SELECT … FOR UPDATE).
  */
 export async function updateApplication(id, mutate) {
   return withRetry(async () => {
     await ensureAppsMigrated();
-    const current = normalizeApplication(await redis.get(KEYS.app(id)));
-    if (!current) return null;
-    const next = normalizeApplication(mutate({ ...current }));
-    // One transaction, so the list summary can never disagree with the record.
-    await redis
-      .multi()
-      .set(KEYS.app(id), next)
-      .set(KEYS.appSummary(id), summarizeApplication(next))
-      .exec();
-    if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
-    return next;
+    const lockName = `application:${id}`;
+    const lock = await acquireLock(lockName);
+    try {
+      const current = normalizeApplication(await redis.get(KEYS.app(id)));
+      if (!current) return null;
+      const next = normalizeApplication(mutate({ ...current }));
+      // One transaction, so the list summary can never disagree with the record.
+      await redis
+        .multi()
+        .set(KEYS.app(id), next)
+        .set(KEYS.appSummary(id), summarizeApplication(next))
+        .exec();
+      if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
+      return next;
+    } finally {
+      if (lock) await releaseLock(lockName, lock);
+    }
   });
 }
 

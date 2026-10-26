@@ -131,12 +131,18 @@ export async function rateLimit(key, { max, windowSec }) {
   const k = `bcci:rl:${key}`;
   const count = await withRetry(() => kv.incr(k));
   if (count === 1) {
-    await kv.expire(k, windowSec);
+    await withRetry(() => kv.expire(k, windowSec)).catch(() => {});
     return { ok: true, remaining: max - 1 };
   }
   if (count > max) {
-    const ttl = await kv.ttl(k);
-    return { ok: false, retryAfter: ttl > 0 ? ttl : windowSec };
+    let ttl = await kv.ttl(k);
+    // A counter left without a TTL (e.g. a crash between INCR and EXPIRE) would
+    // otherwise block this key forever — repair it before reporting the wait.
+    if (ttl <= 0) {
+      await withRetry(() => kv.expire(k, windowSec)).catch(() => {});
+      ttl = windowSec;
+    }
+    return { ok: false, retryAfter: ttl };
   }
   return { ok: true, remaining: max - count };
 }
