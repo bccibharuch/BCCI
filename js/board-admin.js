@@ -26,6 +26,7 @@ const ATTEND_CHIP = {
 };
 
 const chip = ([className, text]) => el('span', { className, text });
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const button = (text, className = 'btn-secondary', attrs = {}) => el('button', { type: 'button', className: `${className} board-btn`, text, ...attrs });
 
 function field(id, label, input, hint) {
@@ -185,7 +186,7 @@ export class BoardAdmin {
   }
 
   openMemberEditor(member) {
-    this.ui.showModal({ title: `Edit ${member.name}`, content: '<div id="boardModalRoot"></div>' });
+    this.ui.showModal({ title: `Edit ${esc(member.name)}`, content: '<div id="boardModalRoot"></div>' });
     document.getElementById('boardModalRoot')?.append(this.memberForm(member, async () => {
       this.ui.closeModal();
       await this.refresh();
@@ -251,7 +252,7 @@ export class BoardAdmin {
         });
         const edit = button('Edit');
         edit.addEventListener('click', () => {
-          this.ui.showModal({ title: `Edit ${m.title}`, content: '<div id="boardModalRoot"></div>' });
+          this.ui.showModal({ title: `Edit ${esc(m.title)}`, content: '<div id="boardModalRoot"></div>' });
           document.getElementById('boardModalRoot')?.append(this.meetingForm(m, async () => {
             this.ui.closeModal();
             await this.refresh();
@@ -308,7 +309,7 @@ export class BoardAdmin {
       return;
     }
     const { meeting, rows, counts } = detail;
-    this.ui.showModal({ title: `Attendance: ${meeting.title}`, content: '<div id="boardModalRoot"></div>', wide: true });
+    this.ui.showModal({ title: `Attendance: ${esc(meeting.title)}`, content: '<div id="boardModalRoot"></div>', wide: true });
     const root = document.getElementById('boardModalRoot');
     if (!root) return;
 

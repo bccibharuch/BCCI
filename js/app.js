@@ -6,15 +6,6 @@
 
 import { Store } from './store.js?v=4.0.4';
 
-// ── Configuration ──────────────────────────────────────────────
-// Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
-// must never get to pick who receives mail.
-const CONFIG = {
-  SUPPORT_EMAIL: 'admin@bccibharuch.in',
-  SUPPORT_PHONE: '+91 7861906384',
-  UPI_ID: '7861906384.eazypay@icici',
-};
-
 // ── Membership tiers ───────────────────────────────────────────
 // Built-in plans: label → fee in INR. The form starts with these and swaps in
 // the live list from /api/membership-plans, which adds the tiers admins create.
@@ -788,70 +779,6 @@ class App {
     this.updateApplicantAuthUI();
   }
 
-  async showApplicantProfileModal(session, memberApp) {
-    let statusHtml = '<span style="color: #64748B; background: #F1F5F9; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">Form Not Submitted</span>';
-    let detailsHtml = '';
-
-    if (memberApp) {
-      if (memberApp.status === 'Approved') {
-        const validity = this.store.getMembershipValidity(memberApp);
-        statusHtml = `<span style="color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;"><i class="fas fa-check-circle"></i> ⭐ ACTIVE MEMBER</span>`;
-        detailsHtml = `
-          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.85rem;">
-            <div><strong>Company:</strong> ${escapeHtml(memberApp.company)}</div>
-            <div><strong>Member ID:</strong> <code style="color: var(--primary); font-weight:700;">${escapeHtml(memberApp.id)}</code></div>
-            <div><strong>Valid Until:</strong> ${escapeHtml(validity ? validity.validUntilDate : 'Active')}</div>
-          </div>
-        `;
-      } else if (memberApp.status === 'Pending') {
-        statusHtml = `<span style="color: #D97706; background: #FEF3C7; border: 1px solid #FDE68A; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;"><i class="fas fa-clock"></i> ⌛ PENDING ADMIN APPROVAL</span>`;
-        detailsHtml = `
-          <div style="background: #FEF3C7; border: 1px solid #FDE68A; color: #92400E; padding: 0.85rem; border-radius: 8px; margin: 1rem 0; font-size: 0.85rem;">
-            <strong>Ref ID: ${escapeHtml(memberApp.id)}</strong> — Submitted on ${escapeHtml(formatDate(memberApp.submittedAt))}. Pending Secretariat review.
-          </div>
-        `;
-      }
-    }
-
-    this.showModal({
-      title: `<i class="fas fa-user-circle" style="color: var(--primary);"></i> My BCCI Profile &amp; Account`,
-      content: `
-        <div style="padding: 0.5rem 0;">
-          <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-            <div style="width: 52px; height: 52px; background: linear-gradient(135deg, #0F2C59 0%, #1E3E62 100%); color: #FFD700; border: 2px solid #D4AF37; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem;">
-              ${escapeHtml((session.name || session.email || '?').charAt(0).toUpperCase())}
-            </div>
-            <div>
-              <div style="font-size: 1.1rem; font-weight: 700; color: #0F172A;">${escapeHtml(session.name || 'BCCI Applicant')}</div>
-              <div style="font-size: 0.85rem; color: #64748B;">${escapeHtml(session.email)}</div>
-            </div>
-          </div>
-          <div style="margin-bottom: 1rem;">
-            <label style="font-size: 0.75rem; text-transform: uppercase; color: #94A3B8; font-weight: 700; display: block; margin-bottom: 4px;">Account Status</label>
-            ${statusHtml}
-          </div>
-          ${detailsHtml}
-          <div style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 1.5rem;">
-            ${memberApp ? `
-              <button type="button" class="btn-primary btnViewMemberDetails" style="width: 100%; justify-content: center; font-size: 0.85rem;">
-                <i class="fas fa-file-alt"></i> ${memberApp.status === 'Approved' ? 'View Complete Member Details' : 'View Application Details'}
-              </button>
-            ` : ''}
-            ${memberApp && memberApp.status === 'Approved' ? `
-              <button type="button" class="btn-secondary btnViewDigitalCard" style="width: 100%; justify-content: center; font-size: 0.85rem;">
-                <i class="fas fa-id-card"></i> View Digital Membership Pass
-              </button>
-            ` : ''}
-            <button type="button" class="btnUserSignOut" style="width: 100%; justify-content: center; padding: 0.65rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-sm); color: #EF4444; font-size: 0.88rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
-              <i class="fas fa-sign-out-alt"></i> Sign Out Account
-            </button>
-            <button type="button" class="btn-secondary" id="modalCloseBtn" style="width: 100%; justify-content: center;">Close</button>
-          </div>
-        </div>
-      `
-    });
-  }
-
   async updateApplicantAuthUI() {
     const gate = document.getElementById('applicantAuthGate');
     const banner = document.getElementById('applicantAuthBanner');
@@ -1102,6 +1029,7 @@ class App {
                     <div class="bcci-card-member-name">${escapeHtml(app.repName || 'Member')}</div>
                     <div class="bcci-card-member-company">${escapeHtml(app.company || 'BCCI Member')}</div>
                   </div>
+                  <div class="bcci-card-qr" id="modalCardQRCode"></div>
                 </div>
 
                 <div class="bcci-card-microprint"></div>
@@ -1144,6 +1072,7 @@ class App {
 
     // Bind action buttons
     setTimeout(() => {
+      this.generateCardQR(app.id, app.repName, app.company, 'modalCardQRCode');
       document.getElementById('viewMemberDetailsFromCardBtn')?.addEventListener('click', () => {
         this.closeModal();
         this.showMembershipDetailsModal(app);
@@ -2419,8 +2348,8 @@ class App {
     }
   }
 
-  generateCardQR(memberId, name, company) {
-    const qrContainer = document.getElementById('cardQRCode');
+  generateCardQR(memberId, name, company, containerId = 'cardQRCode') {
+    const qrContainer = document.getElementById(containerId);
     if (!qrContainer) return;
 
     // Clear previous QR
@@ -3484,12 +3413,10 @@ class App {
 
     let apps = [];
     let enquiries = [];
-    let stats = null;
     try {
-      [apps, enquiries, stats] = await Promise.all([
+      [apps, enquiries] = await Promise.all([
         this.store.getApplications(),
         this.store.getEnquiries(),
-        this.store.apiCall('/api/admin-stats', { auth: 'admin' }).catch(() => null)
       ]);
     } catch (err) {
       // An expired admin session is the common case here; the store has
@@ -3576,8 +3503,6 @@ class App {
           </div>
           <div class="admin-card-meta">
             <div><strong>Rep:</strong> ${escapeHtml(app.repName)}</div>
-            <div><strong>Membership:</strong> ${membershipPlanChip(app)}</div>
-            <div><strong>Membership:</strong> ${membershipPlanChip(app)}</div>
             <div><strong>Membership:</strong> ${membershipPlanChip(app)}</div>
             <div><strong>Sector:</strong> ${escapeHtml(app.businessServices)}</div>
             <div><strong>Status:</strong> <span class="badge-status badge-pending"><i class="fas fa-clock"></i> Pending</span></div>
@@ -4861,8 +4786,9 @@ class App {
       return;
     }
 
-    const defaultEmail = this.applicantSession?.email || '';
-    const defaultName = this.applicantSession?.companyName || '';
+    const session = this.store.getApplicantSession() || {};
+    const defaultEmail = session.email || '';
+    const defaultName = session.name || '';
     const seatsRemaining = event.seatsLeft !== undefined ? event.seatsLeft : Math.max(0, event.capacity - (event.registeredCount || 0));
 
     const content = `
@@ -5454,12 +5380,20 @@ class App {
       }
 
       if (offline) {
+        // Remember only what we disable here, so coming back online restores
+        // exactly those and never blanket-enables a button that is disabled for
+        // its own reason (e.g. an unverified membership form).
+        this._submitButtonsDisabledOffline = [];
         document.querySelectorAll('form button[type="submit"]').forEach((btn) => {
-          btn.disabled = true;
+          if (!btn.disabled) {
+            this._submitButtonsDisabledOffline.push(btn);
+            btn.disabled = true;
+          }
         });
       } else {
-        // Never blanket-enable: the membership submit stays disabled until the
-        // applicant has verified their email. Let that logic decide.
+        (this._submitButtonsDisabledOffline || []).forEach((btn) => { btn.disabled = false; });
+        this._submitButtonsDisabledOffline = [];
+        // The membership submit is owned by the auth UI; let it decide.
         this.updateApplicantAuthUI();
       }
     };
@@ -5498,10 +5432,10 @@ class App {
     toast.innerHTML = `<i class="fas ${icon}" style="font-size:1.1rem;"></i> <span>${escapeHtml(message)}</span>`;
     // Stack toasts vertically
     const existingToasts = document.querySelectorAll('.bcci-toast');
-    let bottomOffset = 2;
-    existingToasts.forEach(t => { bottomOffset += t.offsetHeight + 0.75; });
+    let bottomOffset = 32; // px — offsetHeight is in px, so keep the whole sum in px
+    existingToasts.forEach(t => { bottomOffset += t.offsetHeight + 12; });
     toast.classList.add('bcci-toast');
-    toast.style.bottom = bottomOffset + 'rem';
+    toast.style.bottom = bottomOffset + 'px';
     document.body.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
