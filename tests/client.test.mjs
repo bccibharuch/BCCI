@@ -1533,6 +1533,13 @@ ck('styles.css ensures mobile drawer is hidden on desktop >= 1025px', /@media\s*
 ck('app.js registers window resize listener to auto-close drawer above 1024px', SRC.includes("window.addEventListener('resize'") && SRC.includes("window.innerWidth > 1024") && SRC.includes("this.closeMobileDrawer()"));
 ck('index.html mobileMenuBtn includes aria-controls and aria-expanded', indexHtml.includes('id="mobileMenuBtn"') && indexHtml.includes('aria-controls="mobileNavDrawer"') && indexHtml.includes('aria-expanded="false"'));
 
+console.log('\nAUTH-01  Applicant sign-out revokes the server session before clearing the local token');
+console.log('───────────────────────────────────────────────────────────────────────');
+const signOutBlock = SRC.slice(SRC.indexOf('async handleApplicantSignOut()'), SRC.indexOf('openMobileDrawer()'));
+ck('sign-out awaits store.clearApplicantSession() (DELETE carries the token)', signOutBlock.includes('await this.store.clearApplicantSession()'));
+ck('sign-out no longer wipes the local token first', !signOutBlock.includes('forgetApplicantSession()'));
+ck('sign-out calls clearApplicantSession exactly once', signOutBlock.split('clearApplicantSession()').length === 2);
+
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 process.exit(fail?1:0);
 

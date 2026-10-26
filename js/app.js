@@ -1722,9 +1722,9 @@ class App {
     this.renderView('home');
   }
 
-  handleApplicantSignOut() {
+  async handleApplicantSignOut() {
     this.closeModal?.();
-    this.store.forgetApplicantSession();
+    await this.store.clearApplicantSession();
     this._lastMemberApp = null;
     const cardContainer = document.getElementById('membershipCardContainer');
     if (cardContainer) {
@@ -1747,7 +1747,6 @@ class App {
     }
     this._clearDraft();
     this.showToast('Signed out.', 'info');
-    this.store.clearApplicantSession().catch(() => {});
   }
 
   openMobileDrawer() {
