@@ -346,10 +346,11 @@ body.admin-area .nav-brand {
 }
 /* No footer links on admin pages either — only columns that actually contain
    links go (plus their headings). The contact block and copyright stay. */
-body.admin-area footer .footer-links:has(a) {
+body.admin-area footer .footer-links:has(a),
+body.admin-area footer .footer-social {
   display: none !important;
 }
-body.admin-area footer .footer-grid > div:has(a) h4 {
+body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
   display: none !important;
 }
 
@@ -1802,6 +1803,23 @@ footer h4 {
 .footer-links li { margin-bottom: 0.6rem; font-size: 0.88rem; display: flex; align-items: center; gap: 0.5rem; }
 .footer-links a { color: rgba(255,255,255,0.7); transition: var(--transition); text-decoration: none; }
 .footer-links a:hover { color: var(--gold); opacity: 1; text-decoration: underline; }
+
+.footer-social { display: flex; gap: 0.6rem; margin-top: var(--space-md); }
+.footer-social a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.75);
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: var(--transition);
+}
+.footer-social a:hover,
+.footer-social a:focus-visible { color: var(--navy); background: var(--gold); border-color: var(--gold); }
 
 .footer-bottom {
   border-top: 1px solid rgba(255,255,255,0.1);
