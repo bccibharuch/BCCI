@@ -290,19 +290,19 @@ async function handler(req, res) {
   if (!isGet && req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed.' });
 
   try {
-    if (member[action]) {
+    if (Object.hasOwn(member, action)) {
       if (isGet) return res.status(405).json({ success: false, error: 'Use POST.' });
       return await member[action](req, res);
     }
 
-    if (signedIn[action]) {
+    if (Object.hasOwn(signedIn, action)) {
       if (isGet !== SIGNED_IN_GET.has(action)) return res.status(405).json({ success: false, error: 'Method not allowed.' });
       const session = await boardSession(req);
       if (!session) return res.status(401).json({ success: false, code: 'signed_out', error: 'Please sign in to the Board Portal again.' });
       return await signedIn[action](req, res, session);
     }
 
-    if (admin[action]) {
+    if (Object.hasOwn(admin, action)) {
       if (isGet !== ADMIN_GET.has(action)) return res.status(405).json({ success: false, error: 'Method not allowed.' });
       const adminEmail = await getAdminSession(req);
       if (!adminEmail) return res.status(401).json({ success: false, error: 'Unauthorized' });
