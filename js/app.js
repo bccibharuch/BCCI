@@ -6,15 +6,6 @@
 
 import { Store } from './store.js?v=4.0.2';
 
-// ── Configuration ──────────────────────────────────────────────
-// Notification recipients are chosen server-side (ADMIN_EMAILS); the browser
-// must never get to pick who receives mail.
-const CONFIG = {
-  SUPPORT_EMAIL: 'admin@bccibharuch.in',
-  SUPPORT_PHONE: '+91 7861906384',
-  UPI_ID: '7861906384.eazypay@icici',
-};
-
 // ── Membership tiers ───────────────────────────────────────────
 // Built-in plans: label → fee in INR. The form starts with these and swaps in
 // the live list from /api/membership-plans, which adds the tiers admins create.
@@ -783,70 +774,6 @@ class App {
     });
 
     this.updateApplicantAuthUI();
-  }
-
-  async showApplicantProfileModal(session, memberApp) {
-    let statusHtml = '<span style="color: #64748B; background: #F1F5F9; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">Form Not Submitted</span>';
-    let detailsHtml = '';
-
-    if (memberApp) {
-      if (memberApp.status === 'Approved') {
-        const validity = this.store.getMembershipValidity(memberApp);
-        statusHtml = `<span style="color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;"><i class="fas fa-check-circle"></i> ⭐ ACTIVE MEMBER</span>`;
-        detailsHtml = `
-          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.85rem;">
-            <div><strong>Company:</strong> ${escapeHtml(memberApp.company)}</div>
-            <div><strong>Member ID:</strong> <code style="color: var(--primary); font-weight:700;">${escapeHtml(memberApp.id)}</code></div>
-            <div><strong>Valid Until:</strong> ${escapeHtml(validity ? validity.validUntilDate : 'Active')}</div>
-          </div>
-        `;
-      } else if (memberApp.status === 'Pending') {
-        statusHtml = `<span style="color: #D97706; background: #FEF3C7; border: 1px solid #FDE68A; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;"><i class="fas fa-clock"></i> ⌛ PENDING ADMIN APPROVAL</span>`;
-        detailsHtml = `
-          <div style="background: #FEF3C7; border: 1px solid #FDE68A; color: #92400E; padding: 0.85rem; border-radius: 8px; margin: 1rem 0; font-size: 0.85rem;">
-            <strong>Ref ID: ${escapeHtml(memberApp.id)}</strong> — Submitted on ${escapeHtml(formatDate(memberApp.submittedAt))}. Pending Secretariat review.
-          </div>
-        `;
-      }
-    }
-
-    this.showModal({
-      title: `<i class="fas fa-user-circle" style="color: var(--primary);"></i> My BCCI Profile &amp; Account`,
-      content: `
-        <div style="padding: 0.5rem 0;">
-          <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-            <div style="width: 52px; height: 52px; background: linear-gradient(135deg, #0F2C59 0%, #1E3E62 100%); color: #FFD700; border: 2px solid #D4AF37; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem;">
-              ${escapeHtml((session.name || session.email || '?').charAt(0).toUpperCase())}
-            </div>
-            <div>
-              <div style="font-size: 1.1rem; font-weight: 700; color: #0F172A;">${escapeHtml(session.name || 'BCCI Applicant')}</div>
-              <div style="font-size: 0.85rem; color: #64748B;">${escapeHtml(session.email)}</div>
-            </div>
-          </div>
-          <div style="margin-bottom: 1rem;">
-            <label style="font-size: 0.75rem; text-transform: uppercase; color: #94A3B8; font-weight: 700; display: block; margin-bottom: 4px;">Account Status</label>
-            ${statusHtml}
-          </div>
-          ${detailsHtml}
-          <div style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 1.5rem;">
-            ${memberApp ? `
-              <button type="button" class="btn-primary btnViewMemberDetails" style="width: 100%; justify-content: center; font-size: 0.85rem;">
-                <i class="fas fa-file-alt"></i> ${memberApp.status === 'Approved' ? 'View Complete Member Details' : 'View Application Details'}
-              </button>
-            ` : ''}
-            ${memberApp && memberApp.status === 'Approved' ? `
-              <button type="button" class="btn-secondary btnViewDigitalCard" style="width: 100%; justify-content: center; font-size: 0.85rem;">
-                <i class="fas fa-id-card"></i> View Digital Membership Pass
-              </button>
-            ` : ''}
-            <button type="button" class="btnUserSignOut" style="width: 100%; justify-content: center; padding: 0.65rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: var(--radius-sm); color: #EF4444; font-size: 0.88rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
-              <i class="fas fa-sign-out-alt"></i> Sign Out Account
-            </button>
-            <button type="button" class="btn-secondary" id="modalCloseBtn" style="width: 100%; justify-content: center;">Close</button>
-          </div>
-        </div>
-      `
-    });
   }
 
   async updateApplicantAuthUI() {

@@ -18,11 +18,6 @@ const { Pool } = pg;
 
 let pool = null;
 
-/** Override the pool (tests inject an in-memory database here). */
-export function setPool(p) {
-  pool = p;
-}
-
 function getPool() {
   if (!pool) {
     pool = new Pool({

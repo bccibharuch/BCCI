@@ -18,12 +18,6 @@ export async function hashPasswordAsync(password, existingSalt = null) {
   return { hash: buf.toString('hex'), salt };
 }
 
-export function hashPassword(password, existingSalt = null) {
-  const salt = existingSalt || crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return { hash, salt };
-}
-
 /**
  * Constant-time comparison between candidate password and stored scrypt hash.
  * @param {string} candidatePassword - Plaintext password attempt.
@@ -44,18 +38,6 @@ export async function verifyPasswordAsync(candidatePassword, storedHash, salt) {
   } catch {
     return false;
   }
-}
-
-export function verifyPassword(candidatePassword, storedHash, salt) {
-  if (!candidatePassword || !storedHash || !salt) return false;
-  if (typeof candidatePassword !== 'string' || typeof storedHash !== 'string' || typeof salt !== 'string') {
-    return false;
-  }
-  const candidateHash = crypto.scryptSync(candidatePassword, salt, 64).toString('hex');
-  const a = Buffer.from(candidateHash, 'hex');
-  const b = Buffer.from(storedHash, 'hex');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
 }
 
 /**

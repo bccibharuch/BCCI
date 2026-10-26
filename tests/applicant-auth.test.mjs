@@ -10,7 +10,7 @@ process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
 process.env.ALLOWED_ORIGIN = 'https://bccibharuch.in';
 process.env.SMTP_TRANSPORT = 'json';
 
-const { hashPassword, hashPasswordAsync, verifyPassword, verifyPasswordAsync, getAccount, saveAccount } = await import('../api/_lib/accounts.js');
+const { hashPasswordAsync, verifyPasswordAsync, getAccount, saveAccount } = await import('../api/_lib/accounts.js');
 const { redis, KEYS } = await import('../api/_lib/redis.js');
 const applicantAuth = (await import('../api/applicant-auth.js')).default;
 
@@ -49,15 +49,6 @@ test.after(() => {
   mock.server.close();
 });
 
-test('hashPassword produces distinct salts and hashes', () => {
-  const h1 = hashPassword('SuperSecret123');
-  const h2 = hashPassword('SuperSecret123');
-  assert.notEqual(h1.salt, h2.salt);
-  assert.notEqual(h1.hash, h2.hash);
-  assert.equal(verifyPassword('SuperSecret123', h1.hash, h1.salt), true);
-  assert.equal(verifyPassword('WrongPassword', h1.hash, h1.salt), false);
-});
-
 test('hashPasswordAsync produces valid salts and verifies asynchronously', async () => {
   const h1 = await hashPasswordAsync('SuperSecret123');
   const h2 = await hashPasswordAsync('SuperSecret123');
@@ -69,22 +60,22 @@ test('hashPasswordAsync produces valid salts and verifies asynchronously', async
   assert.equal(await verifyPasswordAsync('SuperSecret123', 'invalid', h1.salt), false);
 });
 
-test('hashPassword supports reusing salt', () => {
-  const h1 = hashPassword('SuperSecret123');
-  const h2 = hashPassword('SuperSecret123', h1.salt);
+test('hashPasswordAsync supports reusing salt', async () => {
+  const h1 = await hashPasswordAsync('SuperSecret123');
+  const h2 = await hashPasswordAsync('SuperSecret123', h1.salt);
   assert.equal(h1.salt, h2.salt);
   assert.equal(h1.hash, h2.hash);
 });
 
-test('verifyPassword handles invalid or missing inputs defensively', () => {
-  assert.equal(verifyPassword('', 'hash', 'salt'), false);
-  assert.equal(verifyPassword('pass', '', 'salt'), false);
-  assert.equal(verifyPassword('pass', 'hash', ''), false);
-  assert.equal(verifyPassword(null, 'hash', 'salt'), false);
-  assert.equal(verifyPassword('pass', null, 'salt'), false);
-  assert.equal(verifyPassword('pass', 'hash', null), false);
-  assert.equal(verifyPassword('pass', 'short', 'salt'), false);
-  assert.equal(verifyPassword(123, 'hash', 'salt'), false);
+test('verifyPasswordAsync handles invalid or missing inputs defensively', async () => {
+  assert.equal(await verifyPasswordAsync('', 'hash', 'salt'), false);
+  assert.equal(await verifyPasswordAsync('pass', '', 'salt'), false);
+  assert.equal(await verifyPasswordAsync('pass', 'hash', ''), false);
+  assert.equal(await verifyPasswordAsync(null, 'hash', 'salt'), false);
+  assert.equal(await verifyPasswordAsync('pass', null, 'salt'), false);
+  assert.equal(await verifyPasswordAsync('pass', 'hash', null), false);
+  assert.equal(await verifyPasswordAsync('pass', 'short', 'salt'), false);
+  assert.equal(await verifyPasswordAsync(123, 'hash', 'salt'), false);
 });
 
 test('KEYS.account and KEYS.otpReset format email keys correctly', () => {
@@ -107,7 +98,7 @@ test('saveAccount and getAccount persist and retrieve accounts', async () => {
   assert.equal(retrieved.salt, saved.salt);
   assert.equal(retrieved.createdAt, saved.createdAt);
   assert.equal(retrieved.updatedAt, saved.updatedAt);
-  assert.equal(verifyPassword('SuperSecret123', retrieved.passwordHash, retrieved.salt), true);
+  assert.equal(await verifyPasswordAsync('SuperSecret123', retrieved.passwordHash, retrieved.salt), true);
 });
 
 test('saveAccount updates existing account preserving createdAt', async () => {
@@ -120,8 +111,8 @@ test('saveAccount updates existing account preserving createdAt', async () => {
   assert.equal(updated.email, 'preserve@example.com');
   assert.equal(updated.createdAt, first.createdAt);
   assert.notEqual(updated.passwordHash, first.passwordHash);
-  assert.equal(verifyPassword('UpdatedPassword2', updated.passwordHash, updated.salt), true);
-  assert.equal(verifyPassword('InitialPassword1', updated.passwordHash, updated.salt), false);
+  assert.equal(await verifyPasswordAsync('UpdatedPassword2', updated.passwordHash, updated.salt), true);
+  assert.equal(await verifyPasswordAsync('InitialPassword1', updated.passwordHash, updated.salt), false);
 });
 
 test('getAccount returns null for non-existent or empty email', async () => {
@@ -238,7 +229,7 @@ test('action "register": creates account and returns 201 + session on valid OTP'
   const account = await getAccount(email);
   assert.ok(account);
   assert.equal(account.email, email);
-  assert.equal(verifyPassword('SecurePassword123!', account.passwordHash, account.salt), true);
+  assert.equal(await verifyPasswordAsync('SecurePassword123!', account.passwordHash, account.salt), true);
 
   // Session token should exist in Redis with metadata
   const sessionUser = await redis.get(KEYS.applicantSession(res.body.session.token));
