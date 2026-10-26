@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.3';
+import { Store } from './store.js?v=4.0.4';
 
 // ── Membership tiers ───────────────────────────────────────────
 // Built-in plans: label → fee in INR. The form starts with these and swaps in
@@ -1837,8 +1837,7 @@ class App {
   renderLeadership() {
     const container = document.getElementById('leadershipGrid');
     if (!container) return;
-    const team = this.store.getLeadership();
-    container.innerHTML = team.map(m => `
+    const card = (m) => `
       <div class="team-card">
         ${m.image ? `
           <div class="team-avatar-img-wrap">
@@ -1851,12 +1850,18 @@ class App {
         <div class="team-title">${escapeHtml(m.role)}</div>
         <span class="team-badge">${escapeHtml(m.category)}</span>
         ${m.linkedin ? `
-          <div style="margin-top: 1rem;">
+          <div class="team-links">
             <a href="${escapeAttr(m.linkedin)}" target="_blank" rel="noopener noreferrer" class="team-linkedin-btn" title="View ${escapeAttr(m.name)}'s LinkedIn profile">
               <i class="fab fa-linkedin"></i> LinkedIn
             </a>
           </div>
         ` : ''}
+      </div>
+    `;
+    container.innerHTML = this.store.getLeadership().map((g, i) => `
+      <div class="team-group">
+        <h3 class="team-group-title">${escapeHtml(g.group)}</h3>
+        <div class="team-grid ${i === 0 ? 'team-grid--lead' : 'team-grid--compact'}">${g.members.map(card).join('')}</div>
       </div>
     `).join('');
   }
