@@ -595,7 +595,7 @@ export class Store {
         ],
       },
       {
-        name: 'MR. RAJESH DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD', image: 'assets/rajesh-dudhat.webp',
+        name: 'MR. RAJESHKUMAR DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD', image: 'assets/rajesh-dudhat.webp',
         bio: [
           'Entrepreneur, industrialist, business leader and social leader. B.Sc. (South Gujarat University, 2000) and PGDBM (Bhavan\'s College, 2002).',
           'Mr. Dudhat has over 24 years of experience in manufacturing, business management, strategic leadership and organizational development. Since 2002 he has been CEO of Kohinoor Group of Industries, a diversified group of 12 manufacturing group companies and 15 associate manufacturing companies across Dyestuffs, Pharmaceuticals, Speciality Chemicals, Engineering, Packaging and Export-Import Trading.',
