@@ -124,18 +124,6 @@ body {
   outline-offset: 2px;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -171,21 +159,6 @@ a {
 
 a:hover { opacity: 0.6; }
 
-/* Underline animation for links */
-a.link-underline::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  width: 0;
-  height: 1px;
-  background: var(--black);
-  transition: width 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-a.link-underline:hover::after { width: 100%; }
-a.link-underline:hover { opacity: 1; }
-
 /* ── Scroll Reveal & Fluid View Animations ────────────────────── */
 .reveal {
   opacity: 0;
@@ -198,11 +171,6 @@ a.link-underline:hover { opacity: 1; }
   opacity: 1;
   transform: translateY(0);
 }
-
-.reveal-delay-1 { transition-delay: 0.06s; }
-.reveal-delay-2 { transition-delay: 0.12s; }
-.reveal-delay-3 { transition-delay: 0.18s; }
-.reveal-delay-4 { transition-delay: 0.24s; }
 
 /* Staggered children */
 .stagger-children > * {
@@ -263,12 +231,8 @@ small, .mono {
 }
 
 /* ── Refined Spacing Utilities ────────────────────────────────── */
-.tracking-wide { letter-spacing: 0.12em; }
-.tracking-tight { letter-spacing: -0.02em; }
 .uppercase { text-transform: uppercase; }
 .muted { color: var(--gray-400); }
-.rule-top { border-top: var(--rule); padding-top: var(--space-xl); }
-.rule-bottom { border-bottom: var(--rule); padding-bottom: var(--space-xl); }
 
 /* ==========================================================================
    TOP BAR
@@ -535,30 +499,6 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
   opacity: 1;
 }
 
-.btn-admin-access {
-  background: none;
-  border: 1px solid var(--gray-300);
-  color: var(--gray-600);
-  font-family: var(--font-mono);
-  font-weight: 500;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.45rem 0.9rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  transition: var(--transition);
-}
-
-.btn-admin-access:hover {
-  background: var(--black);
-  color: var(--white);
-  border-color: var(--black);
-  opacity: 1;
-}
-
 .btn-signin-nav {
   background: none;
   border: 1px solid var(--navy);
@@ -790,9 +730,6 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 .container { max-width: var(--max-width); margin: 0 auto; padding: 0 var(--space-xl); }
 .section-padding { padding: var(--space-4xl) 0; }
 .section-alt { background: var(--off-white); }
-.section-dark { background: var(--navy); color: rgba(255,255,255,0.7); }
-.section-dark .section-title { color: var(--white); }
-.section-dark .section-tag { color: var(--gold); border-bottom-color: var(--gold); }
 
 .section-header {
   text-align: center;
@@ -985,14 +922,19 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 /* ==========================================================================
    TEAM GRID
    ========================================================================== */
-.team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1px; background: var(--gray-200); }
+/* Four equal columns with equal-height rows, so every card lines up. */
+.team-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--space-md); }
 
 .team-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   background: var(--white);
-  padding: var(--space-2xl) var(--space-xl);
+  border: 1px solid var(--gray-200);
+  border-top: 3px solid var(--gray-200);
+  padding: var(--space-xl) var(--space-lg);
   text-align: center;
   transition: var(--transition-slow);
-  border-top: 3px solid transparent;
 }
 
 .team-card:hover { background: var(--gray-50); border-top-color: var(--navy); }
@@ -1002,8 +944,9 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 .team-avatar-img { filter: grayscale(20%); transition: filter 0.5s ease; }
 
 .team-avatar {
-  width: 120px;
-  height: 120px;
+  width: 140px;
+  height: 140px;
+  flex: none;
   margin: 0 auto var(--space-lg);
   background: var(--navy-bg);
   display: flex;
@@ -1019,14 +962,17 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 .team-avatar-img-wrap {
   width: 140px;
   height: 140px;
+  flex: none;
   margin: 0 auto var(--space-lg);
   overflow: hidden;
   border: 2px solid var(--gray-200);
 }
 
 .team-avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
-.team-name { font-size: 1rem; margin-bottom: 0.25rem; }
-.team-title { font-family: var(--font-mono); font-size: 0.68rem; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.75rem; }
+.team-name { font-size: 1rem; margin-bottom: 0.35rem; line-height: 1.3; }
+/* Room for two lines, so badges line up across a row. */
+.team-title { font-family: var(--font-mono); font-size: 0.68rem; line-height: 1.5; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.06em; min-height: 3em; margin-bottom: 0.75rem; }
+.team-links { margin-top: auto; padding-top: 0.75rem; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
 
 .team-badge {
   display: inline-block;
@@ -1054,7 +1000,6 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
   text-decoration: none;
   border: 1px solid var(--gray-200);
   transition: var(--transition);
-  margin-top: 0.75rem;
 }
 
 .team-linkedin-btn:hover {
@@ -1063,6 +1008,33 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
   border-color: var(--black);
   opacity: 1;
 }
+
+/* "Read more" sits beside LinkedIn and opens the full profile. */
+.team-readmore-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  background: var(--navy);
+  color: var(--white);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--navy);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.team-readmore-btn:hover { background: var(--black); border-color: var(--black); }
+.team-readmore-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.leader-profile { text-align: left; }
+.leader-profile-img { display: block; width: 160px; height: 180px; object-fit: cover; object-position: top center; margin: 0 auto var(--space-md); border: 2px solid var(--gray-200); }
+.leader-profile-role { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); text-align: center; margin-bottom: var(--space-md); }
+.leader-profile-bio p { font-size: 0.92rem; line-height: 1.7; color: var(--gray-700); margin: 0 0 0.85rem; }
+.leader-profile .team-linkedin-btn { margin-top: 0.25rem; }
 
 /* ==========================================================================
    SERVICES & FAQS
@@ -1194,14 +1166,6 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 
 .blog-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; transition: transform 0.5s ease; }
 .blog-card:hover .blog-img { transform: scale(1.03); }
-
-/* Image treatment: grayscale → color on hover */
-.img-editorial {
-  filter: grayscale(15%);
-  transition: filter 0.5s ease, transform 0.5s ease;
-}
-
-.img-editorial:hover { filter: grayscale(0%); transform: scale(1.02); }
 
 .blog-tag {
   position: absolute;
@@ -2196,7 +2160,6 @@ footer h4 {
   /* ── Grids ─────────────────────────────────────────────────── */
   .services-grid { grid-template-columns: 1fr; }
   .blogs-grid { grid-template-columns: 1fr; }
-  .team-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 
   /* ── Forms ─────────────────────────────────────────────────── */
   .form-grid { grid-template-columns: 1fr; gap: var(--space-lg); }
@@ -2284,7 +2247,7 @@ footer h4 {
   .about-info-grid > div { padding: 1.5rem !important; }
 
   /* ── Leadership section ────────────────────────────────────── */
-  .team-grid { grid-template-columns: 1fr 1fr; }
+  .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }
   .team-card { padding: var(--space-lg) var(--space-md); }
 
   /* ── Sign-in ───────────────────────────────────────────────── */
@@ -2330,14 +2293,13 @@ footer h4 {
   .president-quote { font-size: 0.9rem; line-height: 1.7; }
 
   /* ── Grids ─────────────────────────────────────────────────── */
-  .team-grid { grid-template-columns: 1fr 1fr; gap: 1px; }
-  .team-card { padding: var(--space-lg) var(--space-md); }
-  .team-avatar { width: 80px; height: 80px; font-size: 1.3rem; }
-  .team-avatar-img-wrap { width: 100px; height: 100px; }
+  .team-card { padding: var(--space-lg) var(--space-sm); }
+  .team-avatar,
+  .team-avatar-img-wrap { width: 88px; height: 88px; font-size: 1.2rem; }
   .team-name { font-size: 0.85rem; }
   .team-title { font-size: 0.6rem; }
   .team-badge { font-size: 0.58rem; padding: 0.15rem 0.5rem; }
-  .team-linkedin-btn { font-size: 0.62rem; padding: 0.3rem 0.7rem; }
+  .team-linkedin-btn, .team-readmore-btn { font-size: 0.62rem; padding: 0.3rem 0.7rem; }
 
   /* ── About Us cards ────────────────────────────────────────── */
   .about-info-grid > div { padding: 1.25rem !important; }

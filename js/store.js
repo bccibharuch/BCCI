@@ -619,6 +619,7 @@ export class Store {
      STATIC CONTENT
      ════════════════════════════════════════════════════════════════════ */
 
+  /** Leadership shown on the About page, in display order: members with photos first. Committees per the 24 Oct 2026 board minutes. */
   getLeadership() {
     return [
       { name: 'MR. KIRAN K. MAJMUDAR', role: 'President', category: 'Executive Board', initials: 'KM', image: 'assets/President_photo.webp', linkedin: 'https://www.linkedin.com/in/kiran-k-majmudar-52b235308/' },
@@ -627,7 +628,32 @@ export class Store {
       { name: 'MR. TUSHAR P. SHAH', role: 'Secretary', category: 'Executive Board', initials: 'TS', image: 'assets/tushar.webp' },
       { name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/' },
       { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
-      { name: 'BHAAVIK BAROT', role: 'Founder Member - IT & AI', category: 'Technology', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/' }
+      { name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/' },
+      { name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp' },
+      {
+        name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Executive Board', initials: 'NS', image: 'assets/nirmal-shah.webp',
+        bio: [
+          'Managing Director of V C Shahpatel Services Pvt. Ltd., a Bharuch-based group founded by Mr. Virendra C. Shah and in business since 1990. The company is ISO 9001:2015, ISO 14001:2015 and ISO 45001:2015 certified, and holds a CRISIL SE 3A rating, indicating moderate performance and high financial strength.',
+          'The parent company supplies skilled, semi-skilled and unskilled manpower to industry, together with mechanised housekeeping and the outsourcing of blue-collar roles. The group\'s other ventures are Tirupati Placement Agency (on-roll and off-roll staffing), Tirth Travels (car hire across Gujarat), Tirth Force (authorised Force Motors dealer for Bharuch and Narmada districts), Manya Automobiles (authorised Eicher trucks and buses dealer for Bharuch and Narmada districts) and Tirth Automobiles (chassis modification and special-purpose vehicle fabrication).',
+          'Its clients include Abbott, BASF, Asian Paints, Grasim, UPL, Saint-Gobain, Kohler and Evonik, served from offices in Bharuch and Vadodara.',
+        ],
+      },
+      {
+        name: 'DR. TRUPTI ALMOLA', role: 'Women Empowerment & Entrepreneurship', category: 'Executive Board', initials: 'TA', image: 'assets/trupti-almola.webp',
+        bio: [
+          'Dr. Trupti is a civil engineer from NIT Surat (then known as REC). She went on to complete an MBA with a specialisation in Marketing, a P.G. Diploma in HRD and a Ph.D. in Leadership (Management).',
+          'She has 10 years of industry experience with Everest Building Products, Gujarat Gas Ltd. and Birla Copper, in roles spanning Sales, Marketing, Training and Development, Human Resource Management, ISO coordination and WCM Champion.',
+          'She then moved to academics, coordinating the BBA programme of Narmada College of Science & Commerce and establishing the MBA programme at Narmada College of Management. Over 25+ years in academics, from teaching to administration, she rose to Professor and Director. Writing research papers, guiding research scholars, and organising international conferences, national case-writing and research methodology workshops, and faculty and management development programmes, she led Narmada College of Management to a leading position among more than 80 management colleges. Through its academic results, student placements, industry networking, discipline and the grooming of students to be enterprising, innovative and ethical, she built the college into a brand. This contribution led to her appointment as Dean, Faculty of Management, GTU, for three consecutive terms until she retired in 2025.',
+          'A social entrepreneur, she has run Dhwani School, a school for the hearing impaired, since 2007.',
+          'After retiring, she set up the ISTD Bharuch Chapter with a record 108 life members, and serves it as Vice Chairperson. She is a charter member and past President of the Rotary Club of Bharuch, Narmada Nagari, and has been Professor and Director at UPL University of Sustainable Technology since October 2025.',
+        ],
+      },
+      { name: 'MR. RAJESH DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD' },
+      { name: 'MR. NIRMAL YADAV', role: 'Government Licensing & Media', category: 'Executive Board', initials: 'NY' },
+      { name: 'DR. MAHESH VASHI', role: 'CSR & Skill Development', category: 'Executive Board', initials: 'MV' },
+      { name: 'MR. URJIT PATEL', role: 'Event Management & Exhibitions', category: 'Executive Board', initials: 'UP' },
+      { name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM' },
+      { name: 'ADV. JIGAR PATEL', role: 'Legal Activities', category: 'Executive Board', initials: 'JP' },
     ];
   }
 

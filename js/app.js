@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.4';
+import { Store } from './store.js?v=4.0.8';
 
 // ── Membership tiers ───────────────────────────────────────────
 // Built-in plans: label → fee in INR. The form starts with these and swaps in
@@ -1898,8 +1898,8 @@ class App {
   renderLeadership() {
     const container = document.getElementById('leadershipGrid');
     if (!container) return;
-    const team = this.store.getLeadership();
-    container.innerHTML = team.map(m => `
+    const leaders = this.store.getLeadership();
+    const card = (m, i) => `
       <div class="team-card">
         ${m.image ? `
           <div class="team-avatar-img-wrap">
@@ -1911,15 +1911,50 @@ class App {
         <h4 class="team-name">${escapeHtml(m.name)}</h4>
         <div class="team-title">${escapeHtml(m.role)}</div>
         <span class="team-badge">${escapeHtml(m.category)}</span>
-        ${m.linkedin ? `
-          <div style="margin-top: 1rem;">
-            <a href="${escapeAttr(m.linkedin)}" target="_blank" rel="noopener noreferrer" class="team-linkedin-btn" title="View ${escapeAttr(m.name)}'s LinkedIn profile">
-              <i class="fab fa-linkedin"></i> LinkedIn
-            </a>
+        ${m.linkedin || m.bio ? `
+          <div class="team-links">
+            ${m.bio ? `
+              <button type="button" class="team-readmore-btn" data-leader="${i}" aria-haspopup="dialog">
+                <i class="fas fa-book-open" aria-hidden="true"></i> Read more
+              </button>
+            ` : ''}
+            ${m.linkedin ? `
+              <a href="${escapeAttr(m.linkedin)}" target="_blank" rel="noopener noreferrer" class="team-linkedin-btn" title="View ${escapeAttr(m.name)}'s LinkedIn profile">
+                <i class="fab fa-linkedin"></i> LinkedIn
+              </a>
+            ` : ''}
           </div>
         ` : ''}
       </div>
-    `).join('');
+    `;
+    container.innerHTML = leaders.map(card).join('');
+    // Assigned, not added: this view re-renders on every visit to Home/About.
+    container.onclick = (e) => {
+      const btn = e.target.closest('.team-readmore-btn');
+      const leader = btn && leaders[Number(btn.dataset.leader)];
+      if (leader) this.showLeaderProfile(leader);
+    };
+  }
+
+  /** A leader's full profile, opened from "Read more" on their card. */
+  showLeaderProfile(m) {
+    this.showModal({
+      title: escapeHtml(m.name),
+      content: `
+        <div class="leader-profile">
+          ${m.image ? `<img src="${escapeAttr(m.image)}" alt="${escapeAttr(m.name)}" class="leader-profile-img" />` : ''}
+          <div class="leader-profile-role">${escapeHtml(m.role)} · ${escapeHtml(m.category)}</div>
+          <div class="leader-profile-bio">
+            ${m.bio.map((para) => `<p>${escapeHtml(para)}</p>`).join('')}
+          </div>
+          ${m.linkedin ? `
+            <a href="${escapeAttr(m.linkedin)}" target="_blank" rel="noopener noreferrer" class="team-linkedin-btn">
+              <i class="fab fa-linkedin"></i> LinkedIn
+            </a>
+          ` : ''}
+        </div>
+      `,
+    });
   }
 
   renderServicesAndFaqs() {
