@@ -551,56 +551,44 @@ export class Store {
       {
         name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/',
         bio: [
-          'M.Sc., Ph.D., MBA (Distance Learning). Retired Deputy Commissioner, FDCA, Government of Gujarat.',
-          'Dr. Shelat is a senior pharmaceutical regulatory professional with over 35 years of government service, bringing extensive expertise in regulatory administration, drug safety, quality assurance, policy implementation and public health protection.',
-          'A recipient of the Pharma Ratan – Lifetime Achievement Award, he has led major enforcement investigations and contributed to strengthening pharmaceutical regulatory systems, including establishing India\'s first State Price Monitoring Unit.',
-          'He currently serves as Director – Skill Development, Dhanvantari College of Pharmacy, and Chairperson – Advisory Body, Ribosome Research Centre. His experience in government liaison, institutional governance and industry–academia collaboration positions him to contribute to BCCI\'s industry development and skill-building initiatives.',
+          'Retired Deputy Commissioner, FDCA, Government of Gujarat, with over 35 years of service in pharmaceutical regulation, drug safety and quality assurance. He received the Pharma Ratan – Lifetime Achievement Award and helped set up India\'s first State Price Monitoring Unit.',
+          'He is Director – Skill Development at Dhanvantari College of Pharmacy and Chairperson – Advisory Body at Ribosome Research Centre.',
         ],
       },
       { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
       {
         name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/',
         bio: [
-          'Founder & Director of D-TECH Solution Integrators Pvt. Ltd. and a Business Digitalization & Technology Strategy Consultant.',
-          'Mr. Barot is a Bharuch-based entrepreneur and technology leader with over 34 years of industry experience, including 27+ years with D-TECH. His expertise spans IT infrastructure, cybersecurity, SAP/ERP, custom software, automation and robotics.',
-          'He guides organizations in technology planning, solution and vendor selection, implementation oversight and long-term investment value. His leadership combines disciplined planning, practical execution and a strong focus on customer needs.',
-          '"Lead with Trust. Inspire with Vision."',
+          'Founder & Director of D-TECH Solution Integrators Pvt. Ltd. and a technology strategy consultant, with over 34 years of experience in IT infrastructure, cybersecurity, SAP/ERP, custom software and automation.',
+          'He guides organizations on technology planning, vendor selection and long-term investment value. "Lead with Trust. Inspire with Vision."',
         ],
       },
       {
         name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp',
         bio: [
-          'Mr. Bharat Shah is a graduate and a pharmaceutical trader in Bharuch. He runs Aakash Medicines and Shah Medico, both retail outlets, and Shah Medicines, a wholesale dealership.',
-          'He has led the Bharuch & Narmada District Chemist and Druggist Association as its President since 1995, more than 31 years, and serves as Vice President of the Federation of Gujarat State Chemist & Druggist Association.',
-          'He is a member of the Bharuch Shanti Samiti, a trustee of Shri Venichand Fatechand Charitable Trust, Ahmedabad, and of the Modasa Ekda Visha Khadayata Sathamba Samuday Kelavani Mandal, Ahmedabad, and a member of Shri Samast Khadayata Samaj, Bharuch.',
-          'In any emergency that affects the supply of medicines, he makes himself available for social work to the best of his ability.',
+          'Mr. Bharat Shah is a pharmaceutical trader in Bharuch, running Aakash Medicines, Shah Medico and Shah Medicines.',
+          'He has been President of the Bharuch & Narmada District Chemist and Druggist Association since 1995, and is Vice President of the Federation of Gujarat State Chemist & Druggist Association and a trustee of two charitable trusts.',
         ],
       },
       {
         name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Executive Board', initials: 'NS', image: 'assets/nirmal-shah.webp',
         bio: [
-          'Managing Director of V C Shahpatel Services Pvt. Ltd., a Bharuch-based group founded by Mr. Virendra C. Shah and in business since 1990. The company is ISO 9001:2015, ISO 14001:2015 and ISO 45001:2015 certified, and holds a CRISIL SE 3A rating, indicating moderate performance and high financial strength.',
-          'The parent company supplies skilled, semi-skilled and unskilled manpower to industry, together with mechanised housekeeping and the outsourcing of blue-collar roles. The group\'s other ventures are Tirupati Placement Agency (on-roll and off-roll staffing), Tirth Travels (car hire across Gujarat), Tirth Force (authorised Force Motors dealer for Bharuch and Narmada districts), Manya Automobiles (authorised Eicher trucks and buses dealer for Bharuch and Narmada districts) and Tirth Automobiles (chassis modification and special-purpose vehicle fabrication).',
-          'Its clients include Abbott, BASF, Asian Paints, Grasim, UPL, Saint-Gobain, Kohler and Evonik, served from offices in Bharuch and Vadodara.',
+          'Managing Director of V C Shahpatel Services Pvt. Ltd., a Bharuch group in business since 1990 and certified ISO 9001, 14001 and 45001. It supplies manpower and housekeeping services to industry, including Abbott, BASF, Asian Paints and UPL.',
+          'The group also runs staffing, car hire, Force Motors and Eicher dealerships, and vehicle fabrication.',
         ],
       },
       {
         name: 'DR. TRUPTI ALMOLA', role: 'Women Empowerment & Entrepreneurship', category: 'Executive Board', initials: 'TA', image: 'assets/trupti-almola.webp',
         bio: [
-          'Dr. Trupti is a civil engineer from NIT Surat (then known as REC). She went on to complete an MBA with a specialisation in Marketing, a P.G. Diploma in HRD and a Ph.D. in Leadership (Management).',
-          'She has 10 years of industry experience with Everest Building Products, Gujarat Gas Ltd. and Birla Copper, in roles spanning Sales, Marketing, Training and Development, Human Resource Management, ISO coordination and WCM Champion.',
-          'She then moved to academics, coordinating the BBA programme of Narmada College of Science & Commerce and establishing the MBA programme at Narmada College of Management. Over 25+ years in academics, from teaching to administration, she rose to Professor and Director. Writing research papers, guiding research scholars, and organising international conferences, national case-writing and research methodology workshops, and faculty and management development programmes, she led Narmada College of Management to a leading position among more than 80 management colleges. Through its academic results, student placements, industry networking, discipline and the grooming of students to be enterprising, innovative and ethical, she built the college into a brand. This contribution led to her appointment as Dean, Faculty of Management, GTU, for three consecutive terms until she retired in 2025.',
-          'A social entrepreneur, she has run Dhwani School, a school for the hearing impaired, since 2007.',
-          'After retiring, she set up the ISTD Bharuch Chapter with a record 108 life members, and serves it as Vice Chairperson. She is a charter member and past President of the Rotary Club of Bharuch, Narmada Nagari, and has been Professor and Director at UPL University of Sustainable Technology since October 2025.',
+          'Dr. Trupti is a civil engineer (NIT Surat) with an MBA, a PG Diploma in HRD and a Ph.D. in Leadership. After 10 years in industry, she spent over 25 years in academics, rising to Director of Narmada College of Management and serving three terms as Dean, Faculty of Management, GTU.',
+          'She has run Dhwani School for the hearing impaired since 2007, is Vice Chairperson of ISTD Bharuch Chapter, a past President of Rotary Club of Bharuch, Narmada Nagari, and Professor and Director at UPL University of Sustainable Technology.',
         ],
       },
       {
         name: 'MR. RAJESHKUMAR DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD', image: 'assets/rajesh-dudhat.webp',
         bio: [
-          'Entrepreneur, industrialist, business leader and social leader. B.Sc. (South Gujarat University, 2000) and PGDBM (Bhavan\'s College, 2002).',
-          'Mr. Dudhat has over 24 years of experience in manufacturing, business management, strategic leadership and organizational development. Since 2002 he has been CEO of Kohinoor Group of Industries, a diversified group of 12 manufacturing group companies and 15 associate manufacturing companies across Dyestuffs, Pharmaceuticals, Speciality Chemicals, Engineering, Packaging and Export-Import Trading.',
-          'His responsibilities span strategic planning, business development, manufacturing operations, team leadership, commercial decision-making, expansion and long-term growth.',
-          'He is equally involved in social service and community development: President & Trustee of the Lions Club of Ankleshwar Industrial Area, and Trustee of Shree Sardar Patel Seva Samaj Trust and Shree Yuva Mitra Mandal Trust. He believes that professional success carries a responsibility to contribute meaningfully to society.',
+          'Mr. Dudhat is CEO of Kohinoor Group of Industries, which he has led since 2002. The group has 12 manufacturing companies and 15 associates across dyestuffs, pharmaceuticals, speciality chemicals, engineering, packaging and export-import trading.',
+          'With over 24 years in industry, he is also President of the Lions Club of Ankleshwar Industrial Area and a trustee of two community trusts.',
         ],
       },
       { name: 'MR. NIRMAL YADAV', role: 'Government Licensing & Media', category: 'Executive Board', initials: 'NY' },
