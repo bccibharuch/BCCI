@@ -626,9 +626,25 @@ export class Store {
       { name: 'MR. KAMAL KUMAR', role: 'Joint Vice President', category: 'Executive Board', initials: 'KK', image: 'assets/KAmal.webp', linkedin: 'https://www.linkedin.com/in/kamal-kumar-165a5b86' },
       { name: 'MR. ANISH PARIKH', role: 'Joint Vice President', category: 'Executive Board', initials: 'AP', image: 'assets/anish.webp', linkedin: 'https://www.linkedin.com/in/anish-parikh-4a5156b6/' },
       { name: 'MR. TUSHAR P. SHAH', role: 'Secretary', category: 'Executive Board', initials: 'TS', image: 'assets/tushar.webp' },
-      { name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/' },
+      {
+        name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/',
+        bio: [
+          'M.Sc., Ph.D., MBA (Distance Learning). Retired Deputy Commissioner, FDCA, Government of Gujarat.',
+          'Dr. Shelat is a senior pharmaceutical regulatory professional with over 35 years of government service, bringing extensive expertise in regulatory administration, drug safety, quality assurance, policy implementation and public health protection.',
+          'A recipient of the Pharma Ratan – Lifetime Achievement Award, he has led major enforcement investigations and contributed to strengthening pharmaceutical regulatory systems, including establishing India\'s first State Price Monitoring Unit.',
+          'He currently serves as Director – Skill Development, Dhanvantari College of Pharmacy, and Chairperson – Advisory Body, Ribosome Research Centre. His experience in government liaison, institutional governance and industry–academia collaboration positions him to contribute to BCCI\'s industry development and skill-building initiatives.',
+        ],
+      },
       { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
-      { name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/' },
+      {
+        name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/',
+        bio: [
+          'Founder & Director of D-TECH Solution Integrators Pvt. Ltd. and a Business Digitalization & Technology Strategy Consultant.',
+          'Mr. Barot is a Bharuch-based entrepreneur and technology leader with over 34 years of industry experience, including 27+ years with D-TECH. His expertise spans IT infrastructure, cybersecurity, SAP/ERP, custom software, automation and robotics.',
+          'He guides organizations in technology planning, solution and vendor selection, implementation oversight and long-term investment value. His leadership combines disciplined planning, practical execution and a strong focus on customer needs.',
+          '"Lead with Trust. Inspire with Vision."',
+        ],
+      },
       {
         name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp',
         bio: [
@@ -656,7 +672,15 @@ export class Store {
           'After retiring, she set up the ISTD Bharuch Chapter with a record 108 life members, and serves it as Vice Chairperson. She is a charter member and past President of the Rotary Club of Bharuch, Narmada Nagari, and has been Professor and Director at UPL University of Sustainable Technology since October 2025.',
         ],
       },
-      { name: 'MR. RAJESH DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD' },
+      {
+        name: 'MR. RAJESH DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD', image: 'assets/rajesh-dudhat.webp',
+        bio: [
+          'Entrepreneur, industrialist, business leader and social leader. B.Sc. (South Gujarat University, 2000) and PGDBM (Bhavan\'s College, 2002).',
+          'Mr. Dudhat has over 24 years of experience in manufacturing, business management, strategic leadership and organizational development. Since 2002 he has been CEO of Kohinoor Group of Industries, a diversified group of 12 manufacturing group companies and 15 associate manufacturing companies across Dyestuffs, Pharmaceuticals, Speciality Chemicals, Engineering, Packaging and Export-Import Trading.',
+          'His responsibilities span strategic planning, business development, manufacturing operations, team leadership, commercial decision-making, expansion and long-term growth.',
+          'He is equally involved in social service and community development: President & Trustee of the Lions Club of Ankleshwar Industrial Area, and Trustee of Shree Sardar Patel Seva Samaj Trust and Shree Yuva Mitra Mandal Trust. He believes that professional success carries a responsibility to contribute meaningfully to society.',
+        ],
+      },
       { name: 'MR. NIRMAL YADAV', role: 'Government Licensing & Media', category: 'Executive Board', initials: 'NY' },
       { name: 'DR. MAHESH VASHI', role: 'CSR & Skill Development', category: 'Executive Board', initials: 'MV' },
       { name: 'MR. URJIT PATEL', role: 'Event Management & Exhibitions', category: 'Executive Board', initials: 'UP' },
