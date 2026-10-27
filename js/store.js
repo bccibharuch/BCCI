@@ -629,7 +629,15 @@ export class Store {
       { name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/' },
       { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
       { name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/' },
-      { name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp' },
+      {
+        name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp',
+        bio: [
+          'Mr. Bharat Shah is a graduate and a pharmaceutical trader in Bharuch. He runs Aakash Medicines and Shah Medico, both retail outlets, and Shah Medicines, a wholesale dealership.',
+          'He has led the Bharuch & Narmada District Chemist and Druggist Association as its President since 1995, more than 31 years, and serves as Vice President of the Federation of Gujarat State Chemist & Druggist Association.',
+          'He is a member of the Bharuch Shanti Samiti, a trustee of Shri Venichand Fatechand Charitable Trust, Ahmedabad, and of the Modasa Ekda Visha Khadayata Sathamba Samuday Kelavani Mandal, Ahmedabad, and a member of Shri Samast Khadayata Samaj, Bharuch.',
+          'In any emergency that affects the supply of medicines, he makes himself available for social work to the best of his ability.',
+        ],
+      },
       {
         name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Executive Board', initials: 'NS', image: 'assets/nirmal-shah.webp',
         bio: [
