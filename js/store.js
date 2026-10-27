@@ -541,7 +541,7 @@ export class Store {
      STATIC CONTENT
      ════════════════════════════════════════════════════════════════════ */
 
-  /** Leadership shown on the About page, in display order: members with photos first. Committees per the 24 Oct 2026 board minutes. */
+  /** Leadership shown on the About page, in display order. */
   getLeadership() {
     return [
       { name: 'MR. KIRAN K. MAJMUDAR', role: 'President', category: 'Executive Board', initials: 'KM', image: 'assets/President_photo.webp', linkedin: 'https://www.linkedin.com/in/kiran-k-majmudar-52b235308/' },
@@ -563,39 +563,6 @@ export class Store {
           'He guides organizations on technology planning, vendor selection and long-term investment value. "Lead with Trust. Inspire with Vision."',
         ],
       },
-      {
-        name: 'MR. BHARAT SHAH', role: 'Vendor Development & Education', category: 'Executive Board', initials: 'BS', image: 'assets/bharat-shah.webp',
-        bio: [
-          'Mr. Bharat Shah is a pharmaceutical trader in Bharuch, running Aakash Medicines, Shah Medico and Shah Medicines.',
-          'He has been President of the Bharuch & Narmada District Chemist and Druggist Association since 1995, and is Vice President of the Federation of Gujarat State Chemist & Druggist Association and a trustee of two charitable trusts.',
-        ],
-      },
-      {
-        name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Executive Board', initials: 'NS', image: 'assets/nirmal-shah.webp',
-        bio: [
-          'Managing Director of V C Shahpatel Services Pvt. Ltd., a Bharuch group in business since 1990 and certified ISO 9001, 14001 and 45001. It supplies manpower and housekeeping services to industry, including Abbott, BASF, Asian Paints and UPL.',
-          'The group also runs staffing, car hire, Force Motors and Eicher dealerships, and vehicle fabrication.',
-        ],
-      },
-      {
-        name: 'DR. TRUPTI ALMOLA', role: 'Women Empowerment & Entrepreneurship', category: 'Executive Board', initials: 'TA', image: 'assets/trupti-almola.webp',
-        bio: [
-          'Dr. Trupti is a civil engineer (NIT Surat) with an MBA, a PG Diploma in HRD and a Ph.D. in Leadership. After 10 years in industry, she spent over 25 years in academics, rising to Director of Narmada College of Management and serving three terms as Dean, Faculty of Management, GTU.',
-          'She has run Dhwani School for the hearing impaired since 2007, is Vice Chairperson of ISTD Bharuch Chapter, a past President of Rotary Club of Bharuch, Narmada Nagari, and Professor and Director at UPL University of Sustainable Technology.',
-        ],
-      },
-      {
-        name: 'MR. RAJESHKUMAR DUDHAT', role: 'MSME & Capacity Building', category: 'Executive Board', initials: 'RD', image: 'assets/rajesh-dudhat.webp',
-        bio: [
-          'Mr. Dudhat is CEO of Kohinoor Group of Industries, which he has led since 2002. The group has 12 manufacturing companies and 15 associates across dyestuffs, pharmaceuticals, speciality chemicals, engineering, packaging and export-import trading.',
-          'With over 24 years in industry, he is also President of the Lions Club of Ankleshwar Industrial Area and a trustee of two community trusts.',
-        ],
-      },
-      { name: 'MR. NIRMAL YADAV', role: 'Government Licensing & Media', category: 'Executive Board', initials: 'NY' },
-      { name: 'DR. MAHESH VASHI', role: 'CSR & Skill Development', category: 'Executive Board', initials: 'MV' },
-      { name: 'MR. URJIT PATEL', role: 'Event Management & Exhibitions', category: 'Executive Board', initials: 'UP' },
-      { name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM' },
-      { name: 'ADV. JIGAR PATEL', role: 'Legal Activities', category: 'Executive Board', initials: 'JP' },
     ];
   }
 
