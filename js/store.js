@@ -641,6 +641,13 @@ export class Store {
           'He guides organizations on technology planning, vendor selection and long-term investment value. "Lead with Trust. Inspire with Vision."',
         ],
       },
+      {
+        name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM', image: 'assets/rajesh-makwana.webp',
+        bio: [
+          'Senior finance and taxation professional with over 28 years in finance, taxation, treasury and compliance, and an MBA from IIM Kozhikode. Named among the "100 CFOs of India", he has held leadership roles at Zentiva (formerly Sanofi India), Gharda Chemicals and Cheminova India, and led the carve-out of Sanofi\'s Ankleshwar business into Zentiva.',
+          'Since 2015 he has led the Finance & Taxation Forum of Bharuch District Management Association, and he is a key link between Bharuch industry and the Income Tax and GST authorities.',
+        ],
+      },
     ];
   }
 
