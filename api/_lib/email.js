@@ -432,6 +432,15 @@ export async function sendRaw({ to, subject, html }) {
   return deliver({ to, subject, html });
 }
 
+/**
+ * Subjects interpolate user input — a company name, an event title — and a
+ * CR/LF in one would start a new header. Nodemailer folds it today, but do
+ * not depend on that. Only the subject is cleaned: bodies keep their breaks.
+ */
+function safeSubject(value) {
+  return String(value ?? '').replace(/[\u0000-\u001F\u007F]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
 async function deliver({ to, subject, html }) {
   const transport = getTransport();
   if (!transport) {
@@ -443,7 +452,7 @@ async function deliver({ to, subject, html }) {
     await transport.sendMail({
       from: resolveSmtpConfig().from,
       to: Array.isArray(to) ? to.join(', ') : to,
-      subject,
+      subject: safeSubject(subject),
       html,
     });
     return { success: true, provider: 'smtp' };
