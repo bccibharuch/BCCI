@@ -68,6 +68,8 @@ function run(cmd) {
       return next;
     }
     case 'EXPIRE':
+      // As Redis: a missing key is left alone and reported as 0.
+      if (!store.has(key) && !zsets.has(key)) return 0;
       expiries.set(key, Date.now() + Number(cmd[2]) * 1000);
       return 1;
     case 'TTL': {

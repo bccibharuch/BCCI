@@ -96,8 +96,9 @@ async function slideSession(key, session, now = Date.now()) {
     return target;
   }
   if (ttl !== target && (ttl > target || ttl < SESSION_TTL_SECONDS / 2)) {
-    await withRetry(() => kv.expire(key, target));
-    return target;
+    // 0 means the key went between TTL and EXPIRE: a sign-out won the race.
+    const renewed = await withRetry(() => kv.expire(key, target));
+    return Number(renewed) > 0 ? target : 0;
   }
   return ttl;
 }
@@ -348,6 +349,7 @@ async function handler(req, res) {
       // The browser keeps its own copy of the expiry; this keeps it in step
       // with renewals so an active member is not signed out at day 30.
       res.setHeader('X-Session-Expires-In', String(session.expiresIn));
+      res.setHeader('Access-Control-Expose-Headers', 'X-Session-Expires-In');
       return await signedIn[action](req, res, session);
     }
 

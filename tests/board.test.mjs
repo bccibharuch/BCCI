@@ -207,6 +207,7 @@ async function useSession(value, ttlSec) {
 let u = await useSession({ ...ASHA, issuedAt: Date.now() - 10 * DAY_S * 1000 }, 20 * DAY_S);
 ck('with more than half the window left, use does not renew', u.res.status === 200 && near(u.ttl, 20 * DAY_S), `ttl ${u.ttl}`);
 ck('each signed-in reply reports the time left', near(u.header, 20 * DAY_S), `header ${u.header}`);
+ck('the lifetime header is exposed to cross-origin callers', u.res.headers['access-control-expose-headers'] === 'X-Session-Expires-In', String(u.res.headers['access-control-expose-headers']));
 
 u = await useSession({ ...ASHA, issuedAt: Date.now() - 20 * DAY_S * 1000 }, 10 * DAY_S);
 ck('with less than half left, use renews to a full 30 days', u.res.status === 200 && near(u.ttl, 30 * DAY_S), `ttl ${u.ttl}`);
@@ -229,6 +230,38 @@ ck('an old session issued 70 days ago gets only the 20 days left under the ceili
 
 u = await useSession(ASHA, 80 * DAY_S);
 ck('an old session issued 100 days ago is refused', u.res.status === 401 && u.ttl === -2, `status ${u.res.status}, ttl ${u.ttl}`);
+
+// A sign-out landing between the TTL read and the renewal: the session is
+// gone, so the request must not report a renewed lifetime for it.
+{
+  const t = crypto.randomBytes(32).toString('hex');
+  const key = KEYS.boardSession(t);
+  await kv.set(key, { ...ASHA, issuedAt: Date.now() - 20 * DAY_S * 1000 }, { ex: 10 * DAY_S });
+  // Upstash's client is a Proxy, so on the mock the delete goes in through a
+  // command hook; the Postgres kv is a plain object and can be wrapped.
+  let restore;
+  if (redis) {
+    const hook = (cmd) => {
+      if (String(cmd[0]).toUpperCase() === 'EXPIRE' && cmd[1] === key) redis.store.delete(key);
+    };
+    redis.beforeCommand.push(hook);
+    restore = () => redis.beforeCommand.splice(redis.beforeCommand.indexOf(hook), 1);
+  } else {
+    const realExpire = kv.expire;
+    kv.expire = async (k, sec) => {
+      if (k === key) await kv.del(key);
+      return realExpire.call(kv, k, sec);
+    };
+    restore = () => { kv.expire = realExpire; };
+  }
+  try {
+    r = await call('me', { method: 'GET', token: t });
+  } finally {
+    restore();
+  }
+  ck('a session signed out mid-renewal is refused, not reported as renewed',
+    r.status === 401 && r.headers['x-session-expires-in'] === undefined && (await kv.get(key)) === null, `status ${r.status}`);
+}
 
 r = await call('me', { method: 'GET', token: crypto.randomBytes(32).toString('hex') });
 ck('a refused session gets no lifetime header', r.status === 401 && r.headers['x-session-expires-in'] === undefined);

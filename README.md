@@ -146,7 +146,7 @@ npm run purge:data -- --confirm # actually delete
 npm test
 ```
 
-847 assertions across ten suites, with no network access and no live database:
+849 assertions across ten suites, with no network access and no live database:
 
 | Suite | Covers |
 |---|---|
