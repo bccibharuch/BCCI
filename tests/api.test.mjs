@@ -630,6 +630,23 @@ check('flooding from one IP gets rate-limited', blocked > 0, `blocked ${blocked}
 // ════════════════════════════════════════════════════════════════════
 section('Validation');
 
+{
+  // Uploads cut short keep their first bytes, so the end must be checked too.
+  const { validateFileSignature } = await import(`${BCCI}/_lib/validation.js`);
+  const uri = (mime, buf) => `data:${mime};base64,${buf.toString('base64')}`;
+  const png = Buffer.from(TINY_PNG.split(',')[1], 'base64');
+  const jpeg = Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]), Buffer.alloc(200, 7), Buffer.from([0xFF, 0xD9])]);
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n', 'latin1');
+  const webpBody = Buffer.concat([Buffer.from('WEBP', 'latin1'), Buffer.alloc(100, 1)]);
+  const webpSize = Buffer.alloc(4); webpSize.writeUInt32LE(webpBody.length, 0);
+  const webp = Buffer.concat([Buffer.from('RIFF', 'latin1'), webpSize, webpBody]);
+  for (const [name, mime, buf] of [['PNG', 'image/png', png], ['JPEG', 'image/jpeg', jpeg], ['PDF', 'application/pdf', pdf], ['WEBP', 'image/webp', webp]]) {
+    check(`a complete ${name} is accepted`, validateFileSignature(uri(mime, buf)).ok === true, JSON.stringify(validateFileSignature(uri(mime, buf))));
+    const cut = validateFileSignature(uri(mime, buf.subarray(0, Math.floor(buf.length * 0.6))));
+    check(`a ${name} cut short is refused as incomplete`, cut.ok === false && /incomplete/.test(cut.error || ''), JSON.stringify(cut));
+  }
+}
+
 r = await call(enquiries, { method: 'POST', body: { name: 'A', email: 'nope', phone: '123', subject: '', message: '' } });
 check('invalid enquiry → 400', r.statusCode === 400, `got ${r.statusCode}`);
 

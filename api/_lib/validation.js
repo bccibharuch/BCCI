@@ -76,5 +76,39 @@ export function validateFileSignature(dataUri, allowedMimes = ['application/pdf'
     return { ok: false, error: 'Unrecognized file signature. Only valid PDF, PNG, JPG, or WEBP files are allowed.' };
   }
 
+  // A file cut short (an interrupted upload, a partial copy) still has the
+  // right first bytes, so check that it also ends the way its format must.
+  if (!endsComplete(Buffer.from(base64Content, 'base64'), mime)) {
+    return { ok: false, error: 'The file looks incomplete; it may not have finished uploading. Please choose it again.' };
+  }
+
   return { ok: true, mime };
+}
+
+/**
+ * True when the decoded file ends the way its format requires. The browser
+ * re-encodes images before upload, so their end markers are exact; PDFs are
+ * sent as chosen, so they get the window the PDF spec allows for trailing
+ * bytes after %%EOF.
+ */
+function endsComplete(buf, mime) {
+  const tail = (n) => buf.subarray(Math.max(0, buf.length - n));
+  if (mime === 'image/png') {
+    // The IEND chunk: type 'IEND' followed by its 4-byte CRC.
+    return buf.length >= 12 && buf.subarray(buf.length - 8, buf.length - 4).toString('latin1') === 'IEND';
+  }
+  if (mime === 'image/jpeg') {
+    // The end-of-image marker FF D9, allowing a little padding after it.
+    const t = tail(32);
+    for (let i = t.length - 2; i >= 0; i--) if (t[i] === 0xFF && t[i + 1] === 0xD9) return true;
+    return false;
+  }
+  if (mime === 'image/webp') {
+    // The RIFF header records the total size; a cut-short file is smaller.
+    return buf.length >= 12 && buf.length >= buf.readUInt32LE(4) + 8;
+  }
+  if (mime === 'application/pdf') {
+    return tail(2048).toString('latin1').includes('%%EOF');
+  }
+  return true;
 }
