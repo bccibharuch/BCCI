@@ -67,7 +67,8 @@ function withTimeout(run, ms) {
  * Postgres are network hops; a single transient failure should not surface
  * as a 500 to an applicant who is halfway through a form. Each attempt is
  * bounded by STORAGE_TIMEOUT_MS so a hung backend fails fast instead of
- * holding the request open.
+ * holding the request open. A deliberate 4xx refusal (a busy lock, a
+ * duplicate) is an answer, not a transient failure, so it is not retried.
  */
 export async function withRetry(fn, attempts = 3) {
   let lastErr;
@@ -75,6 +76,8 @@ export async function withRetry(fn, attempts = 3) {
     try {
       return await withTimeout(fn, STORAGE_TIMEOUT_MS);
     } catch (err) {
+      const status = Number(err?.statusCode);
+      if (status >= 400 && status < 500) throw err;
       lastErr = err;
       if (i < attempts - 1) {
         await new Promise((r) => setTimeout(r, 120 * Math.pow(2, i)));

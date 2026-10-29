@@ -515,8 +515,11 @@ section('Locks: no write without the lock, no release without the token');
   const before = await getApplication(rejectAppId);
   const held = await acquireLock(`application:${rejectAppId}`, 30);
   check('test setup: the application lock is held', !!held);
+  const lockedAt = Date.now();
   r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: 'Rejected', reason: 'Written while locked' } });
+  const lockedMs = Date.now() - lockedAt;
   check('an admin update that cannot get the lock → 409', r.statusCode === 409 && /being updated/.test(r.body?.error || ''), `${r.statusCode} ${JSON.stringify(r.body)}`);
+  check('the 409 comes after one lock wait, not three retries', lockedMs < 2000, `${lockedMs} ms`);
   const after = await getApplication(rejectAppId);
   check('and the record is left untouched', after?.status === before?.status && after?.rejectionReason === before?.rejectionReason, `${before?.status} → ${after?.status}`);
 
@@ -525,6 +528,15 @@ section('Locks: no write without the lock, no release without the token');
   await releaseLock(`application:${rejectAppId}`, held);
   r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: before?.status } });
   check('once released, the update goes through', r.statusCode === 200, `got ${r.statusCode}`);
+
+  // withRetry retries transient failures, never a deliberate refusal.
+  const { withRetry } = await import(`${BCCI}/_lib/keys.js`);
+  let calls = 0;
+  const refused = await withRetry(async () => { calls++; throw Object.assign(new Error('taken'), { statusCode: 409 }); }).catch((e) => e);
+  check('withRetry rethrows a 4xx after one attempt', refused?.statusCode === 409 && calls === 1, `calls ${calls}`);
+  calls = 0;
+  const recovered = await withRetry(async () => { if (++calls < 3) throw new Error('ECONNRESET'); return 'ok'; });
+  check('withRetry still retries a transient failure', recovered === 'ok' && calls === 3, `calls ${calls}`);
 
   // The email audit log skips an entry rather than overwrite others' entries.
   const logLength = async () => ((await mock.store.has('bcci:email_log')) ? JSON.parse(mock.store.get('bcci:email_log')).length : 0);
