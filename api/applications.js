@@ -69,6 +69,25 @@ function renewedExpiry(app, now = new Date()) {
   return next.toISOString();
 }
 
+/**
+ * What one more year costs this member: the plan's current listed fee, or
+ * what they paid on joining when the plan has since been taken off the form.
+ * Null when neither is known (e.g. an imported member with no plan on file).
+ */
+async function renewalFeeFor(app) {
+  const listed = await getMembershipFee(app.membershipPlan);
+  if (listed !== undefined) return listed;
+  const paid = Number(app.totalFee ?? app.paymentAmount);
+  return Number.isFinite(paid) && paid > 0 ? paid : null;
+}
+
+/** A client-supplied amount that disagrees with the fee, as an error message; else null. */
+function renewalAmountMismatch(body, fee) {
+  const claimed = str(body?.paymentAmount, 20).replace(/[^0-9]/g, '');
+  if (!claimed || fee === null || Number(claimed) === fee) return null;
+  return `Renewal amount mismatch for this membership type (expected ₹${fee.toLocaleString('en-IN')}/-).`;
+}
+
 async function handler(req, res) {
   // Admin dashboard stats route dispatch (via /api/admin-stats rewrite or ?stats=true)
   if (req.query?.stats === 'true' || req.query?.stats === '1') {
@@ -164,16 +183,13 @@ async function handler(req, res) {
       });
     }
 
-    const ip = clientIp(req);
-    const limit = await rateLimit(`apply:${ip}`, { max: 5, windowSec: 3600 });
-    if (!limit.ok) {
-      return tooManyRequests(res, limit.retryAfter, 'Too many submissions from this network. Please try again later.');
-    }
-
     const repName = str(body.repName, 120);
     const repDesignation = str(body.repDesignation, 120);
     const repMobile = cleanPhone(body.repMobile);
     const repEmail = str(body.repEmail, 254).toLowerCase();
+    // The form's "Official Email" may be a company address distinct from the
+    // verified sign-in email; the record is still filed under the latter.
+    const officialEmail = str(body.email, 254).toLowerCase() || applicantEmail;
     const company = str(body.company, 200);
     const phone = cleanPhone(body.phone);
     const membershipType = str(body.businessServices, 120);
@@ -232,6 +248,9 @@ async function handler(req, res) {
     }
     if (!isEmail(applicantEmail)) {
       return res.status(400).json({ error: 'Invalid email format.' });
+    }
+    if (!isEmail(officialEmail)) {
+      return res.status(400).json({ error: 'Enter a valid official email address.' });
     }
     if (!membershipType || membershipType.length < 2) {
       return res.status(400).json({ error: 'Primary business sector / service is required.' });
@@ -358,6 +377,13 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'Payment reference / UTR must be at least 6 alphanumeric characters.' });
     }
 
+    // Counted only once the form is valid, so typos never use up the
+    // allowance of everyone behind the same office NAT.
+    const limit = await rateLimit(`apply:${clientIp(req)}`, { max: 5, windowSec: 3600 });
+    if (!limit.ok) {
+      return tooManyRequests(res, limit.retryAfter, 'Too many submissions from this network. Please try again later.');
+    }
+
     // One application per verified email. The check and the save hold one
     // lock, so a double-clicked submit cannot file two applications.
     const applyLock = `apply:${applicantEmail}`;
@@ -368,7 +394,9 @@ async function handler(req, res) {
     let saved;
     try {
       const existing = await getApplicationByEmail(applicantEmail);
-      if (existing) {
+      // A rejected applicant may file again; the new submission replaces the
+      // rejected one under the same id, so the one-per-email rule still holds.
+      if (existing && existing.status !== STATUS.REJECTED) {
         return res.status(409).json({
           error: `An application for this email already exists (${existing.id}).`,
           applicationId: existing.id,
@@ -386,6 +414,7 @@ async function handler(req, res) {
         repEmail,
         company,
         email: applicantEmail,
+        officialEmail,
         phone,
         address: applicantAddress,
         city,
@@ -430,7 +459,31 @@ async function handler(req, res) {
         renewalYears: 1,
       };
 
-      saved = await putApplication(application);
+      if (existing) {
+        saved = await updateApplication(existing.id, (prev) => {
+          // An admin may have changed the decision since the read above.
+          if (prev.status !== STATUS.REJECTED) return prev;
+          const previousSubmissions = Array.isArray(prev.previousSubmissions) ? prev.previousSubmissions : [];
+          return {
+            ...application,
+            id: prev.id,
+            previousSubmissions: [...previousSubmissions, {
+              submittedAt: prev.submittedAt || null,
+              reviewedAt: prev.reviewedAt || null,
+              reviewedBy: prev.reviewedBy || null,
+              rejectionReason: prev.rejectionReason || '',
+            }],
+          };
+        });
+        if (!saved || saved.submittedAt !== application.submittedAt) {
+          return res.status(409).json({
+            error: 'Your earlier application was reviewed again just now. Please refresh to see its status.',
+            applicationId: existing.id,
+          });
+        }
+      } else {
+        saved = await putApplication(application);
+      }
     } finally {
       await releaseLock(applyLock, applyLockToken);
     }
@@ -502,6 +555,9 @@ async function handler(req, res) {
       if (!paymentRef || paymentRef.length < 6 || !/^[A-Za-z0-9_\-\/]{6,80}$/.test(paymentRef)) {
         return res.status(400).json({ error: 'A valid payment UTR / transaction reference is required (min 6 alphanumeric characters).' });
       }
+      const amount = await renewalFeeFor(target);
+      const mismatch = renewalAmountMismatch(req.body, amount);
+      if (mismatch) return res.status(400).json({ error: mismatch });
 
       const existingRenewals = Array.isArray(target.renewals) ? target.renewals : [];
       const alreadyProcessed = existingRenewals.find(r => r.paymentRef === paymentRef) || (target.paymentRef === paymentRef && target.lastRenewedAt);
@@ -531,6 +587,7 @@ async function handler(req, res) {
             renewalStatus: 'Pending Verification',
             pendingRenewal: {
               paymentRef,
+              amount,
               requestedAt: new Date().toISOString(),
             },
           };
@@ -548,6 +605,7 @@ async function handler(req, res) {
         if (renewals.some(r => r.paymentRef === paymentRef)) return app;
         const renewalRecord = {
           paymentRef,
+          amount,
           renewedAt: new Date().toISOString(),
           renewalYear: (Number(app.renewalYears) || 1) + 1,
           approvedBy: adminEmail,
@@ -632,6 +690,8 @@ async function handler(req, res) {
           if (renewals.some(r => r.paymentRef === paymentRef)) return app;
           const renewalRecord = {
             paymentRef,
+            // Priced when the member asked; older requests predate that.
+            amount: app.pendingRenewal.amount ?? null,
             renewedAt: new Date().toISOString(),
             renewalYear: (Number(app.renewalYears) || 1) + 1,
             approvedBy: adminEmail,
@@ -719,6 +779,11 @@ async function handler(req, res) {
     const { status } = req.body || {};
     if (!status) return res.status(400).json({ error: 'No changes supplied.' });
 
+    // normalizeStatus maps anything unrecognised to Pending (right for old
+    // stored data), so a typo like "Approve" would silently un-approve a member.
+    if (!['pending', 'approved', 'rejected', 'declined'].includes(String(status).trim().toLowerCase())) {
+      return res.status(400).json({ error: 'Status must be Pending, Approved or Rejected.' });
+    }
     const nextStatus = normalizeStatus(status);
     const reason = str(req.body.reason, 1000);
     const updated = await updateApplication(id, (app) => {

@@ -869,12 +869,22 @@ class App {
           `;
         }
         this.updateHeaderMemberBadge(memberApp, null);
-        if (profileBtnText) profileBtnText.textContent = `Pending (${memberApp.id})`;
       } else {
         if (wrapper) wrapper.style.display = 'grid';
-        if (emailDisplay) emailDisplay.textContent = `${session.name || 'Applicant'} (${session.email})`;
+        if (emailDisplay && memberApp && memberApp.status === 'Rejected') {
+          emailDisplay.innerHTML = `
+            <div style="font-size: 1rem; font-weight: 700; color: #FFFFFF;">${escapeHtml(session.name || 'Applicant')} (${escapeHtml(session.email)})</div>
+            <div style="font-size: 0.85rem; color: #FCA5A5; margin-top: 3px;">
+              <i class="fas fa-times-circle"></i> <strong>Application ${escapeHtml(memberApp.id)} was not approved.</strong>
+            </div>
+            <div style="font-size: 0.8rem; color: #CBD5E1; margin-top: 0.2rem;">
+              ${memberApp.rejectionReason ? `Reason: ${escapeHtml(memberApp.rejectionReason)}<br/>` : ''}You can correct the details below and submit again.
+            </div>
+          `;
+        } else if (emailDisplay) {
+          emailDisplay.textContent = `${session.name || 'Applicant'} (${session.email})`;
+        }
         this.updateHeaderMemberBadge(null, null);
-        if (profileBtnText) profileBtnText.textContent = `Profile (${session.name || session.email.split('@')[0]})`;
 
         const emailInput = document.querySelector('#membershipForm input[name="email"]');
         const repInput = document.querySelector('#membershipForm input[name="repName"]');
@@ -1180,7 +1190,8 @@ class App {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem;">
               ${field('Representative Name', app.repName || app.applicantName)}
               ${field('Designation', app.repDesignation || 'Managing Director / CEO')}
-              ${field('Official Email ID', app.email)}
+              ${field('Official Email ID', app.officialEmail || app.email)}
+              ${app.officialEmail && app.officialEmail !== app.email ? field('Portal Sign-in Email', app.email) : ''}
               ${field('Mobile Number', app.phone)}
               ${app.repMobile ? field('Representative Mobile', app.repMobile) : ''}
               ${app.repEmail ? field('Representative Email', app.repEmail) : ''}
@@ -1255,8 +1266,21 @@ class App {
     });
   }
 
+  /**
+   * What one more year costs, computed exactly as the server's renewalFeeFor():
+   * the plan's listed fee, else what the member paid on joining. Null when
+   * neither is known. Shown to the member and sent with the request, so the
+   * server refuses a renewal priced differently from what was displayed.
+   */
+  renewalFeeFor(app) {
+    if (membershipFees.has(app.membershipPlan)) return membershipFees.get(app.membershipPlan);
+    const paid = Number(app.totalFee ?? app.paymentAmount);
+    return Number.isFinite(paid) && paid > 0 ? paid : null;
+  }
+
   showRenewalModal(app) {
     const validity = this.store.getMembershipValidity(app);
+    const renewalFee = this.renewalFeeFor(app);
     this.showModal({
       title: `<i class="fas fa-sync-alt" style="color: var(--primary);"></i> Annual Membership Renewal (1-Year Extension)`,
       content: `
@@ -1271,6 +1295,7 @@ class App {
           <div style="margin-bottom: 1.25rem; text-align: center; background: #F8FAFC; padding: 1rem; border-radius: 8px; border: 1px solid #E2E8F0;">
             <img src="assets/banks.webp" alt="BCCI Payment QR" style="max-height: 180px; border-radius: 6px; border: 1px solid #CBD5E1; margin-bottom: 0.5rem;" />
             <div style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">Scan UPI QR Code for Annual Renewal Fee Payment</div>
+            ${renewalFee ? `<div style="font-size: 0.9rem; font-weight: 700; color: #0F172A; margin: 0.25rem 0;">Renewal fee: ₹${escapeHtml(renewalFee.toLocaleString('en-IN'))}/-</div>` : ''}
             <code style="font-size: 0.8rem; background: #DBEAFE; padding: 2px 8px; border-radius: 4px; color: #1E40AF;">7861906384.eazypay@icici</code>
           </div>
           <form id="renewalForm">
@@ -1304,7 +1329,7 @@ class App {
         }
 
         try {
-          const resApp = await this.store.renewMembership(app.id, utr);
+          const resApp = await this.store.renewMembership(app.id, utr, renewalFee);
           this.closeModal();
           if (resApp?.renewalStatus === 'Pending Verification') {
             this.showToast(`Renewal request for ${app.id} submitted for Secretariat verification!`, 'success');
@@ -1539,6 +1564,12 @@ class App {
           <div class="profile-dropdown-info"><span class="info-label">Company</span><span class="info-value">${escapeHtml(memberApp.company)}</span></div>
           <div class="profile-dropdown-info"><span class="info-label">Ref ID</span><span class="info-value" style="font-family:monospace;color:#D97706;">${escapeHtml(memberApp.id)}</span></div>
           <div class="profile-dropdown-info"><span class="info-label">Submitted</span><span class="info-value">${escapeHtml(formatDate(memberApp.submittedAt))}</span></div>
+        `;
+      } else if (memberApp.status === 'Rejected') {
+        statusHtml = `<div class="profile-dropdown-status expired"><i class="fas fa-times-circle"></i> Application Not Approved</div>`;
+        infoHtml = `
+          <div class="profile-dropdown-info"><span class="info-label">Ref ID</span><span class="info-value" style="font-family:monospace;">${escapeHtml(memberApp.id)}</span></div>
+          ${memberApp.rejectionReason ? `<div class="profile-dropdown-info"><span class="info-label">Reason</span><span class="info-value">${escapeHtml(memberApp.rejectionReason)}</span></div>` : ''}
         `;
       }
     } else {
@@ -3305,6 +3336,8 @@ class App {
               </div>
             `
           });
+          // A resubmission after rejection flips the banner to "pending".
+          await this.updateApplicantAuthUI();
         } catch (err) {
           console.error('[Membership Submit Error]', err);
           if (err.status === 409) {
@@ -3950,7 +3983,8 @@ class App {
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem;">
                   ${field('Representative Name', app.repName || app.applicantName)}
                   ${field('Designation', app.repDesignation || 'Managing Director / CEO')}
-                  ${field('Official Email ID', app.email)}
+                  ${field('Official Email ID', app.officialEmail || app.email)}
+                  ${app.officialEmail && app.officialEmail !== app.email ? field('Portal Sign-in Email', app.email) : ''}
                   ${field('Mobile Number', app.phone)}
                   ${app.repMobile ? field('Representative Mobile', app.repMobile) : ''}
                   ${app.repEmail ? field('Representative Email', app.repEmail) : ''}
@@ -3990,6 +4024,7 @@ class App {
                   </h5>
                   <p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #78350F;">
                     Member requested +1 Year renewal with Payment UTR: <strong style="font-family: monospace; color: #92400E;">${escapeHtml(app.pendingRenewal?.paymentRef || app.paymentRef || 'N/A')}</strong>
+                    ${Number(app.pendingRenewal?.amount) > 0 ? ` &bull; Amount due: <strong>₹${escapeHtml(Number(app.pendingRenewal.amount).toLocaleString('en-IN'))}/-</strong>` : ''}
                     ${app.pendingRenewal?.requestedAt ? ` &bull; Submitted: <strong>${formatDate(app.pendingRenewal.requestedAt)}</strong>` : ''}.
                   </p>
                   <div style="display: flex; gap: 0.5rem;">
@@ -4103,7 +4138,7 @@ class App {
       a.annualTurnover, a.employees, a.gstNo || a.gstin, a.panNo || a.pan, a.cin || 'N/A',
       a.regNumber || 'N/A', a.regDate || 'N/A', a.regPlace || 'N/A',
       a.address, a.city || 'N/A', a.district, a.state || 'Gujarat', a.pincode,
-      a.repName || a.applicantName, a.repDesignation, a.email, a.phone, a.repMobile || 'N/A', a.repEmail || 'N/A',
+      a.repName || a.applicantName, a.repDesignation, a.officialEmail || a.email, a.phone, a.repMobile || 'N/A', a.repEmail || 'N/A',
       membershipPlanLabel(a) || 'N/A', a.paymentMode || 'N/A',
       a.paymentRef || 'N/A', a.status, a.submittedAt, a.approvedAt || 'N/A', a.reviewedBy || 'N/A', a.renewalYears || 1
     ].map(cell));

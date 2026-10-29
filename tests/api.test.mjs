@@ -687,9 +687,40 @@ check('application on a deleted type → 400', r.statusCode === 400 && /valid me
 r = await call(membershipPlans, { method: 'PUT', token: adminToken, body: {} });
 check('unsupported method → 405', r.statusCode === 405, `got ${r.statusCode}`);
 
-
 // ════════════════════════════════════════════════════════════════════
 section('Review fixes: re-apply, stale claims, status typos, renewals, sign-in limits');
+
+async function applicantSession(email, ip) {
+  await call(sendOtp, { method: 'POST', ip, body: { email } });
+  const code = JSON.parse(mock.store.get(`bcci:otp:${email}`));
+  const v = await call(verifyOtp, { method: 'POST', ip, body: { email, code, name: 'Test Person' } });
+  return v.body?.session?.token;
+}
+
+// A rejected applicant can file again, under the same id.
+const reapplyToken = await applicantSession('reapply@example.com', '203.0.113.150');
+r = await call(applications, { method: 'POST', token: reapplyToken, ip: '203.0.113.151', body: validApp({ company: 'First Try Ltd', email: 'office@firsttry.example' }) });
+const reapplyId = r.body?.applicationId;
+check('distinct official email is kept alongside the sign-in email',
+  r.body?.application?.officialEmail === 'office@firsttry.example' && r.body?.application?.email === 'reapply@example.com', JSON.stringify(r.body?.application?.officialEmail));
+await call(applications, { method: 'PATCH', token: adminToken, body: { id: reapplyId, status: 'Rejected', reason: 'Blurry PAN scan' } });
+r = await call(applications, { method: 'POST', token: reapplyToken, ip: '203.0.113.152', body: validApp({ company: 'Second Try Ltd' }) });
+check('a rejected applicant can re-apply → 201', r.statusCode === 201, JSON.stringify(r.body).slice(0, 200));
+check('the resubmission keeps the id and is Pending again',
+  r.body?.application?.id === reapplyId && r.body?.application?.status === 'Pending' && r.body?.application?.company === 'Second Try Ltd');
+check('the earlier rejection is kept in history, not on the live record',
+  r.body?.application?.rejectionReason === undefined && r.body?.application?.previousSubmissions?.[0]?.rejectionReason === 'Blurry PAN scan');
+check('the resubmission moves to the top of the admin list',
+  (await call(applications, { method: 'GET', token: adminToken })).body?.applications?.[0]?.id === reapplyId);
+r = await call(applications, { method: 'POST', token: reapplyToken, ip: '203.0.113.153', body: validApp() });
+check('a pending resubmission still blocks a third filing → 409', r.statusCode === 409, `got ${r.statusCode}`);
+
+// An email claim left behind by a crash between the claim and the record write.
+const staleToken = await applicantSession('stale@example.com', '203.0.113.154');
+mock.store.set('bcci:app_email:stale@example.com', 'BCCI-ghost-record');
+r = await call(applications, { method: 'POST', token: staleToken, ip: '203.0.113.155', body: validApp({ company: 'Stale Claim Ltd' }) });
+check('a stale email claim is taken over → 201', r.statusCode === 201, JSON.stringify(r.body).slice(0, 200));
+check('the claim now points at the new record', mock.store.get('bcci:app_email:stale@example.com') === JSON.stringify(r.body?.applicationId) || mock.store.get('bcci:app_email:stale@example.com') === r.body?.applicationId);
 
 // A deliberate 4xx from deeper code reaches the client as itself, not a 500.
 const { withErrorHandling } = await import(`${BCCI}/_lib/http.js`);
@@ -699,6 +730,18 @@ check('withErrorHandling passes a thrown 409 through', r.statusCode === 409 && r
 const crashRoute = withErrorHandling('Test', async () => { throw new Error('db exploded'); });
 r = await call(crashRoute);
 check('an unexpected error is still a generic 500', r.statusCode === 500 && !/exploded/.test(r.body?.error || ''));
+
+r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, status: 'Approve' } });
+check('a misspelt status is refused, not turned into Pending', r.statusCode === 400, `got ${r.statusCode}`);
+
+// Renewals are priced from the member's plan.
+r = await call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/CHEAP1', paymentAmount: '1' } });
+check('a renewal claiming the wrong amount → 400', r.statusCode === 400 && /mismatch/.test(r.body?.error || ''), JSON.stringify(r.body));
+r = await call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/PRICED1' } });
+check('the pending renewal records the amount due', r.statusCode === 200 && r.body?.application?.pendingRenewal?.amount === 5000, JSON.stringify(r.body?.application?.pendingRenewal));
+await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, action: 'reject-renewal', reason: 'test' } });
+r = await call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/PRICED2', paymentAmount: '5000' } });
+check('a renewal sending the displayed fee is accepted', r.statusCode === 200 && r.body?.application?.pendingRenewal?.amount === 5000, JSON.stringify(r.body).slice(0, 160));
 
 // Successful sign-ins do not count toward the lockout.
 const loginEmail = 'admin@bccibharuch.in';

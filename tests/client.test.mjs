@@ -335,6 +335,11 @@ ck('applicantLogin on error does not persist session', store.getApplicantSession
 mockResponse = { status: 401, body: { success: false, error: 'Invalid email or password.' } };
 const loginBadRes = await store.applicantLogin('member@example.com', 'WrongPass1');
 ck('applicantLogin reports the HTTP status of a refused sign-in', loginBadRes?.success === false && loginBadRes?.status === 401, JSON.stringify(loginBadRes));
+mockResponse = { status: 200, body: { success: true, application: { id: 'BCCI-1' } } };
+await store.renewMembership('BCCI-1', 'UPI/123456', 5000);
+ck('renewMembership sends the displayed fee as paymentAmount', lastRequest?.body?.paymentAmount === '5000' && lastRequest?.body?.action === 'renew', JSON.stringify(lastRequest?.body));
+await store.renewMembership('BCCI-1', 'UPI/123456', null);
+ck('renewMembership omits paymentAmount when the fee is unknown', lastRequest?.body && !('paymentAmount' in lastRequest.body));
 
 // Test 4: applicantLogin invalid credentials (401)
 localStorage.clear();

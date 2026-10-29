@@ -157,10 +157,13 @@ export class Store {
   }
 
   /** Requests or executes membership renewal with payment reference. */
-  async renewMembership(appId, utrRef = '') {
+  async renewMembership(appId, utrRef = '', amount = null) {
+    const body = { id: appId, action: 'renew', paymentRef: utrRef };
+    // The fee the member was shown; the server refuses it if its price differs.
+    if (Number.isFinite(amount) && amount > 0) body.paymentAmount = String(amount);
     const result = await this.apiCall('/api/applications', {
       method: 'PATCH',
-      body: { id: appId, action: 'renew', paymentRef: utrRef },
+      body,
       auth: this.isAdminAuthed() ? 'admin' : 'applicant',
     });
     return result.application;
