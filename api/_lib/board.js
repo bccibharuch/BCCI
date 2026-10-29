@@ -171,8 +171,12 @@ export function validateMeetingFields(body, { str }) {
   };
   if (body.id) fields.id = str(body.id, 20);
   if (fields.title.length < 3) return { error: 'Meeting title is required (at least 3 characters).' };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date) || Number.isNaN(Date.parse(`${fields.date}T00:00:00Z`))) {
-    return { error: 'Meeting date is required.' };
+  // Date.parse rolls 2026-02-31 over to 3 March; only a date that survives
+  // the round trip is real.
+  const [y, mo, d] = fields.date.split('-').map(Number);
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date) || day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) {
+    return { error: 'Meeting date must be a real date (YYYY-MM-DD).' };
   }
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.time)) return { error: 'Meeting start time is required (HH:MM).' };
   return { fields };

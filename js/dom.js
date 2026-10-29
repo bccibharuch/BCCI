@@ -23,7 +23,7 @@ export function el(tag, attrs = {}, ...children) {
 export function dayLabel(isoDate) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const [y, m, d] = String(isoDate || '').split('-').map(Number);
-  return y && m && d ? `${d} ${months.at(m - 1)} ${y}` : String(isoDate || '');
+  return y && m && d ? `${d} ${months[m - 1]} ${y}` : String(isoDate || '');
 }
 
 /** A timestamp as a local time of day, e.g. "10:42 am". */

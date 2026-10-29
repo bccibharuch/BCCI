@@ -4,7 +4,7 @@
    All store operations are async — Vercel API + Redis backend.
    ========================================================================== */
 
-import { Store } from './store.js?v=4.0.15';
+import { Store } from './store.js?v=4.0.16';
 
 // ── Membership tiers ───────────────────────────────────────────
 // Built-in plans: label → fee in INR. The form starts with these and swaps in
@@ -251,6 +251,13 @@ class App {
   }
 
   setupScrollReveal() {
+    // Without IntersectionObserver the reveal animation is skipped and the
+    // content shown, rather than letting the constructor abort app start-up.
+    if (typeof IntersectionObserver !== 'function') {
+      document.querySelectorAll('.reveal, .stagger-children').forEach(el => el.classList.add('visible'));
+      this._revealObserver = null;
+      return;
+    }
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -267,6 +274,12 @@ class App {
   }
 
   _refreshScrollReveal() {
+    // null: the browser has no IntersectionObserver (see setupScrollReveal),
+    // so show newly rendered content. undefined: not set up yet.
+    if (this._revealObserver === null) {
+      document.querySelectorAll('.reveal:not(.visible), .stagger-children:not(.visible)').forEach(el => el.classList.add('visible'));
+      return;
+    }
     if (!this._revealObserver) return;
     const windowH = typeof window !== 'undefined' ? (window.innerHeight || document.documentElement?.clientHeight || 800) : 800;
     document.querySelectorAll('.reveal:not(.visible), .stagger-children:not(.visible)').forEach(el => {
@@ -1083,7 +1096,7 @@ class App {
                 <div class="bcci-card-header">
                   <div class="bcci-card-logo-section">
                     <div class="bcci-card-logo">
-                      <img src="assets/BCCIBHARUCH.webp" alt="BCCI" />
+                      <img src="/assets/BCCIBHARUCH.webp" alt="BCCI" />
                     </div>
                     <div class="bcci-card-org">
                       <div class="bcci-card-org-name">Bharuch Chamber</div>
@@ -1353,7 +1366,7 @@ class App {
             </div>
           </div>
           <div style="margin-bottom: 1.25rem; text-align: center; background: #F8FAFC; padding: 1rem; border-radius: 8px; border: 1px solid #E2E8F0;">
-            <img src="assets/banks.webp" alt="BCCI Payment QR" style="max-height: 180px; border-radius: 6px; border: 1px solid #CBD5E1; margin-bottom: 0.5rem;" />
+            <img src="/assets/banks.webp" alt="BCCI Payment QR" style="max-height: 180px; border-radius: 6px; border: 1px solid #CBD5E1; margin-bottom: 0.5rem;" />
             <div style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">Scan UPI QR Code for Annual Renewal Fee Payment</div>
             ${renewalFee ? `<div style="font-size: 0.9rem; font-weight: 700; color: #0F172A; margin: 0.25rem 0;">Renewal fee: ₹${escapeHtml(renewalFee.toLocaleString('en-IN'))}/-</div>` : ''}
             <code style="font-size: 0.8rem; background: #DBEAFE; padding: 2px 8px; border-radius: 4px; color: #1E40AF;">7861906384.eazypay@icici</code>
@@ -1946,7 +1959,7 @@ class App {
     let BoardPortal;
     let parseAttendQr;
     try {
-      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.1.0'));
+      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.1.1'));
     } catch (err) {
       root.textContent = 'The Board Portal could not load. Check your connection and reload the page.';
       console.error('[Board] portal failed to load:', err);
@@ -1972,7 +1985,7 @@ class App {
       return;
     }
     try {
-      const { BoardAdmin } = await import('./board-admin.js?v=1.1.0');
+      const { BoardAdmin } = await import('./board-admin.js?v=1.1.1');
       this._boardAdmin = new BoardAdmin({
         root,
         store: this.store,
@@ -2165,7 +2178,7 @@ class App {
               <div class="bcci-card-header">
                 <div class="bcci-card-logo-section">
                   <div class="bcci-card-logo">
-                    <img src="assets/BCCIBHARUCH.webp" alt="BCCI" />
+                    <img src="/assets/BCCIBHARUCH.webp" alt="BCCI" />
                   </div>
                   <div class="bcci-card-org">
                     <div class="bcci-card-org-name">Bharuch Chamber</div>
@@ -2617,7 +2630,7 @@ class App {
       ctx.stroke();
 
       // ── Header: logo, organisation, membership type ──────────────────
-      const logo = await loadImage('assets/BCCIBHARUCH.webp');
+      const logo = await loadImage('/assets/BCCIBHARUCH.webp');
       const logoR = 24, logoCx = PAD_X + logoR, logoCy = PAD_Y + logoR;
 
       ctx.save();
@@ -4377,7 +4390,7 @@ class App {
     try {
       [event, { CheckInDesk }] = await Promise.all([
         this.store.getEventWithAttendees(eventId),
-        import('./checkin.js?v=1.1.0'),
+        import('./checkin.js?v=1.1.1'),
       ]);
     } catch (err) {
       this.showToast(err.message || 'Could not open the check-in desk.', 'error');
@@ -5013,7 +5026,7 @@ class App {
                 Ticket Fee: <strong>₹${escapeHtml(String(event.fee))}</strong> per delegate
               </div>
               <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
-                <img src="assets/banks.webp" alt="BCCI Official Scan and Pay QR Poster" style="max-height: 180px; border-radius: 6px; border: 1px solid #CBD5E1; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
+                <img src="/assets/banks.webp" alt="BCCI Official Scan and Pay QR Poster" style="max-height: 180px; border-radius: 6px; border: 1px solid #CBD5E1; box-shadow: 0 2px 8px rgba(0,0,0,0.08);" />
               </div>
               <div style="font-size: 0.82rem; color: #1E3E62; margin-bottom: 0.35rem;">
                 UPI ID: <code style="font-size: 0.82rem; background: #DBEAFE; padding: 3px 8px; border-radius: 4px; color: #1E40AF; font-weight: 700;">7861906384.eazypay@icici</code>
@@ -5183,7 +5196,7 @@ class App {
 
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed rgba(255,255,255,0.25); padding-bottom: 1rem; margin-bottom: 1rem;">
               <div style="display: flex; align-items: center; gap: 10px;">
-                <img src="assets/BCCIBHARUCH.webp" alt="BCCI" style="height: 38px; width: auto; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));" />
+                <img src="/assets/BCCIBHARUCH.webp" alt="BCCI" style="height: 38px; width: auto; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));" />
                 <div>
                   <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.5px; color: #94A3B8; font-weight: 700;">Bharuch Chamber of Commerce</div>
                   <div style="font-size: 0.95rem; font-weight: 800; color: #FFD700;">Official Delegate Pass</div>

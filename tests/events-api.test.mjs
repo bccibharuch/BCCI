@@ -418,6 +418,23 @@ let firstTicketId = null;
   ck('one address gets at most five attempts a day, the sixth is 429', sameAddress[5] === 429 && sameAddress[0] === 200, JSON.stringify(sameAddress));
 }
 
+// 8a. Deleting waits its turn behind registration: while a registration (or
+// payment confirmation, or check-in) holds the event lock, the delete is
+// refused rather than racing it, so the event cannot be recreated.
+{
+  const { acquireLock, releaseLock } = await import(new URL('../api', import.meta.url).pathname + '/_lib/records.js');
+  const held = await acquireLock(`eventreg:${createdEventId}`, 30);
+  const { req, res, getStatus, getJson } = mockReqRes({
+    method: 'DELETE',
+    query: { id: createdEventId },
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+  await eventsHandler(req, res);
+  await releaseLock(`eventreg:${createdEventId}`, held);
+  ck('DELETE while the event is being updated → 409, not a race', getStatus() === 409 && /being updated/.test(getJson()?.error || ''), `${getStatus()} ${JSON.stringify(getJson())}`);
+  ck('…and the event is still there', !!(await redis.get(KEYS.event(createdEventId))));
+}
+
 // 8. Admin DELETE /api/events deletes the event
 {
   const { req, res, getStatus } = mockReqRes({

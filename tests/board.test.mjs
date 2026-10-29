@@ -235,6 +235,11 @@ sec('Meetings and the projector QR');
 
 r = await call('meeting-save', { token: ADMIN, body: { title: 'Board meeting', date: '2026-08-15', time: '25:00' } });
 ck('an impossible start time is refused', r.status === 400);
+r = await call('meeting-save', { token: ADMIN, body: { title: 'Board meeting', date: '2026-02-31', time: '10:00' } });
+ck('a date the calendar does not have (31 Feb) is refused', r.status === 400 && /real date/.test(r.json?.error || ''), JSON.stringify(r.json));
+r = await call('meeting-save', { token: ADMIN, body: { title: 'Board meeting', date: '2026-02-29', time: '10:00' } });
+ck('29 Feb in a non-leap year is refused', r.status === 400);
+ck('29 Feb in a leap year is accepted by the validator', !lib.validateMeetingFields({ title: 'Leap day', date: '2028-02-29', time: '10:00' }, { str: (v, n) => String(v ?? '').trim().slice(0, n) }).error);
 const m1 = await call('meeting-save', { token: ADMIN, body: { title: 'Board meeting', date: '2026-08-15', time: '10:00', venue: 'BCCI Hall' } });
 const m2 = await call('meeting-save', { token: ADMIN, body: { title: 'AGM preparation', date: '2026-08-30', time: '17:30' } });
 ck('superadmin schedules meetings', m1.status === 201 && m1.json?.meeting?.id === 'MTG-1' && m2.json?.meeting?.id === 'MTG-2');

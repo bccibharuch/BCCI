@@ -639,27 +639,27 @@ export class Store {
   /** Leadership shown on the About page, in display order. */
   getLeadership() {
     return [
-      { name: 'MR. KIRAN K. MAJMUDAR', role: 'President', category: 'Executive Board', initials: 'KM', image: 'assets/President_photo.webp', linkedin: 'https://www.linkedin.com/in/kiran-k-majmudar-52b235308/' },
-      { name: 'MR. KAMAL KUMAR', role: 'Joint Vice President', category: 'Executive Board', initials: 'KK', image: 'assets/KAmal.webp', linkedin: 'https://www.linkedin.com/in/kamal-kumar-165a5b86' },
-      { name: 'MR. ANISH PARIKH', role: 'Joint Vice President', category: 'Executive Board', initials: 'AP', image: 'assets/anish.webp', linkedin: 'https://www.linkedin.com/in/anish-parikh-4a5156b6/' },
-      { name: 'MR. TUSHAR P. SHAH', role: 'Secretary', category: 'Executive Board', initials: 'TS', image: 'assets/tushar.webp' },
+      { name: 'MR. KIRAN K. MAJMUDAR', role: 'President', category: 'Executive Board', initials: 'KM', image: '/assets/President_photo.webp', linkedin: 'https://www.linkedin.com/in/kiran-k-majmudar-52b235308/' },
+      { name: 'MR. KAMAL KUMAR', role: 'Joint Vice President', category: 'Executive Board', initials: 'KK', image: '/assets/KAmal.webp', linkedin: 'https://www.linkedin.com/in/kamal-kumar-165a5b86' },
+      { name: 'MR. ANISH PARIKH', role: 'Joint Vice President', category: 'Executive Board', initials: 'AP', image: '/assets/anish.webp', linkedin: 'https://www.linkedin.com/in/anish-parikh-4a5156b6/' },
+      { name: 'MR. TUSHAR P. SHAH', role: 'Secretary', category: 'Executive Board', initials: 'TS', image: '/assets/tushar.webp' },
       {
-        name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: 'assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/',
+        name: 'DR. C. D. SHELAT', role: 'Executive Secretary', category: 'Administration', initials: 'CS', image: '/assets/cd-shelat.webp', linkedin: 'https://www.linkedin.com/in/dr-c-d-shelat-16902563/',
         bio: [
           'Retired Deputy Commissioner, FDCA, Government of Gujarat, with over 35 years of service in pharmaceutical regulation, drug safety and quality assurance. He received the Pharma Ratan – Lifetime Achievement Award and helped set up India\'s first State Price Monitoring Unit.',
           'He is Director – Skill Development at Dhanvantari College of Pharmacy and Chairperson – Advisory Body at Ribosome Research Centre.',
         ],
       },
-      { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: 'assets/tushar_j_shah.jpeg' },
+      { name: 'MR. TUSHAR J. SHAH', role: 'Hon. Treasurer', category: 'Finance', initials: 'TJ', image: '/assets/tushar_j_shah.jpeg' },
       {
-        name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: 'assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/',
+        name: 'MR. BHAAVIK BAROT', role: 'Social Media & IT Support', category: 'Executive Board', initials: 'BB', image: '/assets/bhavik-barot.webp', linkedin: 'https://www.linkedin.com/in/bhavikbarot/',
         bio: [
           'Founder & Director of D-TECH Solution Integrators Pvt. Ltd. and a technology strategy consultant, with over 34 years of experience in IT infrastructure, cybersecurity, SAP/ERP, custom software and automation.',
           'He guides organizations on technology planning, vendor selection and long-term investment value. "Lead with Trust. Inspire with Vision."',
         ],
       },
       {
-        name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM', image: 'assets/rajesh-makwana.webp',
+        name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM', image: '/assets/rajesh-makwana.webp',
         bio: [
           'Senior finance and taxation professional with over 28 years in finance, taxation, treasury and compliance, and an MBA from IIM Kozhikode. Named among the "100 CFOs of India", he has held leadership roles at Zentiva (formerly Sanofi India), Gharda Chemicals and Cheminova India, and led the carve-out of Sanofi\'s Ankleshwar business into Zentiva.',
           'Since 2015 he has led the Finance & Taxation Forum of Bharuch District Management Association, and he is a key link between Bharuch industry and the Income Tax and GST authorities.',

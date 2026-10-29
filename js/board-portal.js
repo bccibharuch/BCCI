@@ -8,7 +8,7 @@
 // Signing in (email → 6-digit code) is optional: a signed-in member's scan
 // marks them straight away, and they can see their attendance history.
 
-import { el, dayLabel, timeLabel } from './dom.js?v=1.0.0';
+import { el, dayLabel, timeLabel } from './dom.js?v=1.0.1';
 import { QrScanner } from './qr-scanner.js?v=1.0.0';
 
 const ATTEND_IN_TEXT = /[?&]attend=(MTG-\d{1,6})\.([A-Za-z0-9_-]{12})(?![A-Za-z0-9_-])/;
@@ -29,7 +29,9 @@ function deviceId() {
   try {
     let id = localStorage.getItem(DEVICE_KEY);
     if (!id || !/^[A-Za-z0-9-]{20,64}$/.test(id)) {
-      id = crypto.randomUUID();
+      // getRandomValues works on older phones that lack crypto.randomUUID.
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
       localStorage.setItem(DEVICE_KEY, id);
     }
     return id;

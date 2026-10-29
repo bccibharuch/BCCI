@@ -902,6 +902,48 @@ function buildAuthDOM() {
 
 const { App } = await import('../js/app.js');
 
+// Older phones (Safari before 15.4) have no Array.prototype.at or
+// crypto.randomUUID; the board pages must not depend on either.
+{
+  const realAt = Array.prototype.at;
+  delete Array.prototype.at;
+  try {
+    const { dayLabel } = await import('../js/dom.js?no-at');
+    ck('dayLabel works without Array.prototype.at', dayLabel('2026-08-15') === '15 Aug 2026', dayLabel('2026-08-15'));
+  } catch (err) {
+    ck('dayLabel works without Array.prototype.at', false, err.message);
+  } finally {
+    Array.prototype.at = realAt;
+  }
+  const portalSrc = fs.readFileSync(new URL('../js/board-portal.js', import.meta.url), 'utf8');
+  ck('the board portal does not need crypto.randomUUID', !/randomUUID\s*\(/.test(portalSrc) && portalSrc.includes('getRandomValues'));
+}
+
+// No IntersectionObserver: the reveal animation is skipped and content shown,
+// instead of the constructor throwing and stopping the app from starting.
+{
+  const realIO = globalThis.IntersectionObserver;
+  const realDoc = globalThis.document;
+  delete globalThis.IntersectionObserver;
+  const made = [];
+  const fakeEl = () => { const set = new Set(); const e = { classList: { add: (c) => set.add(c), has: (c) => set.has(c) } }; made.push(e); return e; };
+  globalThis.document = { querySelectorAll: () => [fakeEl(), fakeEl()] };
+  try {
+    const app = Object.create(App.prototype);
+    let threw = null;
+    try { app.setupScrollReveal(); app._refreshScrollReveal(); } catch (err) { threw = err; }
+    ck('setupScrollReveal survives a browser without IntersectionObserver', threw === null, String(threw));
+    ck('…and shows the content instead of leaving it hidden', made.length > 0 && made.every((e) => e.classList.has('visible')));
+    const notYet = Object.create(App.prototype);
+    made.length = 0;
+    notYet._refreshScrollReveal();
+    ck('before setup, a refresh reveals nothing early (animation kept on modern browsers)', made.length === 0);
+  } finally {
+    if (realIO) globalThis.IntersectionObserver = realIO;
+    globalThis.document = realDoc;
+  }
+}
+
 ck('App prototype has showAuthMode method', typeof App?.prototype?.showAuthMode === 'function');
 ck('App prototype has setupApplicantAuthHandlers method', typeof App?.prototype?.setupApplicantAuthHandlers === 'function');
 ck('App prototype has callOtpApi method', typeof App?.prototype?.callOtpApi === 'function');
@@ -1384,6 +1426,16 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
   ck('only the header logo loads eagerly', imgs.filter((t) => !/loading="lazy"/.test(t)).every((t) => /class="nav-logo"/.test(t)),
     imgs.filter((t) => !/loading="lazy"/.test(t)).map((t) => t.match(/src="([^"]+)"/)[1]).join(', '));
 
+  // Asset paths are root-relative: on a nested route such as /verify/<id> a
+  // relative "assets/x.webp" resolves to /verify/assets/x.webp, which the
+  // SPA rewrite answers with index.html, so every image broke there.
+  const relativeHtml = htmlContent.match(/(?:src|href|data-img-src)="assets\//g) || [];
+  ck('index.html has no relative asset paths', relativeHtml.length === 0, `${relativeHtml.length} found`);
+  const frontendFiles = ['app.js', 'store.js', 'board-portal.js', 'board-admin.js', 'checkin.js', 'dom.js', 'membership-card.js']
+    .filter((f) => fs.existsSync(new URL(`../js/${f}`, import.meta.url)));
+  const relativeJs = frontendFiles.filter((f) => /['"`]assets\//.test(fs.readFileSync(new URL(`../js/${f}`, import.meta.url), 'utf8')));
+  ck('the frontend scripts have no relative asset paths', relativeJs.length === 0, relativeJs.join(', '));
+
   // Verify renewal error toast shows err.message
   ck('showRenewalModal uses err?.message for error toasts', SRC.includes("this.showToast(err?.message || 'Failed to renew membership. Please try again.', 'error')"));
 
@@ -1527,8 +1579,8 @@ ck('closeModal removes modal-open class from body', SRC.includes("document.body.
 const cssContent = fs.readFileSync(new URL('../css/styles.css', import.meta.url), 'utf8');
 ck('styles.css has body.modal-open overflow hidden', cssContent.includes('body.modal-open') && cssContent.includes('overflow: hidden'));
 ck('styles.css hides main on print when modal-open', cssContent.includes('body.modal-open main') || cssContent.includes('body:has(.modal-backdrop.show) main'));
-ck('index.html favicon uses relative assets/ path', /href="\/?assets\/favicon-32\.png"/.test(indexHtml));
-ck('index.html apple-touch-icon uses relative assets/ path', /href="\/?assets\/apple-touch-icon\.png"/.test(indexHtml));
+ck('index.html favicon points at /assets/favicon-32.png', /href="\/?assets\/favicon-32\.png"/.test(indexHtml));
+ck('index.html apple-touch-icon points at /assets/apple-touch-icon.png', /href="\/?assets\/apple-touch-icon\.png"/.test(indexHtml));
 
 console.log('\nMember Profile Dropdown & Membership Details Modal');
 console.log('──────────────────────────────────────────────────');

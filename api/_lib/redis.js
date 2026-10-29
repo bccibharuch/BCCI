@@ -379,9 +379,20 @@ export async function countEvents() {
 export async function deleteEvent(id) {
   if (!id) return false;
   return withRetry(async () => {
-    await redis.del(KEYS.event(id), KEYS.eventAttendees(id));
-    await redis.zrem(KEYS.eventIndex, id);
-    return true;
+    // Registration, payment confirmation and check-in hold this lock while
+    // they read and write the event back; deleting without it let one of
+    // them recreate the event just deleted.
+    const lockToken = await acquireLock(`eventreg:${id}`);
+    if (!lockToken) {
+      throw Object.assign(new Error('This event is being updated. Try deleting it again in a moment.'), { statusCode: 409 });
+    }
+    try {
+      await redis.del(KEYS.event(id), KEYS.eventAttendees(id));
+      await redis.zrem(KEYS.eventIndex, id);
+      return true;
+    } finally {
+      await releaseLock(`eventreg:${id}`, lockToken);
+    }
   });
 }
 
