@@ -147,6 +147,22 @@ if (PG_MODE) {
 ck('reports smtp configured', r.json?.checks?.smtp?.configured === true);
 ck('overall status ok', r.json?.status === 'ok', JSON.stringify(r.json?.status));
 
+if (!PG_MODE) {
+  // The response is public: a failing dependency must not leak its error text,
+  // which can name an internal host and port.
+  const leak = (cmd) => {
+    if (String(cmd[1]).startsWith('bcci:health:')) throw new Error('connect ECONNREFUSED 10.0.0.5:6379');
+  };
+  redis.beforeCommand.push(leak);
+  try {
+    r = await req('/api/health');
+  } finally {
+    redis.beforeCommand.splice(redis.beforeCommand.indexOf(leak), 1);
+  }
+  ck('an unreachable store reports 503 degraded', r.status === 503 && r.json?.status === 'degraded' && r.json?.checks?.redis?.reachable === false, r.text.slice(0, 200));
+  ck('and returns no error text from the dependency', r.json?.checks?.redis?.error === undefined && !r.text.includes('10.0.0.5') && !r.text.includes('ECONNREFUSED'), r.text.slice(0, 200));
+}
+
 // ════════════════════════════════════════════════════════════════════
 sec('A member signs up — the whole journey');
 
@@ -317,6 +333,19 @@ const limited = results.filter((x) => x.status === 429).length;
 ck('all 30 concurrent requests handled', created + limited === 30, `${created} created, ${limited} limited`);
 ck('none errored', results.every((x) => x.status === 201 || x.status === 429), results.map(x=>x.status).join(','));
 console.log(`         (${elapsed}ms for 30 concurrent submissions)`);
+
+sec('Email subjects carry no control characters');
+{
+  // Subjects interpolate user input (a company name, an event title). A CR/LF
+  // must never reach the wire as a header break.
+  const { sendRaw } = await import('../api/_lib/email.js');
+  const before = smtp.received.length;
+  const sent = await sendRaw({ to: 'subject-check@example.com', subject: 'New application: Evil Co\r\nBcc: attacker@example.com\t(x)', html: '<p>hi</p>' });
+  ck('the message is still sent', sent.success === true && (await waitForMail(before + 1)), JSON.stringify(sent));
+  const mail = smtp.received[before];
+  ck('CR/LF and tabs in the subject become single spaces', mail?.subject === 'New application: Evil Co Bcc: attacker@example.com (x)', JSON.stringify(mail?.subject));
+  ck('no injected Bcc header or extra recipient', !/^bcc:/im.test(mail?.raw || '') && mail?.to?.length === 1 && mail.to[0].includes('subject-check@example.com'), JSON.stringify(mail?.to));
+}
 
 console.log(`\n  backend: ${PG_MODE ? 'postgres (no Upstash)' : 'upstash mock'}`);
 console.log(`\n${'═'.repeat(54)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(54)}`);
