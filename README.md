@@ -146,7 +146,7 @@ npm run purge:data -- --confirm # actually delete
 npm test
 ```
 
-884 assertions across ten suites, with no network access and no live database:
+889 assertions across ten suites, with no network access and no live database:
 
 | Suite | Covers |
 |---|---|
@@ -161,7 +161,13 @@ npm test
 | `events-api` | event CRUD, registration, check-in, payment confirmation |
 | `board` | board portal sign-in, attendance, register export |
 
-Three paths also run against Postgres: `postgres.test.mjs`, and the `e2e` and `board` suites a second time with `E2E_BACKEND=postgres` / `BOARD_BACKEND=postgres`. They print `SKIP` and exit 0 when nothing answers on `localhost:5433`, so a green run does not by itself mean Postgres was tested.
+Three paths also run against Postgres: `postgres.test.mjs`, and the `e2e` and `board` suites a second time with `E2E_BACKEND=postgres` / `BOARD_BACKEND=postgres`. They print `SKIP` and exit 0 when nothing answers on `localhost:5433`, so a green run does not by itself mean Postgres was tested. With a database there they add 250 assertions (1,139 in all). A disposable one:
+
+```bash
+docker run -d --name bcci-pg-test -e POSTGRES_USER=bcci -e POSTGRES_PASSWORD=testpw -e POSTGRES_DB=bcci -p 5433:5432 postgres:17-alpine
+```
+
+The Postgres suites `TRUNCATE` their tables on start, so never point `TEST_DATABASE_URL` at a database holding real data.
 
 ---
 

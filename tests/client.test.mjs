@@ -1356,6 +1356,26 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
   ck('every view has exactly one <h1>', h1Counts.length === 13 && h1Counts.every(([, n]) => n === 1), JSON.stringify(h1Counts.filter(([, n]) => n !== 1)));
   ck('no <h1> sits outside the views', (htmlContent.match(/<h1\b/g) || []).length === 13);
 
+  // Share previews: scrapers read only the static HTML, so the image tags must
+  // be there, absolute, and describe the file that actually ships.
+  const metaContent = (attr, name) => htmlContent.match(new RegExp(`<meta ${attr}="${name}" content="([^"]+)"`))?.[1];
+  const ogImage = metaContent('property', 'og:image');
+  ck('og:image is a static absolute URL', /^https:\/\/bccibharuch\.in\/assets\//.test(ogImage || ''), String(ogImage));
+  ck('twitter:image matches og:image', metaContent('name', 'twitter:image') === ogImage);
+  {
+    const file = new URL('..' + new URL(ogImage).pathname, import.meta.url);
+    const buf = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
+    // JPEG: find the SOF0/SOF2 marker for the pixel size.
+    let w = 0, h = 0;
+    for (let i = 2; i < buf.length - 9; i++) {
+      if (buf[i] === 0xff && (buf[i + 1] === 0xc0 || buf[i + 1] === 0xc2)) { h = buf.readUInt16BE(i + 5); w = buf.readUInt16BE(i + 7); break; }
+    }
+    ck('the share image file exists and its declared size matches it',
+      w > 0 && String(w) === metaContent('property', 'og:image:width') && String(h) === metaContent('property', 'og:image:height'), `${w}x${h}`);
+    ck('the share image meets the 1200x630 minimum', w >= 1200 && h >= 630);
+    ck('the share image has alt text', !!metaContent('property', 'og:image:alt'));
+  }
+
   // Images reserve their space (no layout shift) and only the header logo,
   // painted first, loads eagerly.
   const imgs = (htmlContent.match(/<img\b[^>]*>/g) || []).filter((t) => /\bsrc="[^"]+"/.test(t));
