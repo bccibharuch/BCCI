@@ -462,7 +462,10 @@ class App {
       setLoading(signInBtn, true, 'Signing In…', 'fas fa-spinner fa-spin');
       try {
         const result = await this.store.applicantLogin(email, password);
-        if (result.code === 'PASSWORD_NOT_SET') {
+        // The server answers every bad sign-in with the same 401 (so it never
+        // reveals which emails have accounts). Members imported from the
+        // register have no password yet, so point everyone at the OTP route.
+        if (result.status === 401) {
           if (alertNotSet) alertNotSet.style.display = 'block';
           const regEmail = document.getElementById('applicantRegEmail');
           if (regEmail) regEmail.value = email;

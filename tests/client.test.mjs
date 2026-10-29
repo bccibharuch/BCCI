@@ -332,6 +332,9 @@ ck('applicantLogin handles PASSWORD_NOT_SET returning code and error',
   typeof loginNoPassRes?.error === 'string'
 );
 ck('applicantLogin on error does not persist session', store.getApplicantSession() === null);
+mockResponse = { status: 401, body: { success: false, error: 'Invalid email or password.' } };
+const loginBadRes = await store.applicantLogin('member@example.com', 'WrongPass1');
+ck('applicantLogin reports the HTTP status of a refused sign-in', loginBadRes?.success === false && loginBadRes?.status === 401, JSON.stringify(loginBadRes));
 
 // Test 4: applicantLogin invalid credentials (401)
 localStorage.clear();
@@ -991,15 +994,15 @@ function createTestApp(dom, testStore) {
   }
 }
 
-// Sign In with PASSWORD_NOT_SET banner test
+// A failed sign-in (the server's uniform 401) shows the first-time-member hint.
 {
   const dom = buildAuthDOM();
   const mockStore = {
     ...store,
     applicantLogin: async () => ({
       success: false,
-      code: 'PASSWORD_NOT_SET',
-      error: 'No password set for this account yet.',
+      status: 401,
+      error: 'Invalid email or password.',
     }),
     getApplicantSession: () => null,
   };
@@ -1009,14 +1012,14 @@ function createTestApp(dom, testStore) {
     dom.emailIn.value = 'legacy@example.com';
     dom.passIn.value = 'SomePass123';
     await dom.signInForm.submit();
-    ck('Sign in with PASSWORD_NOT_SET displays #passwordNotSetAlert banner', dom.alertNotSet.style.display !== 'none');
+    ck('a 401 sign-in displays the #passwordNotSetAlert hint', dom.alertNotSet.style.display !== 'none');
 
     // Clicking legacySwitchToRegister inside banner switches to register
     dom.legacySwitchBtn.click();
     ck('legacySwitchToRegister switches to register mode', dom.cardRegister.style.display === 'block');
     ck('legacySwitchToRegister carries email over', dom.regEmailIn.value === 'legacy@example.com');
   } else {
-    ck('Sign in with PASSWORD_NOT_SET displays #passwordNotSetAlert banner', false);
+    ck('a 401 sign-in displays the #passwordNotSetAlert hint', false);
     ck('legacySwitchToRegister switches to register mode', false);
     ck('legacySwitchToRegister carries email over', false);
   }

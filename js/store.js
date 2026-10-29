@@ -416,6 +416,7 @@ export class Store {
     } catch (err) {
       return {
         success: false,
+        status: err.status,
         code: err.data?.code,
         error: err.data?.error || err.message || 'Sign-in failed.',
       };
