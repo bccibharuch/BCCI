@@ -1338,9 +1338,23 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
 
   // Verify index.html structural integrity
   const htmlContent = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  ck('view-membership has container inside section-padding', htmlContent.includes('<main id="view-membership" class="view-page" style="display: none;">\n    <section class="section-padding">\n      <div class="container">'));
+  ck('view-membership has container inside section-padding', htmlContent.includes('<section id="view-membership" class="view-page" style="display: none;">\n    <section class="section-padding">\n      <div class="container">'));
   ck('index.html has no duplicate downloadCardBtn', (htmlContent.match(/id="downloadCardBtn"/g) || []).length === 0);
   ck('index.html has no duplicate printCardBtn', (htmlContent.match(/id="printCardBtn"/g) || []).length === 0);
+
+  // Landmarks and headings: a single main region (HTML allows one that is not
+  // hidden), every view inside it, and exactly one h1 per view.
+  const mains = htmlContent.match(/<main\b[^>]*>/g) || [];
+  ck('index.html has exactly one <main>', mains.length === 1, mains.join(' '));
+  ck('the <main> is the skip link target', /<main id="main-content" tabindex="-1">/.test(htmlContent) && htmlContent.includes('href="#main-content"'));
+  const mainBody = htmlContent.slice(htmlContent.indexOf('<main id="main-content"'), htmlContent.indexOf('</main>'));
+  const viewIds = [...htmlContent.matchAll(/<(\w+) id="(view-[a-z]+)" class="view-page"/g)];
+  ck('all 13 views are <section> elements', viewIds.length === 13 && viewIds.every((m) => m[1] === 'section'), viewIds.map((m) => `${m[1]}#${m[2]}`).join(' '));
+  ck('every view sits inside the <main>', viewIds.every((m) => mainBody.includes(`id="${m[2]}"`)));
+  const viewChunks = mainBody.split(/(?=<section id="view-[a-z]+" class="view-page")/).filter((c) => c.startsWith('<section id="view-'));
+  const h1Counts = viewChunks.map((c) => [c.match(/id="(view-[a-z]+)"/)[1], (c.match(/<h1\b/g) || []).length]);
+  ck('every view has exactly one <h1>', h1Counts.length === 13 && h1Counts.every(([, n]) => n === 1), JSON.stringify(h1Counts.filter(([, n]) => n !== 1)));
+  ck('no <h1> sits outside the views', (htmlContent.match(/<h1\b/g) || []).length === 13);
 
   // Verify renewal error toast shows err.message
   ck('showRenewalModal uses err?.message for error toasts', SRC.includes("this.showToast(err?.message || 'Failed to renew membership. Please try again.', 'error')"));

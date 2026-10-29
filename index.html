@@ -184,11 +184,12 @@
   </aside>
 
   <!-- MAIN VIEW CONTAINERS -->
-  <!-- Skip-link target: sits just before whichever view is showing. -->
-  <div id="main-content" tabindex="-1"></div>
+  <!-- One main landmark holds every view (only the showing one is displayed);
+       it is also the skip link's target. -->
+  <main id="main-content" tabindex="-1">
 
   <!-- 1. HOME VIEW -->
-  <main id="view-home" class="view-page">
+  <section id="view-home" class="view-page">
     <!-- Hero Banner -->
     <section class="hero">
       <div class="container hero-grid">
@@ -276,15 +277,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 2. ABOUT US VIEW -->
-  <main id="view-about" class="view-page" style="display: none;">
+  <section id="view-about" class="view-page" style="display: none;">
     <section class="section-padding section-alt">
       <div class="container">
         <div class="section-header">
           <span class="section-tag">Institutional Profile</span>
-          <h2 class="section-title">About BCCI Bharuch</h2>
+          <h1 class="section-title">About BCCI Bharuch</h1>
           <p class="section-desc">Safeguarding, supporting, and scaling enterprise growth in Bharuch.</p>
         </div>
 
@@ -325,15 +326,15 @@
         <div class="team-grid" id="leadershipGrid"></div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 3. SERVICES VIEW -->
-  <main id="view-services" class="view-page" style="display: none;">
+  <section id="view-services" class="view-page" style="display: none;">
     <section class="section-padding section-alt">
       <div class="container">
         <div class="section-header">
           <span class="section-tag">Trade &amp; Institutional Support</span>
-          <h2 class="section-title">Our Services</h2>
+          <h1 class="section-title">Our Services</h1>
           <p class="section-desc">Empowering member enterprises with regulatory, trade, and advisory solutions.</p>
         </div>
 
@@ -348,15 +349,15 @@
         <div class="faq-grid" id="faqAccordion"></div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 4. NEWS & BLOGS VIEW (UPDATED WITH REAL PHOTOS & BLOG POSTS) -->
-  <main id="view-gallery" class="view-page" style="display: none;">
+  <section id="view-gallery" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div class="section-header">
           <span class="section-tag">Media, Press &amp; Updates</span>
-          <h2 class="section-title">News, Blogs &amp; Event Gallery</h2>
+          <h1 class="section-title">News, Blogs &amp; Event Gallery</h1>
           <p class="section-desc">Latest news releases, official conclaves, policy dialogues, and event coverage from
             BCCI Bharuch.</p>
         </div>
@@ -531,15 +532,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 4b. EVENTS & CONCLAVES VIEW -->
-  <main id="view-events" class="view-page" style="display: none;">
+  <section id="view-events" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div class="section-header">
           <span class="section-tag"><i class="fas fa-calendar-alt"></i> Chamber Conclaves &amp; Events</span>
-          <h2 class="section-title">Upcoming Events &amp; Conclaves</h2>
+          <h1 class="section-title">Upcoming Events &amp; Conclaves</h1>
           <p class="section-desc">Explore flagship industry summits, business roundtables, seminars, and networking forums hosted by the Bharuch Chamber of Commerce &amp; Industry.</p>
         </div>
 
@@ -571,15 +572,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 5. NEW PAGE: DEDICATED QR CODE & PAYMENTS VIEW -->
-  <main id="view-qrcode" class="view-page" style="display: none;">
+  <section id="view-qrcode" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div class="section-header">
           <span class="section-tag"><i class="fas fa-qrcode"></i> Digital Services &amp; Payments</span>
-          <h2 class="section-title">Official BCCI Scan &amp; Pay QR Code</h2>
+          <h1 class="section-title">Official BCCI Scan &amp; Pay QR Code</h1>
           <p class="section-desc">Scan below to fill out the BCCI Membership Application Form or complete institutional
             payment transactions securely.</p>
         </div>
@@ -666,15 +667,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 6. ENQUIRY FORM VIEW -->
-  <main id="view-enquiry" class="view-page" style="display: none;">
+  <section id="view-enquiry" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div class="section-header">
           <span class="section-tag">Get In Touch</span>
-          <h2 class="section-title">General Enquiry Form</h2>
+          <h1 class="section-title">General Enquiry Form</h1>
           <p class="section-desc">Have a question regarding trade services or membership? Send us a message.</p>
         </div>
 
@@ -723,15 +724,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 7. MEMBERSHIP APPLICATION FORM VIEW (WITH QR CODE SECTION AT LAST) -->
-  <main id="view-membership" class="view-page" style="display: none;">
+  <section id="view-membership" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div class="section-header">
           <span class="section-tag">Institutional Membership</span>
-          <h2 class="section-title">BCCI Membership Application</h2>
+          <h1 class="section-title">BCCI Membership Application</h1>
           <p class="section-desc">Apply to join Bharuch's official Chamber of Commerce &amp; Industry.</p>
         </div>
 
@@ -1464,15 +1465,15 @@
     </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 7b. MEMBERSHIP CARD VIEW -->
-  <main id="view-card" class="view-page" style="display: none;">
+  <section id="view-card" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div class="section-header">
           <span class="section-tag">Digital Membership Card</span>
-          <h2 class="section-title">Your BCCI Membership Card</h2>
+          <h1 class="section-title">Your BCCI Membership Card</h1>
           <p class="section-desc">Official digital membership card with holographic security features.</p>
         </div>
 
@@ -1488,15 +1489,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 7c. PUBLIC MEMBER VERIFICATION VIEW (FUNC-01) -->
-  <main id="view-verify" class="view-page" style="display: none;">
+  <section id="view-verify" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container" style="max-width: 620px; margin: 0 auto;">
         <div class="section-header" style="text-align: center;">
           <span class="section-tag"><i class="fas fa-shield-alt"></i> Official Credential Verification</span>
-          <h2 class="section-title">Membership Verification</h2>
+          <h1 class="section-title">Membership Verification</h1>
           <p class="section-desc">Public registry verification for Bharuch Chamber of Commerce &amp; Industry credentials.</p>
         </div>
 
@@ -1508,15 +1509,15 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 8. ADMIN SIGN IN PAGE VIEW -->
-  <main id="view-signin" class="view-page" style="display: none;">
+  <section id="view-signin" class="view-page" style="display: none;">
     <section class="section-padding section-alt">
       <div class="container">
         <div class="section-header">
           <span class="section-tag"><i class="fas fa-lock"></i> Administration Access</span>
-          <h2 class="section-title">Admin Sign In Portal</h2>
+          <h1 class="section-title">Admin Sign In Portal</h1>
           <p class="section-desc">Authenticate with official BCCI administrator credentials to access the approval
             portal.</p>
         </div>
@@ -1557,26 +1558,27 @@
         </div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- BOARD PORTAL: board members sign in and mark meeting attendance -->
-  <main id="view-board" class="view-page" style="display: none;">
+  <section id="view-board" class="view-page" style="display: none;">
     <section class="section-padding board-portal-section">
       <div class="container board-portal-container">
+        <h1 class="visually-hidden">BCCI Board Portal</h1>
         <div id="boardPortalRoot" class="board-portal"></div>
       </div>
     </section>
-  </main>
+  </section>
 
   <!-- 9. ADMIN DASHBOARD VIEW PORTAL -->
-  <main id="view-admin" class="view-page" style="display: none;">
+  <section id="view-admin" class="view-page" style="display: none;">
     <section class="section-padding">
       <div class="container">
         <div
           style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
           <div>
             <span class="section-tag">BCCI Administration</span>
-            <h2 class="section-title" style="margin-bottom: 0.25rem;">Admin Approval Portal</h2>
+            <h1 class="section-title" style="margin-bottom: 0.25rem;">Admin Approval Portal</h1>
             <p class="section-desc" style="margin-bottom: 0;">Manage pending membership applications, approve member
               registrations, and review inquiries.</p>
           </div>
@@ -1907,6 +1909,8 @@
         </div>
       </div>
     </section>
+  </section>
+
   </main>
 
   <!-- Global Modal Backdrop -->
