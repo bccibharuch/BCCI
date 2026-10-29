@@ -108,13 +108,15 @@ async function handler(req, res) {
         return tooManyRequests(res, rl.retryAfter, 'Too many verification attempts. Please try again shortly.');
       }
       const app = await getApplication(verifyId);
-      if (!app) {
+      // Cards are only issued on approval. A pending or rejected application
+      // gets the same answer as an unknown ID, so the endpoint does not reveal
+      // who applied, who was turned down, or their representative's name.
+      if (!app || app.status !== STATUS.APPROVED) {
         return res.status(404).json({ success: false, error: 'Member not found or invalid membership ID.' });
       }
       const expiry = validUntil(app);
       const isExpired = Date.now() > expiry.getTime();
-      const isApproved = app.status === STATUS.APPROVED;
-      const isActive = isApproved && !isExpired;
+      const isActive = !isExpired;
 
       return res.status(200).json({
         success: true,

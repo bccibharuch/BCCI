@@ -703,7 +703,19 @@ r = await call(applications, { method: 'POST', token: reapplyToken, ip: '203.0.1
 const reapplyId = r.body?.applicationId;
 check('distinct official email is kept alongside the sign-in email',
   r.body?.application?.officialEmail === 'office@firsttry.example' && r.body?.application?.email === 'reapply@example.com', JSON.stringify(r.body?.application?.officialEmail));
+// The public QR check answers a pending or rejected application exactly as it
+// answers an unknown ID: no company, no representative, no status.
+const verifyIp = '203.0.113.170';
+const unknownVerify = await call(applications, { method: 'GET', query: { verifyId: 'BCCI-0-00000000' }, ip: verifyIp });
+r = await call(applications, { method: 'GET', query: { verifyId: reapplyId }, ip: verifyIp });
+check('verify on a pending application → 404, same body as an unknown ID',
+  r.statusCode === 404 && JSON.stringify(r.body) === JSON.stringify(unknownVerify.body), `${r.statusCode} ${JSON.stringify(r.body)}`);
 await call(applications, { method: 'PATCH', token: adminToken, body: { id: reapplyId, status: 'Rejected', reason: 'Blurry PAN scan' } });
+r = await call(applications, { method: 'GET', query: { verifyId: reapplyId }, ip: verifyIp });
+check('verify on a rejected application → 404, same body as an unknown ID',
+  r.statusCode === 404 && JSON.stringify(r.body) === JSON.stringify(unknownVerify.body), `${r.statusCode} ${JSON.stringify(r.body)}`);
+check('a refused verify names neither the company nor the representative',
+  r.body?.member === undefined && !JSON.stringify(r.body).includes('First Try') && !JSON.stringify(r.body).includes(validApp().repName));
 r = await call(applications, { method: 'POST', token: reapplyToken, ip: '203.0.113.152', body: validApp({ company: 'Second Try Ltd' }) });
 check('a rejected applicant can re-apply → 201', r.statusCode === 201, JSON.stringify(r.body).slice(0, 200));
 check('the resubmission keeps the id and is Pending again',
