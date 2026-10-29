@@ -2862,7 +2862,8 @@ class App {
         this.currentPaymentProofBase64 = null;
         this.currentPaymentProofFile = null;
         this._updateFormProgress(document.getElementById('membershipForm'));
-        imgEl.src = ''; fileNameEl.textContent = '';
+        // An empty src is invalid and can re-request the page; drop it instead.
+        imgEl.removeAttribute('src'); fileNameEl.textContent = '';
         preview.style.display = 'none'; placeholder.style.display = 'block';
         if (dropzone) dropzone.classList.remove('is-valid', 'is-invalid');
       });
