@@ -213,7 +213,7 @@ const MEMAIL2 = `sitetest-${stamp2}@example.com`;
     data: {
       fullName: 'Reject Me', subject: 'BCCI Membership Form', city: 'Bharuch', state: 'Gujarat',
       repName: 'Reject Me', repDesignation: 'Owner', repMobile: '9825012347', repEmail: `repr-${stamp}@example.com`,
-      company: `RejectCo ${stamp}`, legalStatus: 'None', enterpriseType: 'None', businessServices: 'Textile & Garments',
+      company: `RejectCo ${stamp}`, legalStatus: 'Proprietorship', enterpriseType: 'Micro', businessServices: 'Textile & Garments',
       primaryBusiness: 'RejectCo', businessDescription: 'Testing the rejection path end to end.',
       feedback: 'Reject me please.', membershipPlan: 'General Membership - ₹5,000/-', paymentMode: 'Cash',
       annualTurnover: '100000', employees: '2', phone: '9825012347', address: 'Plot 2', district: 'Bharuch',

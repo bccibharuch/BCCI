@@ -240,8 +240,6 @@ class App {
     const actions = {
       print: () => window.print(),
       'open-membership': () => document.querySelector('[data-view-nav=membership]')?.click(),
-      'scroll-to-auth-gate': () => document.getElementById('applicantAuthGate')
-        ?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }),
     };
     document.addEventListener('click', (e) => {
       const el = e.target.closest('[data-action]');
@@ -863,7 +861,6 @@ class App {
     const gate = document.getElementById('applicantAuthGate');
     const banner = document.getElementById('applicantAuthBanner');
     const wrapper = document.getElementById('membershipFormWrapper');
-    const signInReminder = document.getElementById('signInReminder');
     const membershipSubmitBtn = document.querySelector('#membershipForm button[type="submit"]');
     const emailDisplay = document.getElementById('applicantEmailDisplay');
     const avatarInitial = document.getElementById('applicantAvatarInitial');
@@ -872,7 +869,6 @@ class App {
     if (session && session.email) {
       if (gate) gate.style.display = 'none';
       if (banner) banner.style.display = 'flex';
-      if (signInReminder) signInReminder.style.display = 'none';
       if (membershipSubmitBtn) {
         // Stay disabled while offline; the connectivity watch calls back here
         // when the connection returns.
@@ -964,7 +960,10 @@ class App {
         const emailInput = document.querySelector('#membershipForm input[name="email"]');
         const repInput = document.querySelector('#membershipForm input[name="repName"]');
         if (emailInput && !emailInput.value) emailInput.value = session.email;
-        if (repInput && !repInput.value && session.name) repInput.value = session.name;
+        // session.name falls back to the email's local part ("purchase" for
+        // purchase@acme.com); only a name the person typed is worth pre-filling.
+        const typedName = session.name && session.name !== String(session.email || '').split('@')[0] ? session.name : '';
+        if (repInput && !repInput.value && typedName) repInput.value = typedName;
       }
 
       if (avatarInitial) avatarInitial.textContent = (session.name || session.email).charAt(0).toUpperCase();
@@ -973,7 +972,6 @@ class App {
       if (gate) gate.style.display = 'block';
       if (banner) banner.style.display = 'none';
       if (wrapper) wrapper.style.display = 'none';
-      if (signInReminder) signInReminder.style.display = 'none';
       if (membershipSubmitBtn) {
         membershipSubmitBtn.disabled = true;
         membershipSubmitBtn.innerHTML = '<i class="fas fa-lock"></i> Sign In to Submit';
@@ -1373,7 +1371,7 @@ class App {
           </div>
           <form id="renewalForm">
             <div class="form-group" style="margin-bottom: 1.25rem;">
-              <label class="form-label">Payment UTR / Transaction Ref No. <span class="req">*</span></label>
+              <label class="form-label" for="renewalUtrInput">Payment UTR / Transaction Ref No. <span class="req">*</span></label>
               <input type="text" id="renewalUtrInput" class="form-control" placeholder="e.g. UPI/589410238491" required />
             </div>
             <div style="display: flex; gap: 0.75rem; justify-content: center;">
@@ -1439,7 +1437,7 @@ class App {
     window.addEventListener('hashchange', () => {
       const hash = (window.location.hash || '').toLowerCase();
       if (['#admin', '#secret-admin', '#signin', '#login'].includes(hash)) {
-        this.renderView(this.adminAuthed ? 'admin' : 'signin');
+        this.renderView(this.adminAuthed ? 'admin' : 'signin', { replaceHistory: true });
       }
     });
 
@@ -1850,7 +1848,7 @@ class App {
     }
   }
 
-  async renderView(viewId, { updateHistory = true } = {}) {
+  async renderView(viewId, { updateHistory = true, replaceHistory = false } = {}) {
     if (!VIEW_PATHS[viewId]) viewId = 'home';
 
     if (viewId === 'admin' && !this.adminAuthed) {
@@ -1901,7 +1899,9 @@ class App {
         ? window.location.pathname
         : VIEW_PATHS[viewId];
       if (window.location.pathname !== path || window.location.hash) {
-        window.history.pushState({ view: viewId }, '', path);
+        // A legacy #hash redirect replaces its own entry; pushing would leave
+        // Back stuck bouncing to the same view.
+        window.history[replaceHistory ? 'replaceState' : 'pushState']({ view: viewId }, '', path);
       }
     }
     updatePageMeta(viewId);
@@ -1985,7 +1985,7 @@ class App {
       return;
     }
     try {
-      const { BoardAdmin } = await import('./board-admin.js?v=1.1.1');
+      const { BoardAdmin } = await import('./board-admin.js?v=1.1.2');
       this._boardAdmin = new BoardAdmin({
         root,
         store: this.store,
@@ -2506,14 +2506,10 @@ class App {
     // Clear previous QR
     qrContainer.innerHTML = '';
 
-    // Generate QR code data
-    const qrData = JSON.stringify({
-      id: memberId,
-      name: name,
-      org: company,
-      type: 'BCCI_MEMBER',
-      verify: `https://bccibharuch.in/verify/${memberId}`
-    });
+    // The verify URL itself, so a phone camera opens the verification page.
+    // (It was a JSON blob, which scanners show as text.) Shorter, too, so the
+    // code is less dense at card size.
+    const qrData = `${SITE_ORIGIN}/verify/${encodeURIComponent(memberId)}`;
 
     // Use QRCode.js library if available
     if (typeof QRCode !== 'undefined') {
@@ -2787,6 +2783,11 @@ class App {
     const dropzone = document.getElementById('paymentProofDropzone');
 
     if (!fileInput) return;
+
+    // A UTR satisfies the receipt rule, so typing one clears that error.
+    document.getElementById('paymentRefInput')?.addEventListener('input', () => {
+      if (document.getElementById('paymentProofDropzone')?.classList.contains('is-invalid')) this.validateField(fileInput);
+    });
 
     const handleFile = (file) => {
       if (!file || !file.type.startsWith('image/')) {
@@ -3096,16 +3097,17 @@ class App {
       const turnoverInput = form.querySelector('input[name="annualTurnover"]');
       const employeesInput = form.querySelector('input[name="employees"]');
 
-      if (phoneInput) {
-        phoneInput.addEventListener('input', (e) => {
-          let val = e.target.value;
-          let digits = val.replace(/\D/g, '');
+      // Mobile numbers: strip +91 or a leading 0 as people type them.
+      for (const mobileInput of [phoneInput, form.querySelector('input[name="repMobile"]')]) {
+        if (!mobileInput) continue;
+        mobileInput.addEventListener('input', (e) => {
+          let digits = e.target.value.replace(/\D/g, '');
           if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
           else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
           e.target.value = digits.slice(0, 10);
-          this.validateField(phoneInput);
+          this.validateField(mobileInput);
         });
-        phoneInput.addEventListener('blur', () => this.validateField(phoneInput));
+        mobileInput.addEventListener('blur', () => this.validateField(mobileInput));
       }
       if (panInput) {
         panInput.addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10); this.validateField(panInput); });
@@ -3183,9 +3185,12 @@ class App {
     errorDiv.setAttribute('role', 'alert');
 
     if (name === 'paymentProof') {
-      if (input.hasAttribute('required') && !this.currentPaymentProofBase64) {
+      // Either a screenshot or the UTR / transaction reference, as the API
+      // accepts: NEFT/RTGS payers often have no screenshot.
+      const utr = (document.getElementById('paymentRefInput')?.value || '').trim();
+      if (!this.currentPaymentProofBase64 && utr.length < 6) {
         isValid = false;
-        errorMsg = 'Please upload a screenshot of your payment confirmation.';
+        errorMsg = 'Upload a screenshot of your payment, or enter the UTR / transaction reference (at least 6 characters).';
       }
       const dropzone = document.getElementById('paymentProofDropzone');
       if (dropzone) {
@@ -3227,7 +3232,13 @@ class App {
           const [ry, rm, rd] = val.split('-').map(Number);
           const d = new Date(Date.UTC(ry, rm - 1, rd));
           if (d.getUTCFullYear() !== ry || d.getUTCMonth() !== rm - 1 || d.getUTCDate() !== rd) { isValid = false; errorMsg = 'Enter a valid calendar date.'; }
-          else if (d > new Date()) { isValid = false; errorMsg = 'Registration date cannot be in the future.'; }
+          else {
+            // Compare calendar days in the applicant's own time zone: a UTC
+            // midnight made today count as the future until 05:30 IST.
+            const now = new Date();
+            const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if (val > today) { isValid = false; errorMsg = 'Registration date cannot be in the future.'; }
+          }
           break;
         }
         case 'panNo':
@@ -3586,7 +3597,7 @@ class App {
       const failure = `<div style="text-align:center;padding:2rem;color:#94A3B8;">
         <i class="fas fa-triangle-exclamation" style="font-size:1.8rem;display:block;margin-bottom:0.5rem;color:#DC2626;"></i>
         Failed to load dashboard data.
-        <br><br><button class="btn-primary" id="adminRetryBtn" style="font-size:0.85rem;"><i class="fas fa-redo"></i> Retry</button>
+        <br><br><button class="btn-primary" data-admin-retry style="font-size:0.85rem;"><i class="fas fa-redo"></i> Retry</button>
       </div>`;
       [['pendingAppsBody', 7], ['approvedAppsBody', 7], ['rejectedAppsBody', 7], ['enquiriesBody', 5]].forEach(([id, cols]) => {
         const el = document.getElementById(id);
@@ -3596,7 +3607,9 @@ class App {
         const el = document.getElementById(id);
         if (el) el.innerHTML = failure;
       });
-      document.getElementById('adminRetryBtn')?.addEventListener('click', () => this.renderAdminPortal());
+      // The same markup goes into the desktop tables and the mobile cards;
+      // wire every copy, not just the first (hidden on phones).
+      document.querySelectorAll('[data-admin-retry]').forEach((btn) => btn.addEventListener('click', () => this.renderAdminPortal()));
       this.showToast(err.message || 'Could not load the admin dashboard.', 'error');
       return;
     }
@@ -3909,7 +3922,9 @@ class App {
   }
 
   async handleRejectRenewal(id) {
-    const reason = prompt('Enter a reason for rejecting this renewal (optional):') ?? '';
+    const reason = prompt('Enter a reason for rejecting this renewal (optional):');
+    // Cancel returns null: stop, rather than rejecting and emailing the member.
+    if (reason === null) return;
     try {
       const updated = await this.store.rejectRenewal(id, reason);
       if (!updated) return;
@@ -3963,7 +3978,22 @@ class App {
 
   bindAdminActions() {
     document.querySelectorAll('[data-approve-id]').forEach(btn => {
-      btn.addEventListener('click', () => this.handleApproveApplication(btn.getAttribute('data-approve-id')));
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-approve-id');
+        // A double click must not send two approvals (and two emails).
+        this._approving ??= new Set();
+        if (this._approving.has(id)) return;
+        this._approving.add(id);
+        const safeId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : String(id).replace(/["\\]/g, '\\$&');
+        const same = document.querySelectorAll(`[data-approve-id="${safeId}"]`);
+        same.forEach((b) => { b.disabled = true; });
+        try {
+          await this.handleApproveApplication(id);
+        } finally {
+          this._approving.delete(id);
+          same.forEach((b) => { b.disabled = false; });
+        }
+      });
     });
 
     document.querySelectorAll('[data-reject-id]').forEach(btn => {
@@ -4446,7 +4476,7 @@ class App {
                   </button>
                 </div>
                 ${attendees.length === 0 ? '<p style="color:#94A3B8;text-align:center;padding:1.5rem 0;">No attendees registered yet.</p>' : `
-                  <div style="max-height:320px;overflow-y:auto;border:1px solid #E2E8F0;border-radius:6px;">
+                  <div class="board-scroll" style="max-height:320px;overflow:auto;border:1px solid #E2E8F0;border-radius:6px;">
                     <table class="data-table" style="font-size:0.85rem;margin:0;">
                       <thead>
                         <tr>
@@ -4760,8 +4790,11 @@ class App {
           this.showToast('Please specify a valid ticket fee for paid events.', 'warning');
           return;
         }
-        if (capacity < 1) {
-          this.showToast('Capacity must be at least 1.', 'warning');
+        // The field is required (default 100); what is typed must be a whole
+        // number of seats. ('' < 1 was true and 'abc' < 1 false, so the old
+        // comparison got both cases backwards.)
+        if (!(Number.isInteger(Number(capacity)) && Number(capacity) >= 1)) {
+          this.showToast('Capacity must be a whole number of seats (at least 1).', 'warning');
           return;
         }
 
@@ -4784,7 +4817,10 @@ class App {
           });
 
           form.reset();
+          // reset() restores values, not attributes: a hidden, still-required
+          // fee field would silently block the next (free) event's submit.
           if (feeGroup) feeGroup.style.display = 'none';
+          if (feeInput) feeInput.removeAttribute('required');
           this.showToast(`Event "${newEvent.title}" broadcasted to BCCI website!`, 'success');
           await this.renderAdminEvents();
         } catch (err) {
@@ -5482,6 +5518,9 @@ class App {
       if (el && !el.value) { el.value = value; restored++; }
     });
     if (!restored) return;
+    // The plan may have been restored: price it now rather than waiting for
+    // the plan list, which may never load.
+    this.updateMembershipTotalFee?.();
 
     // Say so plainly, and offer a way out — a silently pre-filled form is
     // unsettling, and the draft holds details like PAN and GSTIN.

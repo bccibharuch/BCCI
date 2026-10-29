@@ -86,7 +86,7 @@
   <script src="/assets/vendor/qrcodejs/qrcode.min.js" defer
     integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA=="></script>
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/css/styles.css?v=3.2.16" />
+  <link rel="stylesheet" href="/css/styles.css?v=3.2.17" />
   <!-- Premium Membership Card Styles -->
   <link rel="stylesheet" href="/css/membership-card.css?v=3.2.0" />
 </head><body>
@@ -782,7 +782,7 @@
               <div style="display: flex; align-items: flex-start; gap: 0.6rem;">
                 <i class="fas fa-info-circle" style="color: #D97706; margin-top: 0.2rem; font-size: 1rem;"></i>
                 <div style="flex: 1;">
-                  <strong>Invalid email or password.</strong> Existing BCCI members signing in for the first time have no password yet: verify your email with a one-time code to create one.
+                  <strong>Invalid email or password.</strong> Forgot it? Use "Forgot password" below. Existing BCCI members signing in for the first time have no password yet: verify your email with a one-time code to create one.
                   <div style="margin-top: 0.5rem;">
                     <button type="button" id="legacySwitchToRegister" class="auth-text-link" style="background: transparent; border: none; padding: 0; font-weight: 700; color: var(--primary); cursor: pointer; text-decoration: underline;">
                       Verify OTP &amp; create password now &rarr;
@@ -996,18 +996,6 @@
 
         <div id="membershipFormWrapper" style="display: none; max-width: 1200px; margin: 0 auto;">
           <!-- Sign-in Required Reminder (hidden when authenticated) -->
-          <div id="signInReminder" style="background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%); border: 1px solid #F59E0B; border-left: 4px solid #D97706; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-            <div style="width: 36px; height: 36px; background: #D97706; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-              <i class="fas fa-lock" style="color: #FFFFFF; font-size: 0.85rem;"></i>
-            </div>
-            <div style="flex: 1; min-width: 200px;">
-              <div style="font-weight: 700; color: #92400E; font-size: 0.95rem;">Sign In Required to Submit</div>
-              <div style="color: #A16207; font-size: 0.82rem; margin-top: 2px;">You can preview the form below. Complete the <strong>Applicant Authentication Gate</strong> above to enable submission.</div>
-            </div>
-            <button type="button" data-action="scroll-to-auth-gate" style="background: #D97706; color: #FFFFFF; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap;">
-              <i class="fas fa-arrow-up"></i> Sign In Now
-            </button>
-          </div>
           <div class="membership-layout-grid" style="display: grid; grid-template-columns: 1fr 340px; gap: 2rem; align-items: start;">
             <!-- Left Column: Membership Form -->
             <div class="form-container" style="max-width: 100%; margin: 0;">
@@ -1044,7 +1032,7 @@
               <div class="form-group">
                 <label class="form-label" for="appLegalStatus">Legal Status <span class="req">*</span></label>
                 <select id="appLegalStatus" class="form-select" name="legalStatus" required>
-                  <option value="None">None</option>
+                  <option value="" disabled selected>Select legal status</option>
                   <option value="Pvt. Ltd.">Private Limited (Pvt. Ltd.)</option>
                   <option value="Public Ltd.">Public Limited</option>
                   <option value="Partnership">Partnership Firm</option>
@@ -1056,7 +1044,7 @@
               <div class="form-group">
                 <label class="form-label" for="appEnterpriseType">Enterprise Category <span class="req">*</span></label>
                 <select id="appEnterpriseType" class="form-select" name="enterpriseType" required>
-                  <option value="None">None</option>
+                  <option value="" disabled selected>Select enterprise category</option>
                   <option value="Micro">Micro Enterprise</option>
                   <option value="Small">Small Enterprise</option>
                   <option value="Medium">Medium Enterprise</option>
@@ -1336,7 +1324,7 @@
                       </div>
 
                       <div class="form-group">
-                        <label class="form-label" for="paymentRefInput">Payment UTR / Transaction Ref No. (Optional)</label>
+                        <label class="form-label" for="paymentRefInput">Payment UTR / Transaction Ref No. (needed if you don't upload a screenshot)</label>
                         <input type="text" id="paymentRefInput" class="form-control" name="paymentRef" placeholder="e.g. UPI/423589012345" />
                         <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.2rem;">
                           If you have already paid via UPI, enter your transaction ID here for instant payment matching
@@ -1361,7 +1349,7 @@
                     <div class="file-upload-box" id="paymentProofDropzone"
                       style="background: #FFFFFF; border: 2px dashed #93C5FD; border-radius: var(--radius-md); padding: 1.75rem 1.25rem; text-align: center; cursor: pointer;">
                       <input type="file" name="paymentProof" id="paymentProofInput" accept="image/png, image/jpeg, image/webp"
-                        class="file-upload-input" aria-label="Upload Payment Receipt Screenshot" required />
+                        class="file-upload-input" aria-label="Upload Payment Receipt Screenshot" />
                       <div class="file-upload-content" id="paymentProofPlaceholder">
                         <div
                           style="width: 56px; height: 56px; background: #EFF6FF; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--primary); font-size: 1.5rem; margin-bottom: 0.75rem;">
@@ -2005,7 +1993,7 @@
   </nav>
 
   <!-- App Main ES Module -->
-  <script type="module" src="/js/app.js?v=5.0.25"></script>
+  <script type="module" src="/js/app.js?v=5.0.26"></script>
 </body>
 
 </html>

@@ -293,14 +293,17 @@ async function handler(req, res) {
       if (d.getUTCFullYear() !== ry || d.getUTCMonth() !== rm - 1 || d.getUTCDate() !== rd) {
         return res.status(400).json({ error: 'Date of registration is not a valid calendar date.' });
       }
-      if (d > new Date()) {
+      // Compare calendar days in India (UTC+5:30): a UTC midnight made today's
+      // date count as the future until 05:30 IST.
+      const todayIst = new Date(Date.now() + 330 * 60 * 1000).toISOString().slice(0, 10);
+      if (regDate > todayIst) {
         return res.status(400).json({ error: 'Date of registration cannot be in the future.' });
       }
     }
-    if (!legalStatus || legalStatus.length < 2) {
+    if (!legalStatus || legalStatus.length < 2 || legalStatus.toLowerCase() === 'none') {
       return res.status(400).json({ error: 'Legal status is required.' });
     }
-    if (!enterpriseType || enterpriseType.length < 2) {
+    if (!enterpriseType || enterpriseType.length < 2 || enterpriseType.toLowerCase() === 'none') {
       return res.status(400).json({ error: 'Enterprise category is required.' });
     }
     if (!applicantAddress || applicantAddress.length < 5) {
@@ -788,7 +791,11 @@ async function handler(req, res) {
     }
     const nextStatus = normalizeStatus(status);
     const reason = str(req.body.reason, 1000);
+    // Read under the record's lock, so of two simultaneous identical clicks
+    // exactly one sees the change and sends the email.
+    let previousStatus = null;
     const updated = await updateApplication(id, (app) => {
+      previousStatus = app.status;
       const next = { ...app, status: nextStatus, reviewedAt: new Date().toISOString(), reviewedBy: adminEmail };
       if (nextStatus === STATUS.APPROVED && !app.approvedAt) {
         next.approvedAt = new Date().toISOString();
@@ -803,8 +810,10 @@ async function handler(req, res) {
 
     if (!updated) return res.status(404).json({ error: 'Application not found' });
 
-    // Tell the applicant what was decided.
-    if (nextStatus === STATUS.APPROVED) {
+    // Tell the applicant what was decided, once: repeating a decision
+    // already made (a double click, a retry) sends nothing.
+    const changed = previousStatus !== nextStatus;
+    if (changed && nextStatus === STATUS.APPROVED) {
       await sendEmailWithin({
         type: 'application_approved',
         to: updated.email,
@@ -815,7 +824,7 @@ async function handler(req, res) {
           validUntil: validUntil(updated).toLocaleDateString('en-IN', INDIAN_DATE),
         },
       });
-    } else if (nextStatus === STATUS.REJECTED) {
+    } else if (changed && nextStatus === STATUS.REJECTED) {
       await sendEmailWithin({
         type: 'application_declined',
         to: updated.email,

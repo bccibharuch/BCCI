@@ -824,6 +824,39 @@ for (let i = 0; i < 12; i++) {
 }
 check('twelve successful admin sign-ins in a row are never rate-limited', lastLogin.statusCode === 200, `got ${lastLogin.statusCode}`);
 
+// ── Review fixes: one email per decision, no "None", today's date ──
+{
+  const emailLog = () => {
+    const raw = mock.store.get('bcci:email_log');
+    return raw ? JSON.parse(raw) : [];
+  };
+  const tok = await applicantSession('once@example.com', '203.0.113.180');
+  const filed = await call(applications, { method: 'POST', token: tok, ip: '203.0.113.181', body: validApp({ company: 'Once Only Ltd' }) });
+  const onceId = filed.body?.applicationId;
+  const approvalsFor = () => emailLog().filter((e) => e.type === 'application_approved' && e.to?.includes('once@example.com')).length;
+  const [a1, a2] = await Promise.all([
+    call(applications, { method: 'PATCH', token: adminToken, body: { id: onceId, status: 'Approved' } }),
+    call(applications, { method: 'PATCH', token: adminToken, body: { id: onceId, status: 'Approved' } }),
+  ]);
+  const okCount = [a1, a2].filter((x) => x.statusCode === 200).length;
+  check('a double-clicked approval sends the approval email once', okCount >= 1 && approvalsFor() === 1, `${a1.statusCode}/${a2.statusCode}, ${approvalsFor()} emails`);
+  await call(applications, { method: 'PATCH', token: adminToken, body: { id: onceId, status: 'Approved' } });
+  check('approving an already-approved application sends nothing new', approvalsFor() === 1, `${approvalsFor()} emails`);
+
+  const noneTok = await applicantSession('none@example.com', '203.0.113.182');
+  r = await call(applications, { method: 'POST', token: noneTok, ip: '203.0.113.183', body: validApp({ legalStatus: 'None' }) });
+  check('"None" is refused as a legal status', r.statusCode === 400 && /legal status/i.test(r.body?.error || ''), `${r.statusCode} ${JSON.stringify(r.body)}`);
+  r = await call(applications, { method: 'POST', token: noneTok, ip: '203.0.113.183', body: validApp({ enterpriseType: 'none' }) });
+  check('"None" is refused as an enterprise category', r.statusCode === 400 && /enterprise category/i.test(r.body?.error || ''), `${r.statusCode} ${JSON.stringify(r.body)}`);
+
+  const todayIst = new Date(Date.now() + 330 * 60 * 1000).toISOString().slice(0, 10);
+  const tomorrowIst = new Date(Date.now() + 330 * 60 * 1000 + 86400000).toISOString().slice(0, 10);
+  r = await call(applications, { method: 'POST', token: noneTok, ip: '203.0.113.183', body: validApp({ regDate: tomorrowIst }) });
+  check("tomorrow's date (India) is refused as a registration date", r.statusCode === 400 && /future/.test(r.body?.error || ''), `${r.statusCode} ${JSON.stringify(r.body)}`);
+  r = await call(applications, { method: 'POST', token: noneTok, ip: '203.0.113.183', body: validApp({ regDate: todayIst }) });
+  check("today's date (India) is accepted as a registration date", r.statusCode === 201, `${r.statusCode} ${JSON.stringify(r.body)}`);
+}
+
 // ── Report ──────────────────────────────────────────────────────────
 process.on("exit",()=>{});
 console.log(results.join('\n'));

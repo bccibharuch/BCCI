@@ -179,7 +179,7 @@ export class BoardAdmin {
     });
     this.membersBox.replaceChildren(
       el('p', { className: 'board-admin-count', text: `${active} active board member${active === 1 ? '' : 's'}` }),
-      el('div', { className: 'table-responsive' },
+      el('div', { className: 'table-responsive board-scroll' },
         el('table', { className: 'data-table board-table' },
           el('thead', {}, el('tr', {}, ...['Member', 'Designation', 'Email', 'Mobile', 'Status', 'Actions'].map((h) => el('th', { text: h })))),
           el('tbody', {}, ...rows))));
@@ -292,7 +292,7 @@ export class BoardAdmin {
         el('td', { text: m.status === 'scheduled' ? '—' : `${m.presentCount} of ${m.rosterCount}` }),
         el('td', {}, actions));
     });
-    this.meetingsBox.replaceChildren(el('div', { className: 'table-responsive' },
+    this.meetingsBox.replaceChildren(el('div', { className: 'table-responsive board-scroll' },
       el('table', { className: 'data-table board-table' },
         el('thead', {}, el('tr', {}, ...['Date', 'Meeting', 'Status', 'Present', 'Actions'].map((h) => el('th', { text: h })))),
         el('tbody', {}, ...rows))));
@@ -373,7 +373,7 @@ export class BoardAdmin {
     root.append(
       el('p', { className: 'board-admin-count', text: `${dayLabel(meeting.date)} · ${meeting.time}${meeting.venue ? ` · ${meeting.venue}` : ''} — ${counts.present} present, ${counts.leave} on leave, ${counts.absent} absent of ${counts.roster}` }),
       rows.length
-        ? el('div', { className: 'table-responsive board-modal-table' },
+        ? el('div', { className: 'table-responsive board-modal-table board-scroll' },
           el('table', { className: 'data-table board-table' },
             el('thead', {}, el('tr', {}, ...['Member', 'Status', 'Time', 'How', 'Change'].map((h) => el('th', { text: h })))),
             el('tbody', {}, ...body)))

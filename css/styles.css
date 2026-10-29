@@ -1586,8 +1586,8 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 .metric-card:hover, .metric-card:focus-visible {
   transform: translateY(-3px);
   box-shadow: 0 8px 18px rgba(15, 44, 89, 0.12);
-  outline: none;
 }
+.metric-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 .metric-val {
   font-family: var(--font-display);
@@ -1864,7 +1864,9 @@ footer h4 {
   overflow-y: auto;
 }
 
-.mobile-drawer.open { transform: translateX(0); }
+.mobile-drawer { visibility: hidden; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.3s; }
+/* Hidden once closed, so its links leave the tab order and screen readers. */
+.mobile-drawer.open { transform: translateX(0); visibility: visible; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s; }
 
 @media (min-width: 1025px) {
   .mobile-drawer,
@@ -3364,4 +3366,18 @@ body.modal-open {
 @media (max-width: 760px) {
   .board-projector-body { grid-template-columns: 1fr; }
   .board-projector-qr, .board-projector-bar-track, .board-projector-how { width: min(86vw, 60vh); max-width: none; }
+}
+
+/* Board admin and attendee tables have no card layout, so on small screens
+   they scroll sideways instead of disappearing with the other tables. */
+@media (max-width: 900px) {
+  .table-responsive.board-scroll { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+@media (max-width: 768px) {
+  .board-scroll .data-table { display: table; }
+  /* Admins on a phone keep their sign-out button. */
+  body.admin-area .nav-actions { display: flex !important; margin-left: auto; }
+  body.admin-area .nav-actions #navAuthContainer { display: flex !important; }
+  body.admin-area .nav-actions .btnNavSignOut { display: inline-flex !important; }
+  body.admin-area .nav-actions .btnNavSignOut * { display: inline !important; }
 }

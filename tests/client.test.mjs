@@ -133,7 +133,13 @@ console.log('\nLoading, error and progress states');
 console.log('──────────────────────────────────');
 ck('admin panel shows skeletons while fetching', SRC.includes('_showAdminLoading') && SRC.includes('skeleton-bar'));
 ck('skeletons appear BEFORE the await', /_showAdminLoading\(\);[\s\S]{0,300}await Promise.all/.test(SRC));
-ck('a failed load offers a retry, not a frozen shimmer', SRC.includes('adminRetryBtn'));
+ck('a failed load offers a retry, not a frozen shimmer', SRC.includes('data-admin-retry'));
+ck('after a paid event the broadcast form drops the fee field\'s required flag on reset', /form\.reset\(\);[\s\S]{0,400}feeInput\.removeAttribute\('required'\)/.test(SRC));
+ck('the membership card QR encodes the verify URL, not a JSON blob', SRC.includes('const qrData = `${SITE_ORIGIN}/verify/${encodeURIComponent(memberId)}`;') && !/qrData = JSON\.stringify/.test(SRC));
+ck('cancelling the renewal-rejection prompt cancels', /prompt\('Enter a reason for rejecting this renewal \(optional\):'\);\s*\/\/[^\n]*\n\s*if \(reason === null\) return;/.test(SRC));
+ck('the representative name is never pre-filled with the email local part', SRC.includes("session.name !== String(session.email || '').split('@')[0]"));
+ck('legal status and enterprise category start on a placeholder, not "None"', !/<option value="None">None<\/option>/.test(HTML));
+ck('every Retry copy is wired (desktop tables and mobile cards), not only the first id', /querySelectorAll\('\[data-admin-retry\]'\)\.forEach/.test(SRC) && !SRC.includes('adminRetryBtn'));
 ck('the card page has a loading state', SRC.includes('card-skeleton'));
 ck('metrics show a placeholder, not a misleading 0', /metricTotal[\s\S]{0,160}textContent = '—'/.test(SRC));
 
@@ -1285,7 +1291,9 @@ ck('admin view hides mobile membership tab in code', SRC.includes("this.adminAut
 ck('membership form validates annualTurnover', SRC.includes("case 'annualTurnover':"));
 ck('membership form validates employees headcount', SRC.includes("case 'employees':"));
 ck('membership form validates address min length', SRC.includes("case 'address':") && SRC.includes("val.length < 5"));
-ck('paymentProof has required attribute in index.html', /<input[^>]*name=["']paymentProof["'][^>]*required/.test(HTML));
+// The receipt screenshot is optional when a UTR is given (as the API allows),
+// so the browser's own "required" must not block UTR-only applicants.
+ck('paymentProof is not hard-required in index.html (a UTR also satisfies it)', !/<input[^>]*name=["']paymentProof["'][^>]*required/.test(HTML));
 ck('annualTurnover has required attribute in index.html', /<input[^>]*name=["']annualTurnover["'][^>]*required/.test(HTML));
 ck('employees headcount has required attribute in index.html', /<input[^>]*name=["']employees["'][^>]*required/.test(HTML));
 
@@ -1344,8 +1352,16 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
   // paymentProof
   const proofDropzone = new MockElement('div', 'paymentProofDropzone');
   regEl(proofDropzone);
-  const proofInput = createInput('paymentProof', '', true);
-  ck('paymentProof rejects when no receipt uploaded', !app.validateField(proofInput));
+  const proofInput = createInput('paymentProof', '', false);
+  const utrInput = new MockElement('input', 'paymentRefInput');
+  utrInput.value = '';
+  regEl(utrInput);
+  ck('paymentProof rejects when there is neither a receipt nor a UTR', !app.validateField(proofInput));
+  utrInput.value = 'UTR1';
+  ck('…and when the UTR is too short (under 6 characters)', !app.validateField(proofInput));
+  utrInput.value = 'NEFT/HDFC0012345';
+  ck('paymentProof accepts a UTR alone (NEFT/RTGS payers with no screenshot)', app.validateField(proofInput));
+  utrInput.value = '';
   app.currentPaymentProofBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   ck('paymentProof accepts when receipt is uploaded', app.validateField(proofInput));
 
