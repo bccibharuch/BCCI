@@ -27,7 +27,7 @@ process.env.STORAGE_BACKEND = 'postgres';
 const pg = await import('../api/_lib/postgres.js');
 await pg.initSchema();
 
-const counts = { applications: 0, enquiries: 0, events: 0, attendees: 0, membershipPlans: 0, accounts: 0, emailLog: 0, skipped: 0 };
+const counts = { applications: 0, enquiries: 0, events: 0, attendees: 0, membershipPlans: 0, accounts: 0, board: 0, emailLog: 0, skipped: 0 };
 
 async function migrateSet({ indexKey, recordKey, put, label }) {
   const ids = (await redis.zrange(indexKey, 0, -1)) || [];
@@ -98,8 +98,8 @@ for (const id of eventIds) {
   );
 }
 
-// Applicant password accounts and the email log live in the kv table on
-// Postgres. Sessions and OTP codes are deliberately not copied: they expire
+// Applicant password accounts, board data and the email log live in the kv
+// table on Postgres. Sessions and OTP codes are deliberately not copied: they expire
 // within hours, so people simply sign in again after the switch.
 async function copyToKv(key) {
   const value = await redis.get(key);
@@ -111,15 +111,26 @@ async function copyToKv(key) {
   return r.rowCount === 1;
 }
 
-let cursor = '0';
-do {
-  const [next, keys] = await redis.scan(cursor, { match: 'bcci:account:*', count: 500 });
-  for (const key of keys) {
-    if (await copyToKv(key)) counts.accounts++;
-    else counts.skipped++;
-  }
-  cursor = String(next);
-} while (cursor !== '0');
+async function copyMatching(pattern, label, skip = () => false) {
+  let cursor = '0';
+  do {
+    const [next, keys] = await redis.scan(cursor, { match: pattern, count: 500 });
+    for (const key of keys) {
+      if (skip(key)) continue;
+      if (await copyToKv(key)) counts[label]++;
+      else counts.skipped++;
+    }
+    cursor = String(next);
+  } while (cursor !== '0');
+}
+
+await copyMatching('bcci:account:*', 'accounts');
+
+// Board profiles, meetings, attendance marks, email claims and the id
+// counters all live in kv on both backends (_lib/board.js). Sign-in codes
+// and their counters are short-lived, like sessions, so they stay behind.
+const BOARD_EPHEMERAL = /^bcci:board:otp(_tries|_claim)?:/;
+await copyMatching('bcci:board:*', 'board', (key) => BOARD_EPHEMERAL.test(key));
 
 if (await copyToKv('bcci:email_log')) counts.emailLog = 1;
 

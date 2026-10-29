@@ -214,6 +214,11 @@ check('expire on a missing key → 0', (await kv.expire('t:none', 30)) === 0);
 await lib.query("UPDATE kv SET expires_at = now() - interval '1 second' WHERE key = 't:rl'");
 check('incr after expiry restarts at 1 with no ttl', (await kv.incr('t:rl')) === 1 && (await kv.ttl('t:rl')) === -1);
 
+check('decr steps a live counter back', (await kv.decr('t:rl')) === 0);
+check('decr on a missing key → -1', (await kv.decr('t:decr-new')) === -1);
+await kv.set('t:decr-ttl', '5', { ex: 60 });
+check('decr keeps the existing ttl', (await kv.decr('t:decr-ttl')) === 4 && (await kv.ttl('t:decr-ttl')) > 55);
+
 check('del counts live keys removed', (await kv.del('t:obj', 't:otp', 't:none')) === 2);
 check('deleted keys are gone', (await kv.get('t:obj')) === null);
 await lib.query("INSERT INTO kv (key, value, expires_at) VALUES ('t:gone', '1', now() - interval '1 second')");

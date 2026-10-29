@@ -288,9 +288,13 @@ export async function updateApplication(id, mutate) {
     const current = rowToApp(r.rows[0]);
     const next = normalizeApplication(mutate({ ...current }));
     const email = next.email ? String(next.email).trim().toLowerCase() : null;
+    // A resubmission moves submittedAt; keep the list order in step. Records
+    // without a usable date keep their stored submitted_at.
+    const submitted = Date.parse(next.submittedAt || '');
     await client.query(
-      'UPDATE applications SET email = $2, status = $3, updated_at = now(), data = $4 WHERE id = $1',
-      [id, email || null, next.status, next]
+      `UPDATE applications SET email = $2, status = $3, updated_at = now(), data = $4,
+         submitted_at = COALESCE($5::timestamptz, submitted_at) WHERE id = $1`,
+      [id, email || null, next.status, next, Number.isFinite(submitted) ? new Date(submitted).toISOString() : null]
     );
     await client.query('COMMIT');
     return next;

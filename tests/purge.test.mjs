@@ -17,6 +17,14 @@ await redis.set('admin:tok1','admin@x.com');
 await redis.set('applicant:tok2','m1@x.com');
 await redis.set('bcci:otp:m1@x.com','123456');
 await redis.set('bcci:email_log',[{id:'E1'}]);
+await redis.set('bcci:plan:gold', { id: 'gold', fee: 5000 });
+await redis.zadd('bcci:plan_index', { score: 1, member: 'gold' });
+await redis.set('bcci:board:seq:member', 1);
+await redis.set('bcci:board:member:BM-1', { id: 'BM-1', email: 'b@x.com' });
+await redis.set('bcci:board:member_email:b@x.com', 'BM-1');
+await redis.set('bcci:board:seq:meeting', 1);
+await redis.set('bcci:board:meeting:MTG-1', { id: 'MTG-1' });
+await redis.set('bcci:board:att:MTG-1:BM-1', { status: 'present' });
 
 const purge = (args='') => run(`node scripts/purge-data.mjs ${args}`,
   { cwd: new URL('..', import.meta.url).pathname, env: process.env });
@@ -42,6 +50,10 @@ ck('enquiries gone', (await listEnquiries()).length === 0);
 ck('events gone', (await listEvents()).length === 0);
 ck('account gone', (await redis.get('bcci:account:m1@x.com')) === null);
 ck('email index gone', (await redis.get('bcci:app_email:m1@x.com')) === null);
+ck('custom membership types gone', (await redis.get('bcci:plan:gold')) === null && (await redis.zcard('bcci:plan_index')) === 0);
+const boardLeft = await Promise.all(['bcci:board:seq:member', 'bcci:board:member:BM-1', 'bcci:board:member_email:b@x.com',
+  'bcci:board:seq:meeting', 'bcci:board:meeting:MTG-1', 'bcci:board:att:MTG-1:BM-1'].map((k) => redis.get(k)));
+ck('board profiles, meetings, marks and counters gone', boardLeft.every((v) => v === null), JSON.stringify(boardLeft));
 ck('admin session PRESERVED', (await redis.get('admin:tok1')) === 'admin@x.com', 'should not touch sessions');
 ck('email log PRESERVED', (await redis.get('bcci:email_log')) !== null);
 ck('mentions what it left alone', out.includes('--all'));

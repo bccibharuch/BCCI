@@ -224,12 +224,20 @@ export async function putApplication(app) {
   const record = normalizeApplication(app);
   return withRetry(async () => {
     if (record.email) {
-      const claimed = await redis.set(KEYS.appByEmail(record.email), record.id, { nx: true });
+      const emailKey = KEYS.appByEmail(record.email);
+      const claimed = await redis.set(emailKey, record.id, { nx: true });
       if (!claimed) {
-        const existingId = await redis.get(KEYS.appByEmail(record.email));
-        const err = new Error(`An application for this email already exists (${existingId || 'in progress'}).`);
-        err.statusCode = 409;
-        throw err;
+        const existingId = await redis.get(emailKey);
+        // The claim is ours when withRetry re-runs after a slow first attempt,
+        // and stale when a crash landed between the claim and the record write.
+        // Either way the email is free; anything else is a genuine duplicate.
+        const holderExists = existingId && existingId !== record.id && (await redis.exists(KEYS.app(existingId)));
+        if (holderExists) {
+          const err = new Error(`An application for this email already exists (${existingId}).`);
+          err.statusCode = 409;
+          throw err;
+        }
+        await redis.set(emailKey, record.id);
       }
     }
     try {
@@ -264,11 +272,15 @@ export async function updateApplication(id, mutate) {
       if (!current) return null;
       const next = normalizeApplication(mutate({ ...current }));
       // One transaction, so the list summary can never disagree with the record.
-      await redis
+      const tx = redis
         .multi()
         .set(KEYS.app(id), next)
-        .set(KEYS.appSummary(id), summarizeApplication(next))
-        .exec();
+        .set(KEYS.appSummary(id), summarizeApplication(next));
+      // A resubmission moves submittedAt; keep the list order in step. Records
+      // without a usable date keep their slot rather than jumping to the top.
+      const submitted = Date.parse(next.submittedAt || '');
+      if (Number.isFinite(submitted)) tx.zadd(KEYS.appIndex, { score: submitted, member: id });
+      await tx.exec();
       if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
       return next;
     } finally {

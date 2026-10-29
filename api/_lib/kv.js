@@ -7,7 +7,7 @@
 //
 // On a single server that keeps everything in one database with one backup.
 // Only the Redis commands the routes use are offered — get, mget, set
-// (ex / nx), del, incr, expire, ttl — with Redis semantics, so callers cannot tell
+// (ex / nx), del, incr, decr, expire, ttl — with Redis semantics, so callers cannot tell
 // which backend answered. Expired rows read as absent and are swept on a
 // timer by the long-running server.
 
@@ -70,6 +70,21 @@ function postgresKv(query) {
          ON CONFLICT (key) DO UPDATE SET
            value = CASE WHEN kv.expires_at IS NOT NULL AND kv.expires_at <= now() THEN '1'::jsonb
                         ELSE to_jsonb((kv.value #>> '{}')::bigint + 1) END,
+           expires_at = CASE WHEN kv.expires_at IS NOT NULL AND kv.expires_at <= now() THEN NULL
+                             ELSE kv.expires_at END
+         RETURNING value`,
+        [key]
+      );
+      return Number(r.rows[0].value);
+    },
+
+    /** Atomic decrement that keeps an existing TTL, like Redis DECR. */
+    async decr(key) {
+      const r = await query(
+        `INSERT INTO kv (key, value, expires_at) VALUES ($1, '-1'::jsonb, NULL)
+         ON CONFLICT (key) DO UPDATE SET
+           value = CASE WHEN kv.expires_at IS NOT NULL AND kv.expires_at <= now() THEN '-1'::jsonb
+                        ELSE to_jsonb((kv.value #>> '{}')::bigint - 1) END,
            expires_at = CASE WHEN kv.expires_at IS NOT NULL AND kv.expires_at <= now() THEN NULL
                              ELSE kv.expires_at END
          RETURNING value`,

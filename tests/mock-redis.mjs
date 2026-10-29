@@ -61,8 +61,9 @@ function run(cmd) {
       }
       return n;
     }
-    case 'INCR': {
-      const next = Number(store.get(key) || 0) + 1;
+    case 'INCR':
+    case 'DECR': {
+      const next = Number(store.get(key) || 0) + (op === 'INCR' ? 1 : -1);
       store.set(key, String(next));
       return next;
     }
