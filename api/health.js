@@ -33,7 +33,9 @@ async function handler(req, res) {
       try {
         checks.postgres.reachable = (await pingRecords()) && (await pingKv());
       } catch (err) {
-        checks.postgres.error = err.message;
+        // The response is public; an error string can name an internal host,
+        // port or credential. Log it, report only that it is unreachable.
+        console.error('[health] postgres probe failed:', err?.message || err);
       }
     }
   } else {
@@ -42,7 +44,8 @@ async function handler(req, res) {
       try {
         checks.redis.reachable = await pingKv();
       } catch (err) {
-        checks.redis.error = err.message;
+        // See above: log the detail, never send it to the caller.
+        console.error('[health] redis probe failed:', err?.message || err);
       }
     }
   }
