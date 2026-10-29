@@ -11,6 +11,7 @@ import {
   applyCors,
   handlePreflight,
   rateLimit,
+  refundRateLimit,
   tooManyRequests,
   safeEqual,
   clientIp,
@@ -85,6 +86,9 @@ async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Invalid email or password.' });
     }
 
+    // Only failures count toward lockout: a correct password gives the attempt back.
+    await Promise.all([refundRateLimit(`applicantlogin:ip:${ip}`), refundRateLimit(`applicantlogin:email:${email}`)]);
+
     const token = crypto.randomUUID();
     const sessionData = { email, issuedAt: Date.now() };
     await withRetry(() =>
@@ -153,7 +157,10 @@ async function handler(req, res) {
       });
     }
 
-    // Save account with password hash and salt
+    // Holding the emailed code proves ownership, so an existing account's
+    // password is replaced (its old sessions are revoked by passwordUpdatedAt)
+    // — say so rather than claiming a new account was created.
+    const existingAccount = await getAccount(email);
     await saveAccount(email, password);
 
     // Clean up OTP and rate limiter
@@ -169,7 +176,9 @@ async function handler(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: 'Account created successfully.',
+      message: existingAccount?.passwordHash
+        ? 'An account already existed for this email; its password has been updated.'
+        : 'Account created successfully.',
       session: {
         token,
         email,

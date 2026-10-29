@@ -35,7 +35,7 @@ async function handler(req, res) {
 
   const { type, to, data } = req.body || {};
 
-  if (!type || !TEMPLATES[type]) {
+  if (typeof type !== 'string' || !Object.hasOwn(TEMPLATES, type)) {
     return res.status(400).json({
       success: false,
       error: `Invalid email type. Valid types: ${Object.keys(TEMPLATES).join(', ')}`,

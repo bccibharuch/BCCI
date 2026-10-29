@@ -90,7 +90,15 @@ export async function getApplicantSession(req) {
   // session that a password reset should have revoked. Let it fail closed.
   const accountRaw = await withRetry(() => kv.get(KEYS.account(cleanEmail)));
   if (accountRaw) {
-    const account = typeof accountRaw === 'string' ? JSON.parse(accountRaw) : accountRaw;
+    let account;
+    try {
+      account = typeof accountRaw === 'string' ? JSON.parse(accountRaw) : accountRaw;
+    } catch (err) {
+      // A corrupt account row must not 500 every request; it cannot vouch
+      // for the session either, so fail closed.
+      console.error(`[session] unreadable account record for ${cleanEmail}:`, err.message);
+      return null;
+    }
     if (account?.passwordUpdatedAt) {
       const pwdUpdatedMs = Date.parse(account.passwordUpdatedAt);
       const issuedMs = typeof issuedAt === 'number' ? issuedAt : (issuedAt ? Date.parse(issuedAt) : NaN);
@@ -116,9 +124,18 @@ export async function requireAdmin(req, res) {
 
 // ── Rate limiting ──────────────────────────────────────────────────
 
+/**
+ * The address the nearest proxy saw. Vercel and Caddy replace
+ * X-Forwarded-For, so it holds one entry; a proxy that appends instead (nginx's
+ * $proxy_add_x_forwarded_for) leaves client-supplied entries in front, so only
+ * the last one — written by our own proxy — can be trusted.
+ */
 export function clientIp(req) {
   const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
+  if (typeof fwd === 'string' && fwd.length) {
+    const hops = fwd.split(',').map((h) => h.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
+  }
   return req.socket?.remoteAddress || 'unknown';
 }
 
@@ -129,7 +146,9 @@ export function clientIp(req) {
  */
 export async function rateLimit(key, { max, windowSec }) {
   const k = `bcci:rl:${key}`;
-  const count = await withRetry(() => kv.incr(k));
+  // One attempt only: INCR is not idempotent, so retrying one that was applied
+  // but answered slowly would count a single request twice.
+  const count = await withRetry(() => kv.incr(k), 1);
   if (count === 1) {
     await withRetry(() => kv.expire(k, windowSec)).catch(() => {});
     return { ok: true, remaining: max - 1 };
@@ -145,6 +164,20 @@ export async function rateLimit(key, { max, windowSec }) {
     return { ok: false, retryAfter: ttl };
   }
   return { ok: true, remaining: max - count };
+}
+
+/**
+ * Gives back one attempt counted by rateLimit, for limiters meant to count
+ * failures only (sign-in): the request is counted up front so parallel
+ * guesses cannot slip past, then refunded once it turns out to be legitimate.
+ * Best effort — a failed refund only leaves the stricter count in place.
+ */
+export async function refundRateLimit(key) {
+  try {
+    await withRetry(() => kv.decr(`bcci:rl:${key}`), 1);
+  } catch (err) {
+    console.warn(`[rateLimit] refund failed for ${key}:`, err?.message || err);
+  }
 }
 
 export function tooManyRequests(res, retryAfter, message) {
@@ -208,12 +241,18 @@ export function cleanPhone(value) {
 /**
  * Wraps a handler so an unexpected throw becomes a clean 500 with a
  * correlation id in the logs, rather than a raw stack trace to the client.
+ * An error carrying a 4xx `statusCode` (e.g. the storage layer's 409 for a
+ * duplicate application) is a deliberate refusal: its message goes back as is.
  */
 export function withErrorHandling(name, handler) {
   return async (req, res) => {
     try {
       return await handler(req, res);
     } catch (err) {
+      const status = Number(err?.statusCode);
+      if (Number.isInteger(status) && status >= 400 && status < 500 && !res.headersSent) {
+        return res.status(status).json({ success: false, error: err.message });
+      }
       const ref = crypto.randomBytes(4).toString('hex');
       console.error(`[${name}] ref=${ref}`, err?.stack || err?.message || err);
       if (res.headersSent) return;

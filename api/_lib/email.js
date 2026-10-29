@@ -8,6 +8,7 @@
 
 import nodemailer from 'nodemailer';
 import { kv } from './kv.js';
+import { acquireLock, releaseLock } from './records.js';
 import { esc } from './http.js';
 
 const LOG_KEY = 'bcci:email_log';
@@ -459,14 +460,16 @@ async function deliver({ to, subject, html }) {
  */
 export async function sendEmail({ type, to, data }) {
   try {
-    const build = TEMPLATES[type];
+    const build = Object.hasOwn(TEMPLATES, type) ? TEMPLATES[type] : null;
     if (!build) return { success: false, error: `Unknown email type: ${type}` };
     if (!to) return { success: false, error: 'Recipient required' };
 
     const { subject, html } = build(data || {});
     const result = await deliver({ to, subject, html });
 
-    // Audit trail, capped so it cannot grow without bound.
+    // Audit trail, capped so it cannot grow without bound. The read-modify-
+    // write is serialized so concurrent sends do not drop each other's entry.
+    const lock = await acquireLock('email_log').catch(() => null);
     try {
       const logs = (await kv.get(LOG_KEY)) || [];
       logs.unshift({
@@ -481,6 +484,8 @@ export async function sendEmail({ type, to, data }) {
       await kv.set(LOG_KEY, logs.slice(0, 300));
     } catch (err) {
       console.warn('[Email] audit log write failed:', err.message);
+    } finally {
+      if (lock) await releaseLock('email_log', lock);
     }
 
     if (result.success) console.log(`[Email] ${type} sent to ${to}`);

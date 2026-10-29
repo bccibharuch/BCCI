@@ -87,7 +87,8 @@ async function handler(req, res) {
     };
 
     await putEnquiry(enquiry);
-    trimEnquiries(1000).catch((err) =>
+    // Awaited: a serverless function may be frozen once the response is sent.
+    await trimEnquiries(1000).catch((err) =>
       console.warn('[Enquiries] trim failed:', err.message)
     );
 

@@ -9,6 +9,7 @@ import {
   bearerToken,
   safeEqual,
   rateLimit,
+  refundRateLimit,
   tooManyRequests,
   clientIp,
   str,
@@ -69,6 +70,9 @@ async function handler(req, res) {
   if (!emailOk || !passwordOk) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+
+  // Only failures count toward lockout: a correct password gives the attempt back.
+  await Promise.all([refundRateLimit(`adminlogin:ip:${ip}`), refundRateLimit(`adminlogin:user:${email}`)]);
 
   const token = crypto.randomUUID();
   await withRetry(() =>

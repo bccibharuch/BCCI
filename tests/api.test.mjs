@@ -687,6 +687,27 @@ check('application on a deleted type → 400', r.statusCode === 400 && /valid me
 r = await call(membershipPlans, { method: 'PUT', token: adminToken, body: {} });
 check('unsupported method → 405', r.statusCode === 405, `got ${r.statusCode}`);
 
+
+// ════════════════════════════════════════════════════════════════════
+section('Review fixes: re-apply, stale claims, status typos, renewals, sign-in limits');
+
+// A deliberate 4xx from deeper code reaches the client as itself, not a 500.
+const { withErrorHandling } = await import(`${BCCI}/_lib/http.js`);
+const conflictRoute = withErrorHandling('Test', async () => { throw Object.assign(new Error('Already exists.'), { statusCode: 409 }); });
+r = await call(conflictRoute);
+check('withErrorHandling passes a thrown 409 through', r.statusCode === 409 && r.body?.error === 'Already exists.', JSON.stringify(r.body));
+const crashRoute = withErrorHandling('Test', async () => { throw new Error('db exploded'); });
+r = await call(crashRoute);
+check('an unexpected error is still a generic 500', r.statusCode === 500 && !/exploded/.test(r.body?.error || ''));
+
+// Successful sign-ins do not count toward the lockout.
+const loginEmail = 'admin@bccibharuch.in';
+let lastLogin;
+for (let i = 0; i < 12; i++) {
+  lastLogin = await call(adminAuth, { method: 'POST', ip: '203.0.113.160', body: { username: loginEmail, password: 'correct-horse-battery-staple' } });
+}
+check('twelve successful admin sign-ins in a row are never rate-limited', lastLogin.statusCode === 200, `got ${lastLogin.statusCode}`);
+
 // ── Report ──────────────────────────────────────────────────────────
 process.on("exit",()=>{});
 console.log(results.join('\n'));

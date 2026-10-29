@@ -69,17 +69,28 @@ const MAX_BODY = 5 * 1024 * 1024; // 5MB — multi-document applications run ~2-
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
+    const tooLarge = () => Object.assign(new Error('Payload too large'), { statusCode: 413 });
+    if (Number(req.headers['content-length']) > MAX_BODY) {
+      reject(tooLarge());
+      return;
+    }
     let size = 0;
     const chunks = [];
-    req.on('data', (c) => {
+    const onData = (c) => {
       size += c.length;
       if (size > MAX_BODY) {
-        reject(Object.assign(new Error('Payload too large'), { statusCode: 413 }));
-        req.destroy();
+        // Stop reading but keep the socket: destroying it here would kill the
+        // connection before the 413 below could be written. The 413 path
+        // closes the connection once the response is out.
+        req.off('data', onData);
+        req.pause();
+        chunks.length = 0;
+        reject(tooLarge());
         return;
       }
       chunks.push(c);
-    });
+    };
+    req.on('data', onData);
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
@@ -268,6 +279,8 @@ const server = http.createServer(async (req, res) => {
     return await serveIndex(res);
   } catch (err) {
     if (err.statusCode === 413) {
+      res.setHeader('Connection', 'close');
+      res.on('finish', () => req.destroy());
       return res.status(413).json({ error: 'Request body too large' });
     }
     console.error('[server]', err?.stack || err);
