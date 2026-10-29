@@ -1,30 +1,25 @@
 #!/usr/bin/env node
 /**
- * Standalone HTTP server for the BCCI portal.
+ * Local server for the BCCI portal. Production runs on Vercel.
  *
- * The same api/*.js handlers that Vercel runs as serverless functions are
- * served here by a plain Node server, so the app runs unchanged on a VPS,
- * in Docker, or behind nginx. Nothing in this file is Vercel-specific and it
- * pulls in no dependencies beyond what the API already needs.
+ * Serves the same api/*.js handlers that Vercel runs as serverless functions,
+ * plus the static site, so `npm run dev` and the end-to-end tests exercise
+ * the real routes. It pulls in no dependencies beyond what the API needs.
  *
  *   node server.js                 # port 3000
  *   PORT=8080 node server.js
  *
- * Behind nginx or any TLS terminator, set TRUST_PROXY=1 so client IPs are
- * read from X-Forwarded-For (rate limiting depends on getting this right).
+ * Set TRUST_PROXY=1 only behind a proxy you control: it makes the server
+ * read client IPs from X-Forwarded-For, which rate limiting depends on.
  */
 
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import crypto from 'node:crypto';
-import os from 'node:os';
-import cluster from 'node:cluster';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { applySecurityHeaders, reportConfig } from './api/_lib/security.js';
-import { STORAGE_BACKEND, initStorage } from './api/_lib/records.js';
-import { sweepExpiredKv } from './api/_lib/kv.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -32,10 +27,6 @@ const HOST = process.env.HOST || '0.0.0.0';
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const BEHIND_TLS = process.env.BEHIND_TLS === '1' || TRUST_PROXY;
 
-// Horizontal scale: fork one worker per CPU (override with WEB_CONCURRENCY).
-// Off unless CLUSTER=1 so the test suite and `node server.js` stay single-process.
-const CLUSTER = process.env.CLUSTER === '1';
-const WORKERS = Math.max(1, Number(process.env.WEB_CONCURRENCY) || os.cpus().length);
 // A handler that hangs must not pin a worker forever.
 const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 15000);
 // Structured one-line-per-request logs (requestId + duration) for p95/p99 work.
@@ -288,48 +279,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Keep-alive tuning: behind Caddy, reused connections avoid a TCP+handshake per
-// request. headersTimeout must stay above keepAliveTimeout.
-server.keepAliveTimeout = Number(process.env.KEEP_ALIVE_TIMEOUT_MS || 65000);
-server.headersTimeout = server.keepAliveTimeout + 1000;
-
 // ── Boot ───────────────────────────────────────────────────────────
 
 async function boot() {
   console.log('\nBCCI Bharuch portal');
   console.log('───────────────────');
-  console.log(`  storage backend: ${STORAGE_BACKEND}`);
-  if (cluster.isWorker) console.log(`  worker ${cluster.worker.id} · pid ${process.pid}`);
   const configOk = reportConfig();
   if (!configOk && process.env.ALLOW_INCOMPLETE_CONFIG !== '1') {
     console.error('\nRefusing to start with missing required settings.');
     console.error('Fix the errors above, or set ALLOW_INCOMPLETE_CONFIG=1 to start anyway.\n');
     process.exit(1);
-  }
-
-  if (STORAGE_BACKEND === 'postgres') {
-    try {
-      await initStorage();
-      console.log('  [storage] postgres schema ready');
-      // OTP codes, sessions and rate-limit counters expire by time; Redis
-      // drops them itself, Postgres needs them swept. Every worker sweeping is
-      // harmless (the delete is idempotent) and survives a worker restart.
-      const sweep = () => sweepExpiredKv().catch((err) => console.error('  [storage] expired-key sweep failed:', err?.message || err));
-      setInterval(sweep, 10 * 60 * 1000).unref();
-      sweep();
-    } catch (err) {
-      console.error('  [storage] ERROR: could not reach Postgres:', err?.message || err);
-      if (process.env.ALLOW_INCOMPLETE_CONFIG !== '1') process.exit(1);
-    }
-  }
-
-  if (!TRUST_PROXY) {
-    console.warn(
-      '  [config] warning: TRUST_PROXY is not set. If this runs behind nginx,\n' +
-      '                    Caddy or any reverse proxy, set TRUST_PROXY=1 — otherwise\n' +
-      '                    every visitor looks like 127.0.0.1 and they all share one\n' +
-      '                    rate-limit bucket, locking each other out.'
-    );
   }
 
   server.listen(PORT, HOST, () => {
@@ -346,20 +305,6 @@ async function boot() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-// The cluster primary forks a worker per CPU and replaces any that die; each
-// worker runs the full boot path and shares the listening socket, so the app
-// scales across cores. CLUSTER=0 (default) keeps a single process — used by the
-// test suite and local runs.
-if (CLUSTER && cluster.isPrimary && WORKERS > 1) {
-  console.log('\nBCCI Bharuch portal — cluster primary');
-  console.log(`  forking ${WORKERS} workers (${os.cpus().length} CPUs)`);
-  for (let i = 0; i < WORKERS; i += 1) cluster.fork();
-  cluster.on('exit', (worker, code, signal) => {
-    console.error(`  [cluster] worker ${worker.process.pid} exited (${signal || code}); replacing`);
-    cluster.fork();
-  });
-} else {
-  await boot();
-}
+await boot();
 
 export default server;

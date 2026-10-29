@@ -2,8 +2,7 @@
 // Runs every suite in its own process and prints one line per suite.
 //
 // A serial `&&` chain stopped at the first failure and hid every later
-// result. This always runs the whole list, and shows SKIP for a Postgres
-// path that found no database instead of counting it as a pass.
+// result. This always runs the whole list.
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -21,10 +20,7 @@ const SUITES = [
   { name: 'applicant-auth', file: 'tests/applicant-auth.test.mjs' },
   { name: 'events-redis', file: 'tests/events-redis.test.mjs' },
   { name: 'events-api', file: 'tests/events-api.test.mjs' },
-  { name: 'postgres', file: 'tests/postgres.test.mjs' },
-  { name: 'e2e (postgres)', file: 'tests/e2e.test.mjs', env: { E2E_BACKEND: 'postgres' } },
   { name: 'board', file: 'tests/board.test.mjs' },
-  { name: 'board (postgres)', file: 'tests/board.test.mjs', env: { BOARD_BACKEND: 'postgres' } },
 ];
 
 /** "168 passed", or "" when the suite reports no tally we recognise. */
@@ -57,9 +53,6 @@ for (const suite of SUITES) {
   if (child.error || child.status !== 0) {
     status = 'FAIL';
     detail = `exit ${child.status ?? 'error'}`;
-  } else if (/^\s*SKIP\b/m.test(output)) {
-    status = 'SKIP';
-    detail = 'no database';
   }
 
   results.push({ name: suite.name, status, output });
@@ -73,9 +66,8 @@ for (const result of results) {
 }
 
 const passed = results.filter((r) => r.status === 'PASS').length;
-const skipped = results.filter((r) => r.status === 'SKIP').length;
 const failed = results.filter((r) => r.status === 'FAIL').length;
 
 console.log('');
-console.log(`${results.length} suites: ${passed} passed, ${skipped} skipped, ${failed} failed`);
+console.log(`${results.length} suites: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

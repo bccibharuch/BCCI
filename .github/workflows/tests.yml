@@ -17,26 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 24 is the "engines" target (Vercel, Docker); 22 is the oldest
+        # 24 is the "engines" target (Vercel); 22 is the oldest
         # maintained LTS that nodemailer 10 and --env-file support.
         node-version: ['22', '24']
-
-    # Runs tests/postgres.test.mjs, and the full e2e flow in Postgres-only
-    # (VPS) mode, against a real database instead of skipping them.
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: bcci
-          POSTGRES_PASSWORD: testpw
-          POSTGRES_DB: bcci
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U bcci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - uses: actions/checkout@v7
@@ -52,9 +35,12 @@ jobs:
       - name: Syntax check
         run: npm run check
 
+      # Fails the build on a known high or critical vulnerability in a
+      # production dependency.
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       # The suites use a mock Upstash and a local SMTP server, so no
       # credentials and no network access are needed.
       - name: Run tests
         run: npm test
-        env:
-          TEST_DATABASE_URL: postgresql://bcci:testpw@localhost:5433/bcci

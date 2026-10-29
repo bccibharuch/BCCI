@@ -7,7 +7,7 @@
  *   node --env-file=.env.local scripts/import-members.mjs --data ... --docs ... --apply
  *
  * Dry run touches nothing and needs no credentials. --apply writes through the
- * same storage layer the portal uses (Redis or Postgres per STORAGE_BACKEND),
+ * same storage layer the portal uses (Upstash Redis),
  * so indexes and summaries stay consistent. Members whose email already has an
  * application are skipped, which makes re-running safe.
  */
@@ -195,9 +195,7 @@ async function main() {
     return;
   }
 
-  const { initStorage, getApplicationByEmail, putApplication, STORAGE_BACKEND } = await import('../api/_lib/records.js');
-  console.log(`\nStorage backend: ${STORAGE_BACKEND}`);
-  await initStorage();
+  const { getApplicationByEmail, putApplication } = await import('../api/_lib/records.js');
 
   const counts = { imported: 0, skipped: 0, failed: 0 };
   for (const b of built) {

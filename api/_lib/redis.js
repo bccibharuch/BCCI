@@ -261,7 +261,7 @@ export async function putApplication(app) {
  * Read-modify-write a single application. Because each record lives under its
  * own key, this only races with concurrent edits to the *same* application —
  * and a per-id lock serializes those, so two admins acting at once can't
- * clobber each other (Postgres does the same with SELECT … FOR UPDATE).
+ * clobber each other.
  */
 export async function updateApplication(id, mutate) {
   return withRetry(async () => {

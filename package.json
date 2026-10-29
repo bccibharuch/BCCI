@@ -18,22 +18,17 @@
     "test:client": "node tests/client.test.mjs",
     "test:auth": "node tests/applicant-auth.test.mjs",
     "test:events": "node tests/events-redis.test.mjs && node tests/events-api.test.mjs",
-    "test:postgres": "node tests/postgres.test.mjs",
     "test:browser": "node scripts/site-browser-test.mjs",
     "check": "for f in api/*.js api/_lib/*.js js/*.js; do node --check \"$f\" || exit 1; done && echo 'syntax OK'",
     "typecheck": "echo 'No TypeScript configured — vanilla JS project'",
     "test:purge": "node tests/purge.test.mjs",
     "purge:data": "node --env-file=.env.local scripts/purge-data.mjs",
-    "migrate:pg": "node --env-file=.env.local scripts/migrate-redis-to-postgres.mjs",
-    "smoke:pg": "node scripts/smoke-postgres.mjs",
     "graph:repair": "node scripts/graphify-repair.mjs && graphify export html",
-    "test:e2e:pg": "E2E_BACKEND=postgres node tests/e2e.test.mjs",
-    "test:board": "node tests/board.test.mjs && BOARD_BACKEND=postgres node tests/board.test.mjs"
+    "test:board": "node tests/board.test.mjs"
   },
   "dependencies": {
     "@upstash/redis": "^1.39.0",
-    "nodemailer": "^10.2.1",
-    "pg": "^8.23.1"
+    "nodemailer": "^10.2.1"
   },
   "engines": {
     "node": "24.x"

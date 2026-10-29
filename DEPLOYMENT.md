@@ -1,13 +1,8 @@
 # Deploying the BCCI portal
 
-The app runs in two places without code changes:
+Production runs on **Vercel**: `api/*.js` are serverless functions, `vercel.json` supplies the security headers and the SPA rewrite, and Upstash Redis holds the data. Pushing to `main` deploys.
 
-- **Vercel** — `api/*.js` are serverless functions; `vercel.json` supplies headers and the SPA rewrite.
-- **Any Node host (VPS, Docker, Render, Railway)** — `server.js` serves the same handlers plus the static site and applies the same security headers in code.
-
-Nothing host-specific lives in the application logic. Moving from Vercel to a VPS is: set the same environment variables, run `node server.js`, put TLS in front.
-
-**Recommended VPS setup:** one server running Caddy, the app and Postgres via `docker compose`, with no Upstash at all. Setup, backups, deploys, alerts and recovery are in [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md).
+`server.js` serves the same handlers and the static site for local development (`npm run dev`) and the end-to-end tests.
 
 ---
 
@@ -19,8 +14,8 @@ Copy `.env.example` to `.env.local` and fill it in. Never commit it — `.gitign
 
 | Variable | What it does |
 |---|---|
-| `UPSTASH_REDIS_REST_URL` | Upstash database endpoint. Serverless only: not needed with `STORAGE_BACKEND=postgres`. |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash token. Serverless only. |
+| `UPSTASH_REDIS_REST_URL` | Upstash database endpoint |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash token |
 | `ADMIN_EMAILS` | Comma-separated addresses allowed to sign in as admin. Also where new-application alerts go. |
 | `ADMIN_PASSWORD` | Admin password. Use ≥ 20 random characters: `openssl rand -base64 24` |
 | `SMTP_USER` / `SMTP_PASS` | Mailbox credentials. For Gmail this must be an [App Password](https://myaccount.google.com/apppasswords), not the account password. |
@@ -55,14 +50,12 @@ npm run mail:test                       # resolve config, connect, authenticate
 npm run mail:test -- you@example.com    # also send one of each template
 ```
 
-### VPS-only
+### Local server only
 
 | Variable | Notes |
 |---|---|
 | `PORT` | Default `3000` |
 | `HOST` | Default `0.0.0.0` |
-| `TRUST_PROXY` | **Set to `1` behind nginx/Caddy.** Otherwise every visitor is seen as `127.0.0.1` and they all share one rate-limit bucket. |
-| `BEHIND_TLS` | `1` to send HSTS. Implied by `TRUST_PROXY`. |
 
 ---
 
@@ -79,120 +72,6 @@ Verify a deploy with `curl https://<your-domain>/api/health`.
 
 ---
 
-## VPS
-
-```bash
-git clone https://github.com/bccibharuch/BCCI.git
-cd BCCI
-npm install --omit=dev
-cp .env.example .env.local     # then edit it
-
-node --env-file=.env.local server.js
-```
-
-Node 22+ (the app targets Node 24) supports `--env-file` natively; no dotenv needed.
-
-### systemd
-
-`/etc/systemd/system/bcci.service`:
-
-```ini
-[Unit]
-Description=BCCI Bharuch portal
-After=network.target
-
-[Service]
-Type=simple
-User=bcci
-WorkingDirectory=/srv/bcci
-Environment=NODE_ENV=production
-Environment=TRUST_PROXY=1
-EnvironmentFile=/srv/bcci/.env.local
-ExecStart=/usr/bin/node server.js
-Restart=always
-RestartSec=5
-
-# Hardening
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/srv/bcci
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now bcci
-sudo systemctl status bcci
-```
-
-Keep `.env.local` at mode `600`, owned by the service user:
-
-```bash
-sudo chown bcci:bcci /srv/bcci/.env.local
-sudo chmod 600 /srv/bcci/.env.local
-```
-
-### nginx
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name bccibharuch.in;
-
-    ssl_certificate     /etc/letsencrypt/live/bccibharuch.in/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/bccibharuch.in/privkey.pem;
-
-    client_max_body_size 5m;   # multi-document applications run ~2-3MB
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-server {
-    listen 80;
-    server_name bccibharuch.in;
-    return 301 https://$host$request_uri;
-}
-```
-
-The app sets its own security headers, so don't duplicate them here — two `Content-Security-Policy` headers is not the same as one.
-
-### Docker (Redis records — serverless-style)
-
-```bash
-docker build -t bcci-portal .
-docker run -d --name bcci -p 3000:3000 --env-file .env.local \
-  -e TRUST_PROXY=1 --restart unless-stopped bcci-portal
-```
-
-### Docker Compose (everything in Postgres — recommended for the VPS)
-
-Caddy, the app and Postgres. Postgres holds the records *and* the OTP codes,
-sessions, rate limits and applicant accounts (a `kv` table), so the server
-needs no Upstash. Use `deploy/setup-vps.sh` and follow
-[`deploy/RUNBOOK.md`](deploy/RUNBOOK.md); by hand it is:
-
-```bash
-cp deploy/env.example .env   # fill in SITE_DOMAIN, admin, SMTP, POSTGRES_PASSWORD
-docker compose up -d --build
-curl http://localhost:3000/api/health        # expect {"status":"ok"}
-```
-
-`STORAGE_BACKEND=postgres` and `DATABASE_URL` are set for the app container
-by compose. Data survives restarts in the `pgdata` volume. To bring the data
-over from Upstash, see RUNBOOK section 2.
-
----
-
 ## After any deploy
 
 ```bash
@@ -206,15 +85,7 @@ The second one matters. If it returns application records, the build is old — 
 
 ## Data
 
-Two backends, selected by `STORAGE_BACKEND` (`redis` default, `postgres` on the VPS):
-
-| Backend | Holds | Where |
-|---|---|---|
-| Redis (`STORAGE_BACKEND=redis`) | everything: records, accounts, OTP codes, sessions, rate limits, email log | Upstash keys below |
-| Postgres (`STORAGE_BACKEND=postgres`) | records | `applications`, `enquiries`, `events`, `event_attendees`, `membership_plans` tables |
-| Postgres (`STORAGE_BACKEND=postgres`) | accounts, OTP codes, sessions, rate limits, email log | `kv` table: same keys as Redis, with an `expires_at` column; the server sweeps expired rows every 10 minutes |
-
-Redis record layout (serverless mode):
+Everything (records, accounts, OTP codes, sessions, rate limits, the email log) lives in Upstash Redis:
 
 | Key | Contents |
 |---|---|
@@ -233,9 +104,9 @@ At 20–30 members a month, expect well under 1 MB of data in the first year and
 
 ### Backups
 
-Postgres (VPS): `deploy/backup.sh` runs every 6 hours from a systemd timer, checks each dump can be read back, keeps 14 days, and can copy off-site. Restore with `deploy/restore.sh`. Details: RUNBOOK section 3.
+Export the data as an admin:
 
-Redis mode (either host), as an admin:
+```bash
 # Applications and enquiries, as an admin
 TOKEN=$(curl -s -X POST https://<domain>/api/admin-auth \
   -H 'Content-Type: application/json' \

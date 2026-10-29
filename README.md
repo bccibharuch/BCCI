@@ -2,7 +2,7 @@
 
 The membership system for the **Bharuch Chamber of Commerce & Industry**: a public site, an application flow gated by email verification, a secretariat review portal, and digital membership cards with a scannable QR.
 
-Runs as serverless functions on Vercel, or as a single Node process on any VPS. Same code either way.
+Runs as serverless functions on Vercel, with Upstash Redis for storage.
 
 ---
 
@@ -24,11 +24,11 @@ A digital membership card with a QR code that encodes the member ID for verifica
 | Layer | Choice |
 |---|---|
 | Frontend | Vanilla JS, no framework, no build step |
-| API | Serverless functions in `api/` (Vercel), or `server.js` on any Node host |
-| Storage | Upstash Redis on Vercel; on a VPS, one Postgres database for everything (see [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md)) |
+| API | Serverless functions in `api/` (Vercel); `server.js` serves the same handlers locally |
+| Storage | Upstash Redis |
 | Email | SMTP via Nodemailer — OTP, confirmations, approvals, declines |
 
-Three runtime dependencies: `@upstash/redis`, `nodemailer`, and `pg` — the Postgres driver is only imported when `STORAGE_BACKEND=postgres`, so a Redis deployment never loads it.
+Two runtime dependencies: `@upstash/redis` and `nodemailer`.
 
 ---
 
@@ -59,11 +59,7 @@ Boots the whole thing against an in-memory Redis and a local SMTP catcher — no
 
 Everything is set through environment variables; see `.env.example` for the annotated list and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the full reference.
 
-**Required in redis mode:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
-
-**Required in postgres mode:** `DATABASE_URL` (Upstash is not used at all)
-
-**Always required:** `ADMIN_EMAILS`, `ADMIN_PASSWORD`, `SMTP_USER`, `SMTP_PASS`
+**Required:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `ADMIN_EMAILS`, `ADMIN_PASSWORD`, `SMTP_USER`, `SMTP_PASS`
 
 **Worth setting:** `ALLOWED_ORIGIN`, `EMAIL_FROM`, `INTERNAL_API_SECRET`
 
@@ -121,17 +117,7 @@ Sessions are opaque tokens held in the server-side store, not signed blobs the b
 
 Records are stored one per key rather than as a single JSON document, so two applicants submitting at the same moment cannot overwrite each other. An older single-blob layout migrates automatically on first read; the original is left untouched as a backup.
 
-### On a VPS: Postgres
-
-With `STORAGE_BACKEND=postgres` everything moves into one Postgres database and no Upstash account is needed. Durable records become tables; the short-lived state Redis would expire moves into a `kv` table with an `expires_at` column.
-
-| Table | Holds |
-|---|---|
-| `applications`, `enquiries`, `events`, `event_attendees`, `membership_plans` | durable records, with the same shapes as the Redis keys above |
-| `kv` | OTP codes, sessions, rate-limit counters, applicant accounts, the email log |
-| `locks` | short-lived locks (application submission, email audit log) |
-
-`api/_lib/kv.js` implements the Redis command subset the routes use — `get`, `mget`, `set` with `ex`/`nx`, `del`, `incr`, `decr`, `expire`, `ttl` — in SQL, so no route can tell which backend answered. Expired `kv` rows read as absent and are swept on a timer by the long-running server. Existing Redis data is brought across with `npm run migrate:pg`.
+To delete membership data (destructive, not reversible):
 
 ```bash
 npm run purge:data              # dry run — shows what would go
@@ -161,21 +147,13 @@ npm test
 | `events-api` | event CRUD, registration, check-in, payment confirmation |
 | `board` | board portal sign-in, attendance, register export |
 
-Three paths also run against Postgres: `postgres.test.mjs`, and the `e2e` and `board` suites a second time with `E2E_BACKEND=postgres` / `BOARD_BACKEND=postgres`. They print `SKIP` and exit 0 when nothing answers on `localhost:5433`, so a green run does not by itself mean Postgres was tested. With a database there they add 250 assertions (1,139 in all). A disposable one:
-
-```bash
-docker run -d --name bcci-pg-test -e POSTGRES_USER=bcci -e POSTGRES_PASSWORD=testpw -e POSTGRES_DB=bcci -p 5433:5432 postgres:17-alpine
-```
-
-The Postgres suites `TRUNCATE` their tables on start, so never point `TEST_DATABASE_URL` at a database holding real data.
-
 ---
 
 ## Deploying
 
-Both hosts are covered in [`DEPLOYMENT.md`](DEPLOYMENT.md) — environment variables, a systemd unit, an nginx config, Docker, backups and the Redis key layout.
+Production runs on Vercel and deploys automatically from `main`. [`DEPLOYMENT.md`](DEPLOYMENT.md) covers the environment variables, backups and the Redis key layout.
 
-Security headers, the CSP and configuration validation live in `api/_lib/security.js` rather than in `vercel.json`, so they travel with the app to whatever host it lands on.
+Security headers and the CSP are set in `vercel.json` for production and in `api/_lib/security.js` for the local server, which also validates the configuration.
 
 ```bash
 curl https://<domain>/api/health          # expect {"status":"ok"}
@@ -193,5 +171,5 @@ js/             app.js (UI and routing), store.js (API client)
 css/            styles.css, membership-card.css
 scripts/        dev-sandbox, mail:test, purge:data, run-tests
 tests/          ten suites, plus mock Redis and mock SMTP
-server.js       standalone Node server for non-Vercel hosts
+server.js       local server: the same handlers plus the static site
 ```

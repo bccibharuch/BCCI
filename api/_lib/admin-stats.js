@@ -23,7 +23,7 @@ async function handler(req, res) {
   if (!(await requireAdmin(req, res))) return;
 
   // Counts cover every application (no 500-row page cap) and never load
-  // the document scans; Postgres computes them with a GROUP BY.
+  // the document scans.
   const [appStats, totalEnquiries] = await Promise.all([getApplicationStats({ recent: 5 }), countEnquiries()]);
 
   const stats = {

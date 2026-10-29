@@ -1,8 +1,7 @@
 // api/_lib/board.js
 // Board members, board meetings and meeting attendance.
 //
-// Built on kv (Upstash on Vercel, Postgres on the VPS), so both deployments
-// share one implementation. The data is small: a few dozen profiles and a
+// Built on kv (Upstash Redis). The data is small: a few dozen profiles and a
 // couple of meetings a month.
 //
 // Every record has its own key, and no read-modify-write is shared between

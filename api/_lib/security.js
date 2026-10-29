@@ -1,9 +1,8 @@
 // api/_lib/security.js
 // Security headers applied in application code rather than host config.
 //
-// vercel.json can express these too, but that file means nothing on a VPS,
-// behind nginx, or in Docker. Setting them here means the protections travel
-// with the app to whatever host it lands on.
+// vercel.json sets them for production; setting them here as well means the
+// local server (server.js) and the tests see exactly the same protections.
 
 /**
  * Content-Security-Policy for the portal.
@@ -54,14 +53,9 @@ export function applySecurityHeaders(res, { https = false } = {}) {
 // ── Startup configuration check ────────────────────────────────────
 
 const REQUIRED = [
+  ['UPSTASH_REDIS_REST_URL', 'Redis — records, OTP codes, sessions and rate limits cannot be saved'],
+  ['UPSTASH_REDIS_REST_TOKEN', 'Redis — records, OTP codes, sessions and rate limits cannot be saved'],
   ['ADMIN_PASSWORD', 'admin sign-in is disabled'],
-];
-
-// Serverless keeps OTP codes, sessions and rate limits in Upstash; with
-// STORAGE_BACKEND=postgres they live in the records database instead.
-const REQUIRED_REDIS = [
-  ['UPSTASH_REDIS_REST_URL', 'Redis — OTP codes, sessions and rate limits cannot be saved'],
-  ['UPSTASH_REDIS_REST_TOKEN', 'Redis — OTP codes, sessions and rate limits cannot be saved'],
 ];
 
 const RECOMMENDED = [
@@ -80,12 +74,8 @@ export function checkConfig(env = process.env) {
   const errors = [];
   const warnings = [];
 
-  const pgMode = (env.STORAGE_BACKEND || 'redis').trim().toLowerCase() === 'postgres';
-  for (const [key, why] of pgMode ? REQUIRED : [...REQUIRED_REDIS, ...REQUIRED]) {
+  for (const [key, why] of REQUIRED) {
     if (!env[key]) errors.push(`${key} is not set — ${why}.`);
-  }
-  if (pgMode && !env.DATABASE_URL) {
-    errors.push('DATABASE_URL is not set — STORAGE_BACKEND=postgres has nowhere to save records, sessions or OTP codes.');
   }
   for (const [key, why] of RECOMMENDED) {
     const fallback = key === 'SMTP_USER' ? env.GMAIL_USER

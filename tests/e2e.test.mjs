@@ -1,50 +1,16 @@
 // Full-stack exercise: the real server.js, the real handlers, a mock Upstash
 // and a real SMTP conversation. This is the "does it actually work" test.
-//
-//   E2E_BACKEND=postgres node tests/e2e.test.mjs
-// runs the same flow the way the VPS does: one Postgres database holding
-// records, sessions and OTP codes, and no Upstash configured at all. Skips
-// (exit 0) when no Postgres is reachable at TEST_DATABASE_URL.
 
 import { startMockRedis } from './mock-redis.mjs';
 import { startMockSmtp } from './smtp-server.mjs';
 
-const PG_MODE = process.env.E2E_BACKEND === 'postgres';
-let redis = null;
-let pgLib = null;
-
-if (PG_MODE) {
-  const url = process.env.TEST_DATABASE_URL || 'postgresql://bcci:testpw@localhost:5433/bcci';
-  const pg = (await import('pg')).default;
-  const probe = new pg.Pool({ connectionString: url, connectionTimeoutMillis: 3000 });
-  try {
-    await probe.query('SELECT 1');
-  } catch {
-    console.log('SKIP  e2e on postgres — no database reachable at ' + url.replace(/:[^:@/]+@/, ':***@'));
-    process.exit(0);
-  } finally {
-    await probe.end().catch(() => {});
-  }
-  process.env.STORAGE_BACKEND = 'postgres';
-  process.env.DATABASE_URL = url;
-  delete process.env.UPSTASH_REDIS_REST_URL;
-  delete process.env.UPSTASH_REDIS_REST_TOKEN;
-  pgLib = await import('../api/_lib/postgres.js');
-  await pgLib.initSchema();
-  await pgLib.query('TRUNCATE event_attendees, events, enquiries, applications, membership_plans, locks, kv');
-} else {
-  redis = await startMockRedis();
-  process.env.UPSTASH_REDIS_REST_URL = redis.url;
-  process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
-}
+const redis = await startMockRedis();
+process.env.UPSTASH_REDIS_REST_URL = redis.url;
+process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
 const smtp = await startMockSmtp();
 
-/** A value the server stored (an OTP code), from whichever backend holds it. */
+/** A value the server stored (an OTP code), read from the mock Upstash. */
 async function storedValue(key) {
-  if (PG_MODE) {
-    const r = await pgLib.query('SELECT value FROM kv WHERE key = $1', [key]);
-    return r.rows.length ? String(r.rows[0].value) : null;
-  }
   const raw = redis.store.get(key);
   return raw === undefined ? null : String(JSON.parse(raw));
 }
@@ -138,16 +104,11 @@ ck('CSP allows Google Fonts', (r.headers.get('content-security-policy') || '').i
 sec('Health check');
 r = await req('/api/health');
 ck('/api/health returns JSON, not the SPA', r.json !== null, r.text.slice(0, 60));
-if (PG_MODE) {
-  ck('reports postgres reachable', r.json?.checks?.postgres?.reachable === true, JSON.stringify(r.json?.checks?.postgres));
-  ck('does not depend on redis at all', r.json?.checks?.redis === undefined, JSON.stringify(r.json?.checks?.redis));
-} else {
-  ck('reports redis reachable', r.json?.checks?.redis?.reachable === true, JSON.stringify(r.json?.checks?.redis));
-}
+ck('reports redis reachable', r.json?.checks?.redis?.reachable === true, JSON.stringify(r.json?.checks?.redis));
 ck('reports smtp configured', r.json?.checks?.smtp?.configured === true);
 ck('overall status ok', r.json?.status === 'ok', JSON.stringify(r.json?.status));
 
-if (!PG_MODE) {
+{
   // The response is public: a failing dependency must not leak its error text,
   // which can name an internal host and port.
   const leak = (cmd) => {
@@ -347,12 +308,10 @@ sec('Email subjects carry no control characters');
   ck('no injected Bcc header or extra recipient', !/^bcc:/im.test(mail?.raw || '') && mail?.to?.length === 1 && mail.to[0].includes('subject-check@example.com'), JSON.stringify(mail?.to));
 }
 
-console.log(`\n  backend: ${PG_MODE ? 'postgres (no Upstash)' : 'upstash mock'}`);
 console.log(`\n${'═'.repeat(54)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(54)}`);
 console.log(`  ${smtp.received.length} emails delivered over real SMTP during this run\n`);
 
 server.close();
 smtp.server.close();
-redis?.server.close();
-if (pgLib) await pgLib.query('TRUNCATE event_attendees, events, enquiries, applications, membership_plans, locks, kv');
+redis.server.close();
 process.exit(fail ? 1 : 0);

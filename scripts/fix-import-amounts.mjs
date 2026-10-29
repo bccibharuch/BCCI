@@ -37,9 +37,8 @@ async function main() {
     if (f.paid !== null && !(Number.isInteger(f.paid) && f.paid > 0)) fail(`Invalid amount ${f.paid} for ${f.company}`);
   }
 
-  const { initStorage, getApplication, updateApplication, STORAGE_BACKEND } = await import('../api/_lib/records.js');
-  console.log(`${values.apply ? 'APPLY: writing changes' : 'DRY RUN: nothing will be written'} (storage: ${STORAGE_BACKEND})\n`);
-  await initStorage();
+  const { getApplication, updateApplication } = await import('../api/_lib/records.js');
+  console.log(`${values.apply ? 'APPLY: writing changes' : 'DRY RUN: nothing will be written'}\n`);
 
   const today = new Date().toISOString().slice(0, 10);
   const counts = { changed: 0, unchanged: 0, skipped: 0, failed: 0 };

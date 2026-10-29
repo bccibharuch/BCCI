@@ -2,40 +2,15 @@
 // secretary's overrides and the Excel register, through the real route.
 //
 //   node tests/board.test.mjs                          # mock Upstash
-//   BOARD_BACKEND=postgres node tests/board.test.mjs   # Postgres (VPS mode)
-// The Postgres run skips (exit 0) when no database is reachable.
 
 import crypto from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { startMockRedis } from './mock-redis.mjs';
 import { startMockSmtp } from './smtp-server.mjs';
 
-const PG_MODE = process.env.BOARD_BACKEND === 'postgres';
-let redis = null;
-let pgLib = null;
-
-if (PG_MODE) {
-  const url = process.env.TEST_DATABASE_URL || 'postgresql://bcci:testpw@localhost:5433/bcci';
-  const pg = (await import('pg')).default;
-  const probe = new pg.Pool({ connectionString: url, connectionTimeoutMillis: 3000 });
-  try {
-    await probe.query('SELECT 1');
-  } catch {
-    console.log('SKIP  board tests on postgres — no database reachable at ' + url.replace(/:[^:@/]+@/, ':***@'));
-    process.exit(0);
-  } finally {
-    await probe.end().catch(() => {});
-  }
-  process.env.STORAGE_BACKEND = 'postgres';
-  process.env.DATABASE_URL = url;
-  pgLib = await import('../api/_lib/postgres.js');
-  await pgLib.initSchema();
-  await pgLib.query('TRUNCATE kv');
-} else {
-  redis = await startMockRedis();
-  process.env.UPSTASH_REDIS_REST_URL = redis.url;
-  process.env.UPSTASH_REDIS_REST_TOKEN = 't';
-}
+const redis = await startMockRedis();
+process.env.UPSTASH_REDIS_REST_URL = redis.url;
+process.env.UPSTASH_REDIS_REST_TOKEN = 't';
 
 const smtp = await startMockSmtp();
 Object.assign(process.env, {
@@ -109,7 +84,7 @@ function unzipEntry(buf, name) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-sec(`Board profiles (${PG_MODE ? 'postgres' : 'upstash mock'})`);
+sec('Board profiles');
 
 let r = await call('members', { method: 'GET' });
 ck('member list needs the superadmin', r.status === 401);
@@ -237,27 +212,16 @@ ck('an old session issued 100 days ago is refused', u.res.status === 401 && u.tt
   const t = crypto.randomBytes(32).toString('hex');
   const key = KEYS.boardSession(t);
   await kv.set(key, { ...ASHA, issuedAt: Date.now() - 20 * DAY_S * 1000 }, { ex: 10 * DAY_S });
-  // Upstash's client is a Proxy, so on the mock the delete goes in through a
-  // command hook; the Postgres kv is a plain object and can be wrapped.
-  let restore;
-  if (redis) {
-    const hook = (cmd) => {
-      if (String(cmd[0]).toUpperCase() === 'EXPIRE' && cmd[1] === key) redis.store.delete(key);
-    };
-    redis.beforeCommand.push(hook);
-    restore = () => redis.beforeCommand.splice(redis.beforeCommand.indexOf(hook), 1);
-  } else {
-    const realExpire = kv.expire;
-    kv.expire = async (k, sec) => {
-      if (k === key) await kv.del(key);
-      return realExpire.call(kv, k, sec);
-    };
-    restore = () => { kv.expire = realExpire; };
-  }
+  // Upstash's client is a Proxy, so the delete goes in through the mock's
+  // command hook rather than by wrapping kv.expire.
+  const hook = (cmd) => {
+    if (String(cmd[0]).toUpperCase() === 'EXPIRE' && cmd[1] === key) redis.store.delete(key);
+  };
+  redis.beforeCommand.push(hook);
   try {
     r = await call('me', { method: 'GET', token: t });
   } finally {
-    restore();
+    redis.beforeCommand.splice(redis.beforeCommand.indexOf(hook), 1);
   }
   ck('a session signed out mid-renewal is refused, not reported as renewed',
     r.status === 401 && r.headers['x-session-expires-in'] === undefined && (await kv.get(key)) === null, `status ${r.status}`);
@@ -420,9 +384,7 @@ r = await call('sign-out', { token: ashaToken });
 r = await call('me', { method: 'GET', token: ashaToken });
 ck('signing out ends the session', r.status === 401);
 
-console.log(`\n  backend: ${PG_MODE ? 'postgres' : 'upstash mock'}`);
 console.log(`${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 smtp.server.close();
-redis?.server.close();
-if (pgLib) await pgLib.query('TRUNCATE kv');
+redis.server.close();
 process.exit(fail ? 1 : 0);

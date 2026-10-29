@@ -430,7 +430,7 @@ async function handler(req, res) {
     if (!date) {
       return res.status(400).json({ success: false, error: 'Event date is required.' });
     }
-    // Stored as YYYY-MM-DD only: Redis and Postgres both sort on this string.
+    // Stored as YYYY-MM-DD only, so events sort correctly on this string.
     const [ey, em, ed] = date.split('-').map(Number);
     const parsedDate = new Date(Date.UTC(ey, em - 1, ed));
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || parsedDate.getUTCFullYear() !== ey || parsedDate.getUTCMonth() !== em - 1 || parsedDate.getUTCDate() !== ed) {

@@ -1,7 +1,6 @@
 // api/_lib/keys.js
-// Key names and the retry helper shared by both storage backends. Kept apart
-// from redis.js so the Postgres build never has to construct an Upstash
-// client just to name a session key.
+// Key names and the storage retry helper. Kept apart from redis.js so code
+// that only needs a key name does not construct an Upstash client.
 
 // ── Key layout ─────────────────────────────────────────────────────
 export const KEYS = {
@@ -43,8 +42,7 @@ export const KEYS = {
 };
 
 // A storage call that hangs must fail fast: without a deadline, one slow
-// Upstash/Postgres hop holds the request (and its pool connection) for the
-// client's full patience. Retries then stack on top of it.
+// Upstash hop holds the request for the client's full patience. Retries then stack on top of it.
 const STORAGE_TIMEOUT_MS = Number(process.env.STORAGE_TIMEOUT_MS || 8000);
 
 function withTimeout(run, ms) {
@@ -63,8 +61,8 @@ function withTimeout(run, ms) {
 }
 
 /**
- * Retry a storage operation a couple of times before giving up. Upstash and
- * Postgres are network hops; a single transient failure should not surface
+ * Retry a storage operation a couple of times before giving up. Upstash is
+ * a network hop; a single transient failure should not surface
  * as a 500 to an applicant who is halfway through a form. Each attempt is
  * bounded by STORAGE_TIMEOUT_MS so a hung backend fails fast instead of
  * holding the request open. A deliberate 4xx refusal (a busy lock, a

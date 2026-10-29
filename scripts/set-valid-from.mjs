@@ -14,9 +14,8 @@
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({ options: { apply: { type: 'boolean', default: false } } });
-const { initStorage, listApplicationSummaries, updateApplication, STORAGE_BACKEND } = await import('../api/_lib/records.js');
-console.log(`${values.apply ? 'APPLY: writing changes' : 'DRY RUN: nothing will be written'} (storage: ${STORAGE_BACKEND})\n`);
-await initStorage();
+const { listApplicationSummaries, updateApplication } = await import('../api/_lib/records.js');
+console.log(`${values.apply ? 'APPLY: writing changes' : 'DRY RUN: nothing will be written'}\n`);
 
 const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '-');
 const expiry = (from, years) => {
