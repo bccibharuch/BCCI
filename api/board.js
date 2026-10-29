@@ -54,22 +54,67 @@ import { buildRegister } from './_lib/board-register.js';
 
 const OTP_TTL_SECONDS = 600;
 const OTP_MAX_TRIES = 5;
-const SESSION_TTL_SECONDS = 180 * 24 * 3600;
+// A session lapses after 30 idle days and renews itself on use, but never
+// outlives 90 days from sign-in, so a stolen token cannot be kept alive.
+const SESSION_TTL_SECONDS = 30 * 24 * 3600;
+const SESSION_MAX_AGE_SECONDS = 90 * 24 * 3600;
+// What sessions issued before the ceiling existed were given.
+const LEGACY_SESSION_TTL_SECONDS = 180 * 24 * 3600;
 
 const profileView = (m) => ({
   id: m.id, name: m.name, designation: m.designation, email: m.email, mobile: m.mobile, company: m.company || '',
 });
 
+/**
+ * Renews a live session once less than half its idle window is left, clamped
+ * to the 90-day ceiling. Returns the seconds it has left, or 0 when it has
+ * ended. Renewal uses EXPIRE, which cannot recreate a key that a concurrent
+ * sign-out just deleted.
+ */
+async function slideSession(key, session, now = Date.now()) {
+  const ttl = await withRetry(() => kv.ttl(key));
+  if (ttl === -2) return 0;
+  if (ttl === -1) {
+    // Every session is written with an expiry; one without is not ours.
+    await kv.del(key).catch(() => {});
+    return 0;
+  }
+
+  // Sessions from before the ceiling carry no issuedAt; their 180-day TTL
+  // says when they were issued.
+  const legacy = !Number.isFinite(session.issuedAt);
+  const issuedAt = legacy ? now - Math.max(0, LEGACY_SESSION_TTL_SECONDS - ttl) * 1000 : session.issuedAt;
+  const ceilingIn = Math.floor((issuedAt + SESSION_MAX_AGE_SECONDS * 1000 - now) / 1000);
+  if (ceilingIn <= 0) {
+    await kv.del(key).catch(() => {});
+    return 0;
+  }
+
+  const target = Math.min(SESSION_TTL_SECONDS, ceilingIn);
+  if (legacy) {
+    await withRetry(() => kv.set(key, { ...session, issuedAt }, { ex: target }));
+    return target;
+  }
+  if (ttl !== target && (ttl > target || ttl < SESSION_TTL_SECONDS / 2)) {
+    await withRetry(() => kv.expire(key, target));
+    return target;
+  }
+  return ttl;
+}
+
 /** The signed-in board member, or null. Deactivating a profile ends its sessions. */
 async function boardSession(req) {
   const token = bearerToken(req);
   if (!token || token.length < 32) return null;
-  const raw = await withRetry(() => kv.get(KEYS.boardSession(token)));
+  const key = KEYS.boardSession(token);
+  const raw = await withRetry(() => kv.get(key));
   const session = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (!session?.memberId) return null;
   const member = await getMember(session.memberId);
   if (!member || member.status !== 'active' || member.email !== session.email) return null;
-  return { member, token };
+  const expiresIn = await slideSession(key, session);
+  if (!expiresIn) return null;
+  return { member, token, expiresIn };
 }
 
 // ── Board member actions ───────────────────────────────────────────
@@ -134,7 +179,8 @@ async function verifyCode(req, res) {
     return res.status(403).json({ success: false, error: 'This board profile is not active. Contact the BCCI Secretariat.' });
   }
   const token = crypto.randomBytes(32).toString('hex');
-  await withRetry(() => kv.set(KEYS.boardSession(token), { memberId: member.id, email: member.email }, { ex: SESSION_TTL_SECONDS }));
+  const session = { memberId: member.id, email: member.email, issuedAt: Date.now() };
+  await withRetry(() => kv.set(KEYS.boardSession(token), session, { ex: SESSION_TTL_SECONDS }));
   console.log(`[Board] ${member.id} signed in`);
   return res.status(200).json({
     success: true,
@@ -299,6 +345,9 @@ async function handler(req, res) {
       if (isGet !== SIGNED_IN_GET.has(action)) return res.status(405).json({ success: false, error: 'Method not allowed.' });
       const session = await boardSession(req);
       if (!session) return res.status(401).json({ success: false, code: 'signed_out', error: 'Please sign in to the Board Portal again.' });
+      // The browser keeps its own copy of the expiry; this keeps it in step
+      // with renewals so an active member is not signed out at day 30.
+      res.setHeader('X-Session-Expires-In', String(session.expiresIn));
       return await signedIn[action](req, res, session);
     }
 

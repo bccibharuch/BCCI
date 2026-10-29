@@ -480,6 +480,43 @@ ck('applicantResetPassword handles error gracefully',
 ck('applicantResetPassword on error does not persist session', store.getApplicantSession() === null);
 
 // Restore fetch
+// Board sessions renew on the server; each signed-in reply carries the time
+// left, and the stored copy must follow it or the member is signed out at day 30.
+{
+  const DAY_S = 86400;
+  const mockFetch = globalThis.fetch;
+  const replyWith = (headerValue) => async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (name) => (name.toLowerCase() === 'x-session-expires-in' ? headerValue : null) },
+    async json() { return { success: true }; },
+  });
+  try {
+    store.setBoardSession({ token: 'b'.repeat(64), expiresIn: 2 * DAY_S }, { id: 'BM-1' });
+    globalThis.fetch = replyWith(String(30 * DAY_S));
+    await store.apiCall('/api/board?action=me', { auth: 'board' });
+    const renewed = store.getBoardSession();
+    ck('a board reply with a renewed lifetime moves the stored expiry out to 30 days',
+      Math.abs(renewed?.expiresAt - Date.now() - 30 * DAY_S * 1000) < 5000, String(renewed?.expiresAt - Date.now()));
+    ck('the renewed board session keeps its token and member', renewed?.token === 'b'.repeat(64) && renewed?.member?.id === 'BM-1');
+
+    globalThis.fetch = replyWith(null);
+    await store.apiCall('/api/board?action=me', { auth: 'board' });
+    ck('a reply without the header leaves the stored expiry alone',
+      Math.abs(store.getBoardSession()?.expiresAt - renewed.expiresAt) < 5000);
+
+    store.setApplicantSession({ token: 'a'.repeat(36), expiresIn: 3600 });
+    const applicantBefore = store.getApplicantSession().expiresAt;
+    globalThis.fetch = replyWith(String(30 * DAY_S));
+    await store.apiCall('/api/applications', { auth: 'applicant' });
+    ck('the header never extends a non-board session', store.getApplicantSession()?.expiresAt === applicantBefore);
+  } finally {
+    globalThis.fetch = mockFetch;
+    store.forgetBoardSession();
+    store.forgetApplicantSession();
+  }
+}
+
 globalThis.fetch = origFetch;
 
 console.log('\nTask 5: Client Application Logic & DOM Events');

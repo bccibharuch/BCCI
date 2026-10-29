@@ -5,6 +5,7 @@
 //   BOARD_BACKEND=postgres node tests/board.test.mjs   # Postgres (VPS mode)
 // The Postgres run skips (exit 0) when no database is reachable.
 
+import crypto from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { startMockRedis } from './mock-redis.mjs';
 import { startMockSmtp } from './smtp-server.mjs';
@@ -164,7 +165,9 @@ ck('a wrong code is refused', r.status === 400);
 r = await call('verify-code', { body: { email: 'asha@example.com', code } });
 const ashaToken = r.json?.session?.token;
 ck('the right code signs in', r.status === 200 && typeof ashaToken === 'string' && ashaToken.length === 64 && r.json?.member?.id === 'BM-1');
-ck('the session lasts about six months', r.json?.session?.expiresAt - Date.now() > 179 * 86400e3);
+ck('the session lasts 30 days', Math.abs(r.json?.session?.expiresAt - Date.now() - 30 * 86400e3) < 60e3, String(r.json?.session?.expiresAt - Date.now()));
+const ashaStored = await kv.get(KEYS.boardSession(ashaToken));
+ck('the session records when it was issued', Math.abs((typeof ashaStored === 'string' ? JSON.parse(ashaStored) : ashaStored)?.issuedAt - Date.now()) < 60e3);
 r = await call('verify-code', { body: { email: 'asha@example.com', code } });
 ck('a code works only once', r.status === 400);
 
@@ -180,6 +183,55 @@ r = await call('members', { method: 'GET', token: ashaToken });
 ck('a board session is not a superadmin session', r.status === 401);
 r = await call('me', { method: 'GET', token: ADMIN });
 ck('a superadmin session is not a board session', r.status === 401);
+
+// ════════════════════════════════════════════════════════════════════
+sec('Session lifetime: 30 idle days, renewed on use, 90 days at most');
+
+const DAY_S = 86400;
+const near = (a, b, tol = 120) => Math.abs(a - b) <= tol;
+const ASHA = { memberId: 'BM-1', email: 'asha@example.com' };
+/** Plants a session with the given value and TTL, uses it once, reads it back. */
+async function useSession(value, ttlSec) {
+  const t = crypto.randomBytes(32).toString('hex');
+  await kv.set(KEYS.boardSession(t), value, { ex: ttlSec });
+  const res = await call('me', { method: 'GET', token: t });
+  const raw = await kv.get(KEYS.boardSession(t));
+  return {
+    res,
+    ttl: await kv.ttl(KEYS.boardSession(t)),
+    stored: typeof raw === 'string' ? JSON.parse(raw) : raw,
+    header: Number(res.headers['x-session-expires-in']),
+  };
+}
+
+let u = await useSession({ ...ASHA, issuedAt: Date.now() - 10 * DAY_S * 1000 }, 20 * DAY_S);
+ck('with more than half the window left, use does not renew', u.res.status === 200 && near(u.ttl, 20 * DAY_S), `ttl ${u.ttl}`);
+ck('each signed-in reply reports the time left', near(u.header, 20 * DAY_S), `header ${u.header}`);
+
+u = await useSession({ ...ASHA, issuedAt: Date.now() - 20 * DAY_S * 1000 }, 10 * DAY_S);
+ck('with less than half left, use renews to a full 30 days', u.res.status === 200 && near(u.ttl, 30 * DAY_S), `ttl ${u.ttl}`);
+ck('the reply reports the renewed lifetime', near(u.header, 30 * DAY_S), `header ${u.header}`);
+
+u = await useSession({ ...ASHA, issuedAt: Date.now() - 80 * DAY_S * 1000 }, 5 * DAY_S);
+ck('renewal stops at 90 days from sign-in', u.res.status === 200 && near(u.ttl, 10 * DAY_S) && near(u.header, 10 * DAY_S), `ttl ${u.ttl}, header ${u.header}`);
+
+u = await useSession({ ...ASHA, issuedAt: Date.now() - 91 * DAY_S * 1000 }, 5 * DAY_S);
+ck('a session past 90 days is refused and deleted', u.res.status === 401 && u.res.json?.code === 'signed_out' && u.ttl === -2, `status ${u.res.status}, ttl ${u.ttl}`);
+
+u = await useSession(ASHA, 170 * DAY_S);
+ck('a 180-day session from before the change drops to 30 days on use',
+  u.res.status === 200 && near(u.ttl, 30 * DAY_S) && near(u.header, 30 * DAY_S), `ttl ${u.ttl}, header ${u.header}`);
+ck('and is stamped with the sign-in date its TTL implies (10 days ago)',
+  Math.abs(u.stored?.issuedAt - (Date.now() - 10 * DAY_S * 1000)) < 300e3, String(u.stored?.issuedAt));
+
+u = await useSession(ASHA, 110 * DAY_S);
+ck('an old session issued 70 days ago gets only the 20 days left under the ceiling', u.res.status === 200 && near(u.ttl, 20 * DAY_S), `ttl ${u.ttl}`);
+
+u = await useSession(ASHA, 80 * DAY_S);
+ck('an old session issued 100 days ago is refused', u.res.status === 401 && u.ttl === -2, `status ${u.res.status}, ttl ${u.ttl}`);
+
+r = await call('me', { method: 'GET', token: crypto.randomBytes(32).toString('hex') });
+ck('a refused session gets no lifetime header', r.status === 401 && r.headers['x-session-expires-in'] === undefined);
 
 // ════════════════════════════════════════════════════════════════════
 sec('Meetings and the projector QR');

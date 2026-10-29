@@ -70,6 +70,7 @@ export class Store {
           throw error;
         }
 
+        if (auth === 'board') this._syncBoardExpiry(res);
         return data;
       } catch (err) {
         lastErr = err;
@@ -543,6 +544,18 @@ export class Store {
 
   forgetBoardSession() {
     try { localStorage.removeItem(STORAGE_KEYS.BOARD_SESSION); } catch {}
+  }
+
+  /**
+   * Board sessions renew on use, and each signed-in reply says how long the
+   * session now has left. Without this the stored copy would still lapse 30
+   * days after sign-in and sign out a member who never stopped using it.
+   */
+  _syncBoardExpiry(res) {
+    const left = Number(res.headers?.get?.('X-Session-Expires-In'));
+    if (!Number.isFinite(left) || left <= 0) return;
+    const session = this.getBoardSession();
+    if (session) this._writeSession(STORAGE_KEYS.BOARD_SESSION, { ...session, expiresIn: left });
   }
 
   /**
