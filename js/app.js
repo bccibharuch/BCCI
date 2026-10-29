@@ -163,8 +163,12 @@ function updatePageMeta(viewId) {
   const view = PAGE_TITLES[viewId] ? viewId : 'home';
   const title = PAGE_TITLES[view];
   const description = PAGE_DESCRIPTIONS[view];
-  // /verify/<id> canonicalises to /verify, never to one member's record.
-  const url = SITE_ORIGIN + (view === 'home' ? '/' : VIEW_PATHS[view]);
+  // The address bar wins when it is a known route: /admin-bcci shows the
+  // sign-in view to a visitor but is still /admin-bcci. Anything else, such
+  // as /verify/<id>, canonicalises to the view's own path, never to one
+  // member's record.
+  const here = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+  const url = SITE_ORIGIN + (PATH_VIEWS[here] ? here : VIEW_PATHS[view]);
 
   document.title = title;
   setHeadTag('link[rel="canonical"]', { tag: 'link', attrs: { rel: 'canonical' } }, 'href', url);

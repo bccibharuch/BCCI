@@ -1591,7 +1591,8 @@ ck('app.js includes verify in PAGE_TITLES', SRC.includes("verify: 'Member Verifi
   const grabConst = (name) => {
     const i = SRC.indexOf(`const ${name} = `);
     const lineEnd = SRC.indexOf('\n', i);
-    const end = SRC.slice(i, lineEnd).trimEnd().endsWith('{') ? SRC.indexOf('\n};', i) + 3 : lineEnd;
+    const opener = SRC.slice(i, lineEnd).trimEnd().slice(-1);
+    const end = opener === '{' ? SRC.indexOf('\n};', i) + 3 : opener === '(' ? SRC.indexOf('\n);', i) + 3 : lineEnd;
     return SRC.slice(i, end);
   };
   const tags = [];
@@ -1615,15 +1616,18 @@ ck('app.js includes verify in PAGE_TITLES', SRC.includes("verify: 'Member Verifi
   ]) tags.push({ tagName, attrs: { ...attrs }, setAttribute(k, v) { this.attrs[k] = String(v); } });
 
   const realDocument = globalThis.document;
+  const realPath = window.location.pathname;
   globalThis.document = fakeDoc;
   try {
     const { updatePageMeta } = await import('data:text/javascript,' + encodeURIComponent([
-      grabConst('VIEW_PATHS'), grabConst('PAGE_TITLES'), grabConst('SITE_ORIGIN'),
+      grabConst('VIEW_PATHS'), grabConst('PATH_VIEWS'), grabConst('PAGE_TITLES'), grabConst('SITE_ORIGIN'),
       grabConst('PAGE_DESCRIPTIONS'), grabConst('NOINDEX_VIEWS'),
       grab('setHeadTag'), grab('updatePageMeta'), 'export { updatePageMeta };',
     ].join('\n')));
     const head = (sel) => fakeHead.querySelector(sel)?.attrs;
+    const at = (path) => { window.location.pathname = path; };
 
+    at('/events');
     updatePageMeta('events');
     ck('a route gets its own canonical URL', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/events', JSON.stringify(head('link[rel="canonical"]')));
     ck('og:url follows the route', head('meta[property="og:url"]')?.content === 'https://bccibharuch.in/events');
@@ -1632,20 +1636,27 @@ ck('app.js includes verify in PAGE_TITLES', SRC.includes("verify: 'Member Verifi
     ck('missing description and Twitter tags are created', /summits/.test(head('meta[name="description"]')?.content || '') && /summits/.test(head('meta[name="twitter:description"]')?.content || ''));
     ck('a public route stays indexable', head('meta[name="robots"]')?.content === 'index, follow');
 
+    at('/verify/BCCI-1793284723088-f0b4df91');
     updatePageMeta('verify');
     ck('verification canonicalises to /verify, never a member record', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/verify');
+    at('/admin-bcci');
+    updatePageMeta('signin');
+    ck('/admin-bcci showing the sign-in view keeps its own address as canonical', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/admin-bcci', head('link[rel="canonical"]')?.href);
     for (const view of ['verify', 'card', 'signin', 'admin', 'board']) {
       updatePageMeta(view);
       ck(`${view} is marked noindex`, head('meta[name="robots"]')?.content === 'noindex, nofollow');
     }
 
+    at('/');
     updatePageMeta('home');
     ck('home canonicalises to the site root and is indexable again',
       head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/' && head('meta[name="robots"]')?.content === 'index, follow');
+    at('/no-such-page');
     updatePageMeta('no-such-view');
     ck('an unknown view falls back to the home tags', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/');
     ck('tags are updated in place, never duplicated', tags.filter((t) => t.attrs.rel === 'canonical').length === 1 && tags.filter((t) => t.attrs.name === 'robots').length === 1);
   } finally {
+    window.location.pathname = realPath;
     globalThis.document = realDocument;
   }
 }
