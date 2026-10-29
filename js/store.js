@@ -648,13 +648,6 @@ export class Store {
           'Since 2015 he has led the Finance & Taxation Forum of Bharuch District Management Association, and he is a key link between Bharuch industry and the Income Tax and GST authorities.',
         ],
       },
-      {
-        name: 'MR. NIRMALSINH YADAV', role: 'Government Licensing & Media', category: 'Executive Board', initials: 'NY', image: 'assets/nirmalsinh-yadav.webp',
-        bio: [
-          'Head of Corporate Affairs and Group Nodal Officer – CSR at Deepak Group of Companies, with over 30 years in the chemical industry at UPL, GFL, SRF and Jubilant. M.Com., LL.B. and a PG Diploma in Industrial Relations and Personnel Management.',
-          'His expertise spans greenfield and brownfield projects, HR, industrial relations, government affairs and CSR. He has chaired the BDMA CSR Forum for over six years, is a past President of the Rotary Club of Bharuch Narmada Nagari, and serves on the Managing Committee of SVADES.',
-        ],
-      },
     ];
   }
 
