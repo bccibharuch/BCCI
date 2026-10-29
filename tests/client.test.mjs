@@ -1356,6 +1356,14 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
   ck('every view has exactly one <h1>', h1Counts.length === 13 && h1Counts.every(([, n]) => n === 1), JSON.stringify(h1Counts.filter(([, n]) => n !== 1)));
   ck('no <h1> sits outside the views', (htmlContent.match(/<h1\b/g) || []).length === 13);
 
+  // Images reserve their space (no layout shift) and only the header logo,
+  // painted first, loads eagerly.
+  const imgs = (htmlContent.match(/<img\b[^>]*>/g) || []).filter((t) => /\bsrc="[^"]+"/.test(t));
+  ck('every static image declares width and height', imgs.length > 0 && imgs.every((t) => /\swidth="\d+"/.test(t) && /\sheight="\d+"/.test(t)),
+    imgs.filter((t) => !/\swidth="\d+"/.test(t)).map((t) => t.match(/src="([^"]+)"/)[1]).join(', '));
+  ck('only the header logo loads eagerly', imgs.filter((t) => !/loading="lazy"/.test(t)).every((t) => /class="nav-logo"/.test(t)),
+    imgs.filter((t) => !/loading="lazy"/.test(t)).map((t) => t.match(/src="([^"]+)"/)[1]).join(', '));
+
   // Verify renewal error toast shows err.message
   ck('showRenewalModal uses err?.message for error toasts', SRC.includes("this.showToast(err?.message || 'Failed to renew membership. Please try again.', 'error')"));
 

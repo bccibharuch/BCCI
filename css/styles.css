@@ -2082,7 +2082,7 @@ footer h4 {
   background: var(--warm-white);
 }
 
-.form-qr-img { max-height: 260px; width: 100%; object-fit: contain; }
+.form-qr-img { max-height: 260px; width: 100%; height: auto; object-fit: contain; }
 
 .form-qr-details {
   background: var(--white);
