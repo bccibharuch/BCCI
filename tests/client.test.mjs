@@ -1365,6 +1365,26 @@ ck('employees headcount has required attribute in index.html', /<input[^>]*name=
   app.currentPaymentProofBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   ck('paymentProof accepts when receipt is uploaded', app.validateField(proofInput));
 
+  // Registration date "today" at 02:00 IST (20:30 UTC the day before): the old
+  // check compared a UTC midnight with now and called it the future.
+  {
+    const RealDate = Date;
+    const realTz = process.env.TZ;
+    const frozen = RealDate.UTC(2026, 9, 29, 20, 30);
+    process.env.TZ = 'Asia/Kolkata';
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [frozen])); }
+      static now() { return frozen; }
+    };
+    try {
+      ck("at 02:00 IST, today's date is a valid registration date", app.validateField(createInput('regDate', '2026-10-30')));
+      ck('…while tomorrow is still refused', !app.validateField(createInput('regDate', '2026-10-31')));
+    } finally {
+      globalThis.Date = RealDate;
+      if (realTz === undefined) delete process.env.TZ; else process.env.TZ = realTz;
+    }
+  }
+
   // CTA visibility functional test
   const ctaBtn1 = new MockElement('button');
   ctaBtn1.setAttribute('data-apply-cta', '');

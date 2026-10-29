@@ -855,6 +855,22 @@ check('twelve successful admin sign-ins in a row are never rate-limited', lastLo
   check("tomorrow's date (India) is refused as a registration date", r.statusCode === 400 && /future/.test(r.body?.error || ''), `${r.statusCode} ${JSON.stringify(r.body)}`);
   r = await call(applications, { method: 'POST', token: noneTok, ip: '203.0.113.183', body: validApp({ regDate: todayIst }) });
   check("today's date (India) is accepted as a registration date", r.statusCode === 201, `${r.statusCode} ${JSON.stringify(r.body)}`);
+
+  // The bug only showed between midnight and 05:30 IST, so freeze the clock
+  // there: 02:00 IST on 30 Oct 2026 is 20:30 UTC on the 29th.
+  const clockTok = await applicantSession('clock@example.com', '203.0.113.184');
+  const RealDate = Date;
+  const frozen = RealDate.UTC(2026, 9, 29, 20, 30);
+  globalThis.Date = class extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [frozen])); }
+    static now() { return frozen; }
+  };
+  try {
+    r = await call(applications, { method: 'POST', token: clockTok, ip: '203.0.113.185', body: validApp({ regDate: '2026-10-30' }) });
+  } finally {
+    globalThis.Date = RealDate;
+  }
+  check("at 02:00 IST, that day's date is accepted (not 'in the future')", r.statusCode === 201, `${r.statusCode} ${JSON.stringify(r.body)}`);
 }
 
 // ── Report ──────────────────────────────────────────────────────────
