@@ -11,6 +11,7 @@
 // which backend answered. Expired rows read as absent and are swept on a
 // timer by the long-running server.
 
+import crypto from 'node:crypto';
 import { STORAGE_BACKEND } from './records.js';
 
 export { KEYS, withRetry } from './keys.js';
@@ -121,7 +122,7 @@ export const kv = pg ? postgresKv(pg.query) : (await import('./redis.js')).redis
 
 /** kv is reachable and round-trips a value. Used by /api/health. */
 export async function pingKv() {
-  const probe = `bcci:health:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  const probe = `bcci:health:${crypto.randomUUID()}`;
   await kv.set(probe, '1', { ex: 10 });
   const v = await kv.get(probe);
   await kv.del(probe).catch(() => {});

@@ -6,6 +6,7 @@
 // public and unauthenticated, which made it an open relay running on BCCI's
 // own sender reputation.
 
+import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { kv } from './kv.js';
 import { acquireLock, releaseLock } from './records.js';
@@ -482,7 +483,7 @@ export async function sendEmail({ type, to, data }) {
     try {
       const logs = (await kv.get(LOG_KEY)) || [];
       logs.unshift({
-        id: `EMAIL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `EMAIL-${crypto.randomUUID()}`,
         type,
         to: Array.isArray(to) ? to : [to],
         subject,

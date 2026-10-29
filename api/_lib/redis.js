@@ -8,6 +8,7 @@
 // Legacy blobs (bcci:applications / bcci:enquiries) are migrated lazily on
 // first access. The old key is left in place as a backup.
 
+import crypto from 'node:crypto';
 import { Redis } from '@upstash/redis';
 import { summarizeApplication, newTicketId, applyCheckIn } from './record-fields.js';
 import { KEYS, withRetry } from './keys.js';
@@ -646,7 +647,7 @@ export async function removeEventAttendee(id, ticketId) {
 
 export async function acquireLock(name, ttlSeconds = 5, waits = 25, waitMs = 40) {
   const key = `bcci:lock:${name}`;
-  const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const token = crypto.randomUUID();
   for (let i = 0; i < waits; i++) {
     const ok = await redis.set(key, token, { nx: true, ex: ttlSeconds });
     if (ok) return token;
