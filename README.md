@@ -28,7 +28,7 @@ A digital membership card with a QR code that encodes the member ID for verifica
 | Storage | Upstash Redis on Vercel; on a VPS, one Postgres database for everything (see [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md)) |
 | Email | SMTP via Nodemailer — OTP, confirmations, approvals, declines |
 
-Two runtime dependencies: `@upstash/redis` and `nodemailer`.
+Three runtime dependencies: `@upstash/redis`, `nodemailer`, and `pg` — the Postgres driver is only imported when `STORAGE_BACKEND=postgres`, so a Redis deployment never loads it.
 
 ---
 
@@ -59,7 +59,11 @@ Boots the whole thing against an in-memory Redis and a local SMTP catcher — no
 
 Everything is set through environment variables; see `.env.example` for the annotated list and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the full reference.
 
-**Required:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `ADMIN_EMAILS`, `ADMIN_PASSWORD`, `SMTP_USER`, `SMTP_PASS`
+**Required in redis mode:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+
+**Required in postgres mode:** `DATABASE_URL` (Upstash is not used at all)
+
+**Always required:** `ADMIN_EMAILS`, `ADMIN_PASSWORD`, `SMTP_USER`, `SMTP_PASS`
 
 **Worth setting:** `ALLOWED_ORIGIN`, `EMAIL_FROM`, `INTERNAL_API_SECRET`
 
@@ -88,15 +92,19 @@ npm run mail:test -- you@example.com  # send one of each template
 | `/api/health` | GET | public |
 | `/api/send-otp` | POST | public, rate-limited |
 | `/api/verify-otp` | POST / DELETE | public / own session |
+| `/api/applicant-auth` | POST | public — `action`: `login`, `register`, `forgot-password-request`, `reset-password` |
 | `/api/applications` | GET | admin (list) or the owning applicant (`?email=`) |
 | `/api/applications` | POST | verified applicant |
 | `/api/applications` | PATCH | admin (review) or owner (`action: "renew"`) |
 | `/api/enquiries` | GET / POST | admin / public |
 | `/api/admin-auth` | POST / DELETE | public / own session |
 | `/api/admin-stats` | GET | admin |
+| `/api/membership-plans` | GET / POST / DELETE | public / admin / admin |
+| `/api/events` | GET / POST / DELETE | public (admin sees real venues) / registration is public (`action: "register"`), everything else admin / admin |
+| `/api/board` | GET / POST | board members via OTP (`request-code`, `verify-code`, `me`, `attend`, `sign-out`) and admin actions |
 | `/api/send-email` | POST | internal secret or admin |
 
-Sessions are opaque tokens held in Redis, not signed blobs the browser can forge. Rate limits apply per email address and per network across OTP requests, sign-in attempts, applications and enquiries.
+Sessions are opaque tokens held in the server-side store, not signed blobs the browser can forge. Rate limits apply per email address and per network across OTP requests, sign-in attempts, applications and enquiries.
 
 ---
 
@@ -113,6 +121,18 @@ Sessions are opaque tokens held in Redis, not signed blobs the browser can forge
 
 Records are stored one per key rather than as a single JSON document, so two applicants submitting at the same moment cannot overwrite each other. An older single-blob layout migrates automatically on first read; the original is left untouched as a backup.
 
+### On a VPS: Postgres
+
+With `STORAGE_BACKEND=postgres` everything moves into one Postgres database and no Upstash account is needed. Durable records become tables; the short-lived state Redis would expire moves into a `kv` table with an `expires_at` column.
+
+| Table | Holds |
+|---|---|
+| `applications`, `enquiries`, `events`, `event_attendees`, `membership_plans` | durable records, with the same shapes as the Redis keys above |
+| `kv` | OTP codes, sessions, rate-limit counters, applicant accounts, the email log |
+| `locks` | short-lived locks (application submission, email audit log) |
+
+`api/_lib/kv.js` implements the Redis command subset the routes use — `get`, `mget`, `set` with `ex`/`nx`, `del`, `incr`, `decr`, `expire`, `ttl` — in SQL, so no route can tell which backend answered. Expired `kv` rows read as absent and are swept on a timer by the long-running server. Existing Redis data is brought across with `npm run migrate:pg`.
+
 ```bash
 npm run purge:data              # dry run — shows what would go
 npm run purge:data -- --confirm # actually delete
@@ -126,16 +146,22 @@ npm run purge:data -- --confirm # actually delete
 npm test
 ```
 
-209 assertions across six suites, with no network access and no live database:
+823 assertions across ten suites, with no network access and no live database:
 
 | Suite | Covers |
 |---|---|
 | `e2e` | the real server against a mock Upstash and a **real SMTP server** — OTP, application, approval, renewal, 30 concurrent submissions |
 | `api` | authentication, ownership, rate limits, the approval flow |
 | `data` | legacy migration, concurrent writes |
-| `client` | XSS escaping, form drafts, accessibility |
+| `client` | XSS escaping, form drafts, sign-in, accessibility |
 | `smtp-config` | TLS mode per port, From-address resolution |
 | `purge` | that a dry run deletes nothing |
+| `applicant-auth` | password login, OTP registration, forgot/reset flows |
+| `events-redis` | attendee storage and capacity under Redis |
+| `events-api` | event CRUD, registration, check-in, payment confirmation |
+| `board` | board portal sign-in, attendance, register export |
+
+Three paths also run against Postgres: `postgres.test.mjs`, and the `e2e` and `board` suites a second time with `E2E_BACKEND=postgres` / `BOARD_BACKEND=postgres`. They print `SKIP` and exit 0 when nothing answers on `localhost:5433`, so a green run does not by itself mean Postgres was tested.
 
 ---
 
@@ -159,7 +185,7 @@ api/            serverless handlers, one file per route
   _lib/         shared: redis, http, email, security  (underscore = not a route)
 js/             app.js (UI and routing), store.js (API client)
 css/            styles.css, membership-card.css
-scripts/        dev-sandbox, mail:test, purge:data
-tests/          six suites plus mock Redis and mock SMTP
+scripts/        dev-sandbox, mail:test, purge:data, run-tests
+tests/          ten suites, plus mock Redis and mock SMTP
 server.js       standalone Node server for non-Vercel hosts
 ```
