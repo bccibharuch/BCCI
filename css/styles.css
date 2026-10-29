@@ -1559,6 +1559,7 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 .admin-menu-item:last-child { border-bottom: none; }
 .admin-menu-item:hover { color: var(--black); background: var(--gray-50); }
 .admin-menu-item.active { background: var(--navy); color: var(--white); border-left: 3px solid var(--gold); }
+.admin-menu-item:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 .admin-metrics-grid {
   display: grid;

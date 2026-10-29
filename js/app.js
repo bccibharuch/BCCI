@@ -66,7 +66,10 @@ function escapeAttr(value) {
 
 /** Formats a date defensively — bad input renders as a dash, not "Invalid Date". */
 function formatDate(value) {
-  const d = new Date(value);
+  // A bare "YYYY-MM-DD" parses as UTC midnight, which is the previous day
+  // west of Greenwich; read it as a local calendar date instead.
+  const dateOnly = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const d = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(value);
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN');
 }
 
@@ -790,8 +793,6 @@ class App {
     const membershipSubmitBtn = document.querySelector('#membershipForm button[type="submit"]');
     const emailDisplay = document.getElementById('applicantEmailDisplay');
     const avatarInitial = document.getElementById('applicantAvatarInitial');
-    const profileBtnText = document.getElementById('userProfileBtnText');
-    const headerSignOutBtn = document.getElementById('btnHeaderSignOut');
 
     const session = this.store.getApplicantSession();
     if (session && session.email) {
@@ -799,12 +800,13 @@ class App {
       if (banner) banner.style.display = 'flex';
       if (signInReminder) signInReminder.style.display = 'none';
       if (membershipSubmitBtn) {
-        membershipSubmitBtn.disabled = false;
+        // Stay disabled while offline; the connectivity watch calls back here
+        // when the connection returns.
+        membershipSubmitBtn.disabled = !navigator.onLine;
         membershipSubmitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Application';
         membershipSubmitBtn.style.opacity = '1';
         membershipSubmitBtn.style.cursor = 'pointer';
       }
-      if (headerSignOutBtn) headerSignOutBtn.style.display = 'inline-flex';
 
       const memberApp = await this.store.getApplicationByEmail(session.email);
 
@@ -850,7 +852,6 @@ class App {
         }
 
         this.updateHeaderMemberBadge(memberApp, validity);
-        if (profileBtnText) profileBtnText.textContent = `${memberApp.company} (Member)`;
 
       } else if (memberApp && memberApp.status === 'Pending') {
         if (wrapper) wrapper.style.display = 'none';
@@ -906,8 +907,6 @@ class App {
         membershipSubmitBtn.style.cursor = 'not-allowed';
       }
       this.updateHeaderMemberBadge(null, null);
-      if (profileBtnText) profileBtnText.textContent = 'My Profile / Sign In';
-      if (headerSignOutBtn) headerSignOutBtn.style.display = 'none';
     }
   }
 
@@ -2250,10 +2249,19 @@ class App {
     const container = document.getElementById('verificationContainer');
     if (!container) return;
 
+    // A malformed escape such as /verify/%E0 makes decodeURIComponent throw;
+    // treat it as no id so the search form shows instead of a stuck spinner.
+    const safeDecode = (value) => {
+      try {
+        return decodeURIComponent(value).trim();
+      } catch {
+        return '';
+      }
+    };
     let memberId = '';
     const path = (window.location.pathname || '').replace(/\/+$/, '');
     if (path.startsWith('/verify/')) {
-      memberId = decodeURIComponent(path.slice('/verify/'.length)).trim();
+      memberId = safeDecode(path.slice('/verify/'.length));
     }
     if (!memberId) {
       const params = new URLSearchParams(window.location.search);
@@ -2262,7 +2270,7 @@ class App {
     if (!memberId) {
       const hash = (window.location.hash || '').replace(/^#\/?/, '');
       if (hash.startsWith('verify/')) {
-        memberId = decodeURIComponent(hash.slice('verify/'.length)).trim();
+        memberId = safeDecode(hash.slice('verify/'.length));
       } else if (hash.startsWith('verify?')) {
         const hashParams = new URLSearchParams(hash.slice(7));
         memberId = (hashParams.get('id') || hashParams.get('verifyId') || hashParams.get('verify') || hashParams.get('memberId') || '').trim();
@@ -3353,7 +3361,7 @@ class App {
             this.showToast(err.message || 'Submission failed. Please try again.', 'error');
           }
         } finally {
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Application for Admin Approval'; }
+          if (submitBtn) { submitBtn.disabled = !navigator.onLine; submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Application for Admin Approval'; }
         }
       });
     }
@@ -3681,6 +3689,15 @@ class App {
     );
 
     // ── Enquiries ──────────────────────────────────────────────────
+    const enquiryDetail = (enq) => {
+      const interest = enq.membershipType && enq.membershipType !== 'None'
+        ? `<div style="margin-top: 0.35rem; font-size: 0.8rem; color: #475569;"><strong>Membership interest:</strong> ${escapeHtml(enq.membershipType)}</div>`
+        : '';
+      const message = enq.message
+        ? `<details style="margin-top: 0.35rem;"><summary style="cursor: pointer; font-size: 0.8rem; color: var(--primary);">Read message</summary><p style="margin: 0.35rem 0 0; white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; color: #334155;">${escapeHtml(enq.message)}</p></details>`
+        : '';
+      return interest + message;
+    };
     fill(
       'enquiriesBody',
       'enquiriesCards',
@@ -3689,7 +3706,7 @@ class App {
           <td><strong>${escapeHtml(enq.id)}</strong></td>
           <td>${escapeHtml(enq.name)}<br/><small style="color: #94A3B8;">${escapeHtml(enq.company || '-')}</small></td>
           <td>${escapeHtml(enq.email)}<br/><small style="color: #94A3B8;">${escapeHtml(enq.phone)}</small></td>
-          <td>${escapeHtml(enq.subject)}</td>
+          <td>${escapeHtml(enq.subject)}${enquiryDetail(enq)}</td>
           <td>${escapeHtml(formatDate(enq.submittedAt))}</td>
         </tr>
       `),
@@ -3704,6 +3721,7 @@ class App {
             <div><strong>Phone:</strong> ${escapeHtml(enq.phone)}</div>
             <div><strong>Date:</strong> ${escapeHtml(formatDate(enq.submittedAt))}</div>
           </div>
+          ${enquiryDetail(enq)}
         </div>
       `),
       5,
@@ -3837,7 +3855,7 @@ class App {
     const m = doc.match(/^data:(image\/(?:png|jpe?g|webp|gif)|application\/pdf);base64,[A-Za-z0-9+/=\s]+$/);
     if (!m) return '';
     const isPdf = m[1] === 'application/pdf';
-    const ext = isPdf ? 'pdf' : 'png';
+    const ext = isPdf ? 'pdf' : m[1].slice('image/'.length).replace('jpeg', 'jpg');
     return `<a href="${escapeAttr(doc)}" download="${escapeAttr(label)}.${ext}" style="display: inline-flex; align-items: center; gap: 0.4rem; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.82rem; font-weight: 600; color: var(--primary); text-decoration: none;">
       <i class="fas ${isPdf ? 'fa-file-pdf' : 'fa-file-image'}" style="color: ${isPdf ? '#DC2626' : 'var(--accent-gold-dark)'};"></i> ${escapeHtml(label)}
     </a>`;
@@ -3850,6 +3868,12 @@ class App {
    */
   _paymentProofHtml(proof) {
     if (typeof proof !== 'string' || !proof) return '';
+    // The API accepts PDF receipts too; those cannot be shown inline, so offer
+    // them as a download (with the same strict data-URI check).
+    if (/^data:application\/pdf;base64,/.test(proof)) {
+      const link = this._docLinkHtml('Payment receipt', proof);
+      if (link) return `<div style="grid-column: 1 / -1; margin-top: 0.5rem;">${link}</div>`;
+    }
     if (!/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(proof)) {
       return `<div style="grid-column: 1 / -1; color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; padding: 0.6rem 0.8rem; border-radius: 6px;">
         <i class="fas fa-triangle-exclamation"></i> A payment receipt was submitted but could not be displayed.
@@ -4070,8 +4094,14 @@ class App {
 
     const switchToTab = (tabName) => {
       const targetMenu = document.querySelector(`.admin-menu-item[data-tab="${tabName}"]`);
-      document.querySelectorAll('.admin-menu-item').forEach(i => i.classList.remove('active'));
-      if (targetMenu) targetMenu.classList.add('active');
+      document.querySelectorAll('.admin-menu-item').forEach(i => {
+        i.classList.remove('active');
+        i.removeAttribute('aria-current');
+      });
+      if (targetMenu) {
+        targetMenu.classList.add('active');
+        targetMenu.setAttribute('aria-current', 'true');
+      }
       document.querySelectorAll('.admin-tab-pane').forEach(pane => pane.style.display = 'none');
       const targetPane = document.getElementById(`tab-${tabName}`);
       if (targetPane) {
@@ -4081,9 +4111,19 @@ class App {
     };
 
     document.querySelectorAll('.admin-menu-item').forEach(item => {
-      item.onclick = () => {
-        const tab = item.getAttribute('data-tab');
-        if (tab) switchToTab(tab);
+      const tab = item.getAttribute('data-tab');
+      if (!tab) return;
+      // The items are <li>s; give them button semantics so keyboard and
+      // screen-reader users can reach every admin section.
+      item.setAttribute('role', 'button');
+      item.tabIndex = 0;
+      if (item.classList.contains('active')) item.setAttribute('aria-current', 'true');
+      item.onclick = () => switchToTab(tab);
+      item.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          switchToTab(tab);
+        }
       };
     });
 
@@ -5230,8 +5270,16 @@ class App {
     // Wide dialogs hold tables (e.g. event attendees) that do not fit 560px.
     container.classList.toggle('modal-box--wide', Boolean(wide));
 
+    // A modal opened from inside another (no closeModal in between) must not
+    // stack a second Tab trap, nor hand focus back to the replaced dialog.
+    const replacing = backdrop.classList.contains('show');
+    if (this._modalKeydown) {
+      container.removeEventListener('keydown', this._modalKeydown);
+      this._modalKeydown = null;
+    }
+
     // Remember where focus came from, so it can be handed back on close.
-    this._modalReturnFocus = document.activeElement;
+    if (!replacing) this._modalReturnFocus = document.activeElement;
 
     container.innerHTML = `
       <button class="modal-close" id="modalCloseIcon" aria-label="Close dialog">&times;</button>

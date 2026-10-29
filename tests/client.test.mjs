@@ -62,6 +62,12 @@ ck('false renders "false"', escapeHtml(false) === 'false');
 ck('bad date renders a dash, not "Invalid Date"', formatDate('nonsense') === '—', formatDate('nonsense'));
 ck('missing date renders a dash', formatDate(undefined) === '—');
 ck('real date formats', /\d/.test(formatDate('2026-08-02T10:00:00Z')));
+{
+  const savedTz = process.env.TZ;
+  process.env.TZ = 'America/New_York';
+  ck('a date-only value keeps its calendar day west of UTC', formatDate('2026-08-02') === new Date(2026, 7, 2).toLocaleDateString('en-IN'), formatDate('2026-08-02'));
+  if (savedTz === undefined) delete process.env.TZ; else process.env.TZ = savedTz;
+}
 
 console.log('\nStatic sweep of the admin render paths');
 console.log('──────────────────────────────────────');
