@@ -36,6 +36,10 @@ export const KEYS = {
   boardMeeting: (id) => `bcci:board:meeting:${id}`,
   boardAttendance: (meetingId, memberId) => `bcci:board:att:${meetingId}:${memberId}`,
   boardSession: (token) => `board:${token}`,
+  // Mark-by-name: a short pass issued when the projector QR is scanned, and
+  // which name each phone (a hashed device id) has marked at a meeting.
+  boardNamePass: (token) => `bcci:board:name_pass:${token}`,
+  boardDeviceMark: (meetingId, deviceHash) => `bcci:board:device:${meetingId}:${deviceHash}`,
   boardOtp: (email) => `bcci:board:otp:${String(email).trim().toLowerCase()}`,
   boardOtpTries: (email) => `bcci:board:otp_tries:${String(email).trim().toLowerCase()}`,
   boardOtpClaim: (email) => `bcci:board:otp_claim:${String(email).trim().toLowerCase()}`,

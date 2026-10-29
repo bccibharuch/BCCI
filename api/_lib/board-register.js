@@ -5,7 +5,7 @@
 //
 //   Board Register  one row per board member, one column per meeting (P/L/A)
 //   Meetings        one row per meeting, with its counts
-//   Scan Log        every mark, by QR or by the secretary, with the reason
+//   Scan Log        every mark, by QR, by tapped name or by the secretary, with the reason
 
 import { registerData } from './board.js';
 import { buildWorkbook } from './xlsx.js';
@@ -100,7 +100,7 @@ export async function buildRegister() {
   for (const { h, meeting, member } of logEntries) {
     logRows.push([
       istLabel(h.at), dayLabel(meeting.date), meeting.title, member?.name || '', member?.designation || '',
-      STATUS_WORD[h.status] || h.status, h.method === 'qr' ? 'Scanned QR' : 'By secretary', h.by || '', { v: h.reason || '', s: 'wrap' },
+      STATUS_WORD[h.status] || h.status, h.method === 'qr' ? 'Scanned QR' : h.method === 'name' ? 'Tapped name' : 'By secretary', h.by || '', { v: h.reason || '', s: 'wrap' },
     ]);
   }
 

@@ -384,6 +384,83 @@ r = await call('sign-out', { token: ashaToken });
 r = await call('me', { method: 'GET', token: ashaToken });
 ck('signing out ends the session', r.status === 401);
 
+// ════════════════════════════════════════════════════════════════════
+sec('Mark by name: scan, tap your name, one response per phone');
+{
+  const PHONE_A = 'phone-a-' + crypto.randomUUID();
+  const PHONE_B = 'phone-b-' + crypto.randomUUID();
+  const PHONE_C = 'phone-c-' + crypto.randomUUID();
+  const PHONE_D = 'phone-d-' + crypto.randomUUID();
+  const esha = (await call('member-save', { token: ADMIN, body: { name: 'Esha Name', designation: 'Director', email: 'esha.name@example.com', mobile: '9825012361' } })).json?.member;
+  const farid = (await call('member-save', { token: ADMIN, body: { name: 'Farid Name', designation: 'Director', email: 'farid.name@example.com', mobile: '9825012362' } })).json?.member;
+  const gita = (await call('member-save', { token: ADMIN, body: { name: 'Gita Former', designation: 'Director', email: 'gita.former@example.com', mobile: '9825012363' } })).json?.member;
+  await call('member-status', { token: ADMIN, body: { id: gita.id, status: 'inactive' } });
+  const saved = await call('meeting-save', { token: ADMIN, body: { title: 'Name-tap meeting', date: '2026-09-10', time: '11:00' } });
+  const mtg = saved.json?.meeting?.id;
+  r = await call('names', { body: { meetingId: mtg, code: 'AAAAAAAAAAAA', deviceId: PHONE_A } });
+  ck('names before the meeting opens → 409 not_open', r.status === 409 && r.json?.code === 'not_open', JSON.stringify(r.json));
+  await call('meeting-open', { token: ADMIN, body: { id: mtg } });
+  const code = (await call('live', { method: 'GET', token: ADMIN, query: { id: mtg } })).json?.code;
+
+  r = await call('names', { body: { meetingId: mtg, code, deviceId: 'short' } });
+  ck('a request without a usable phone id is refused', r.status === 400 && r.json?.code === 'no_device');
+  r = await call('names', { body: { meetingId: mtg, code: 'AAAAAAAAAAAA', deviceId: PHONE_A } });
+  ck('a wrong or old projector code is refused', r.status === 410 && r.json?.code === 'expired');
+
+  r = await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_A } });
+  const names = (r.json?.members || []).map((m) => m.name);
+  ck('a valid scan lists the active board, alphabetically, with a pass', r.status === 200 && typeof r.json?.pass === 'string'
+    && names.includes('Esha Name') && names.includes('Farid Name') && !names.includes('Gita Former') && names.join() === [...names].sort((a, b) => a.localeCompare(b)).join(), JSON.stringify(names));
+  ck('the list carries names only, no contact details', JSON.stringify(r.json?.members || []).match(/@|98250/) === null);
+  const passA1 = r.json?.pass;
+  const passA2 = (await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_A } })).json?.pass;
+
+  r = await call('mark-name', { body: { pass: passA1, memberId: esha.id, deviceId: PHONE_B } });
+  ck('a pass only works on the phone that scanned', r.status === 410 && r.json?.code === 'expired');
+  r = await call('mark-name', { body: { pass: passA1, memberId: esha.id, deviceId: PHONE_A } });
+  ck('tapping a name marks it present', r.status === 200 && r.json?.member?.name === 'Esha Name');
+  const rec = await kv.get(KEYS.boardAttendance(mtg, esha.id));
+  const record = typeof rec === 'string' ? JSON.parse(rec) : rec;
+  ck('the mark is recorded as by name, with the phone', record?.status === 'present' && record?.method === 'name' && /^[0-9a-f]{8}$/.test(record?.device || ''), JSON.stringify(record));
+  r = await call('mark-name', { body: { pass: passA1, memberId: farid.id, deviceId: PHONE_A } });
+  ck('a used pass cannot be used again', r.status === 410);
+  r = await call('mark-name', { body: { pass: passA2, memberId: farid.id, deviceId: PHONE_A } });
+  ck('one phone, one response: a second name from the same phone is refused', r.status === 409 && r.json?.code === 'device_used' && /Esha Name/.test(r.json?.error || ''), JSON.stringify(r.json));
+  r = await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_A } });
+  ck('scanning again on that phone says who it marked, with no pass', r.status === 200 && r.json?.pass === null && r.json?.markedByThisPhone === 'Esha Name');
+  ck('and shows that name as marked', r.json?.members?.find((m) => m.name === 'Esha Name')?.marked === true);
+
+  const passB = (await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_B } })).json?.pass;
+  r = await call('mark-name', { body: { pass: passB, memberId: esha.id, deviceId: PHONE_B } });
+  ck('one response per name: a name already marked is refused', r.status === 409 && r.json?.code === 'already_marked');
+  r = await call('mark-name', { body: { pass: passB, memberId: farid.id, deviceId: PHONE_B } });
+  ck('…without using up that phone, which can still mark its own name', r.status === 200 && r.json?.member?.name === 'Farid Name', JSON.stringify(r.json));
+
+  // A secretary's leave mark is never overwritten by a tap.
+  await call('mark', { token: ADMIN, body: { meetingId: mtg, memberId: 'BM-2', status: 'leave', reason: 'Informed in advance' } });
+  const passC = (await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_C } })).json?.pass;
+  r = await call('mark-name', { body: { pass: passC, memberId: 'BM-2', deviceId: PHONE_C } });
+  const bm2 = await kv.get(KEYS.boardAttendance(mtg, 'BM-2'));
+  ck('a name the secretary marked on leave cannot be tapped present', r.status === 409 && (typeof bm2 === 'string' ? JSON.parse(bm2) : bm2)?.status === 'leave');
+  r = await call('mark-name', { body: { pass: passC, memberId: gita.id, deviceId: PHONE_C } });
+  ck('an inactive profile cannot be tapped', r.status === 404 && r.json?.code === 'not_on_roster');
+
+  // Two passes taken before either is used: still only one response.
+  const passD1 = (await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_D } })).json?.pass;
+  const passD2 = (await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_D } })).json?.pass;
+  const [d1, d2] = await Promise.all([
+    call('mark-name', { body: { pass: passD1, memberId: 'BM-1', deviceId: PHONE_D } }),
+    call('mark-name', { body: { pass: passD2, memberId: 'BM-4', deviceId: PHONE_D } }),
+  ]);
+  ck('two taps at once from one phone: exactly one is accepted', [d1.status, d2.status].filter((x) => x === 200).length === 1 && [d1.status, d2.status].includes(409), `${d1.status} ${d2.status}`);
+
+  await call('meeting-close', { token: ADMIN, body: { id: mtg } });
+  r = await call('names', { body: { meetingId: mtg, code, deviceId: PHONE_C } });
+  ck('after closing, the name list is refused', r.status === 409 && r.json?.code === 'not_open');
+  r = await call('meeting', { method: 'GET', token: ADMIN, query: { id: mtg } });
+  ck('the secretary sees the name-tap marks', r.json?.rows?.filter((x) => x.method === 'name').length === 3, JSON.stringify(r.json?.rows?.map((x) => [x.memberId, x.status, x.method])));
+}
+
 console.log(`${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 smtp.server.close();
 redis.server.close();

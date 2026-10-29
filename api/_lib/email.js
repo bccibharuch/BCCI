@@ -300,12 +300,12 @@ export const TEMPLATES = {
         <p style="margin:0 0 8px;font-size:15px;color:#1E293B;">Dear <strong>${esc(d.name || 'Board Member')}</strong>,</p>
         <p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
           The BCCI Secretariat has created your board profile as <strong>${esc(d.designation)}</strong>.
-          At board meetings you will mark your attendance by scanning the QR code shown on the screen.
+          At board meetings, scan the QR code on the screen with your phone camera and tap your name. No sign-in is needed.
         </p>
         ${panel(
           row('Portal', `${siteUrl()}/board`) +
-          row('Sign in with', d.email) +
-          `<tr><td style="padding:4px 0;font-size:13px;color:#475569;">Sign in once on your phone before the meeting. It stays signed in for 6 months.</td></tr>`
+          row('Optional sign-in', d.email) +
+          `<tr><td style="padding:4px 0;font-size:13px;color:#475569;">Sign in with this address only if you want to see your attendance history.</td></tr>`
         )}
         <div style="text-align:center;margin:0 0 20px;">
           <a href="${esc(`${siteUrl()}/board`)}" style="display:inline-block;background:#0F2C59;color:#FFD700;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;border:1px solid #D4AF37;">Open the Board Portal</a>

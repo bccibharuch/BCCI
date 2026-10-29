@@ -317,6 +317,104 @@ export async function markBySelf(meetingId, member, code, { userAgent = '' } = {
   }
 }
 
+// ── Mark by name (no sign-in) ──────────────────────────────────────
+// Scan the projector QR, tap your name. The rotating code proves the phone
+// saw the screen; after that a 5-minute single-use pass covers picking the
+// name, which takes longer than the code's 40-second life. Each name can be
+// marked once per meeting, and each phone can mark only one name.
+
+const NAME_PASS_TTL_SECONDS = 5 * 60;
+const DEVICE_MARK_TTL_SECONDS = 3 * 24 * 3600;
+const DEVICE_ID = /^[A-Za-z0-9-]{20,64}$/;
+
+/** A phone's id, hashed: the raw value never reaches storage. */
+const deviceHash = (deviceId) => crypto.createHash('sha256').update(String(deviceId)).digest('hex').slice(0, 24);
+
+function requireDeviceId(deviceId) {
+  if (!DEVICE_ID.test(String(deviceId || ''))) {
+    throw new BoardError(400, 'This browser could not be identified. Allow site storage and scan again.', 'no_device');
+  }
+}
+
+async function openMeetingFor(meetingId) {
+  const meeting = await getMeeting(meetingId);
+  if (!meeting) throw new BoardError(404, 'This QR code is not for a BCCI board meeting.', 'not_found');
+  if (meeting.status !== 'open') {
+    throw new BoardError(409, meeting.status === 'closed' ? 'Attendance for this meeting has closed.' : 'Attendance for this meeting has not opened yet.', 'not_open');
+  }
+  return meeting;
+}
+
+/**
+ * After a scan: the names to choose from, and a pass to mark one of them.
+ * Only names are returned (no email or phone). When this phone has already
+ * marked someone at this meeting, says who, and issues no pass.
+ */
+export async function openNameMarking(meetingId, code, deviceId) {
+  requireDeviceId(deviceId);
+  const meeting = await openMeetingFor(meetingId);
+  if (!isCodeValid(meeting, code)) {
+    throw new BoardError(410, 'This QR code has expired. Scan the code on the screen again.', 'expired');
+  }
+  const { roster, marks } = await rosterAndMarks(meeting, await listMembers());
+  const members = roster
+    .filter((m) => m.status === 'active')
+    .map((m) => ({ id: m.id, name: m.name, marked: marks.has(m.id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const view = { id: meeting.id, title: meeting.title, date: meeting.date, time: meeting.time };
+
+  const usedFor = await withRetry(() => kv.get(KEYS.boardDeviceMark(meeting.id, deviceHash(deviceId))));
+  if (usedFor) {
+    const who = members.find((m) => m.id === String(usedFor));
+    return { meeting: view, members, pass: null, markedByThisPhone: who ? who.name : 'a board member' };
+  }
+
+  const pass = crypto.randomBytes(24).toString('base64url');
+  await withRetry(() => kv.set(KEYS.boardNamePass(pass), { meetingId: meeting.id, device: deviceHash(deviceId) }, { ex: NAME_PASS_TTL_SECONDS }));
+  return { meeting: view, members, pass, markedByThisPhone: null };
+}
+
+/** Marks one name present with a pass from openNameMarking. */
+export async function markByName(pass, memberId, deviceId, { userAgent = '' } = {}) {
+  requireDeviceId(deviceId);
+  const passKey = KEYS.boardNamePass(String(pass || ''));
+  const rawPass = /^[A-Za-z0-9_-]{32}$/.test(String(pass || '')) ? await withRetry(() => kv.get(passKey)) : null;
+  const passData = typeof rawPass === 'string' ? JSON.parse(rawPass) : rawPass;
+  const device = deviceHash(deviceId);
+  // A pass is tied to the phone that scanned, so it cannot be forwarded.
+  if (!passData?.meetingId || passData.device !== device) {
+    throw new BoardError(410, 'This page has expired. Scan the code on the screen again.', 'expired');
+  }
+
+  const meeting = await openMeetingFor(passData.meetingId);
+  const member = await getMember(String(memberId || ''));
+  const onRoster = Array.isArray(meeting.roster) ? meeting.roster.includes(member?.id) : member?.status === 'active';
+  if (!member || member.status !== 'active' || !onRoster) {
+    throw new BoardError(404, 'That name is not on the board for this meeting.', 'not_on_roster');
+  }
+
+  // One name per phone: claim this phone for the name first.
+  const deviceKey = KEYS.boardDeviceMark(meeting.id, device);
+  if (!(await withRetry(() => kv.set(deviceKey, member.id, { nx: true, ex: DEVICE_MARK_TTL_SECONDS })))) {
+    const usedFor = await withRetry(() => kv.get(deviceKey));
+    const who = String(usedFor) === member.id ? member : await getMember(String(usedFor));
+    throw new BoardError(409, `This phone has already marked ${who?.name || 'a board member'} present for this meeting.`, 'device_used');
+  }
+
+  // One mark per name: only a new record is written. An existing one (already
+  // present, or a leave/absent mark from the secretary) is never overwritten.
+  const at = nowIso();
+  const entry = { status: 'present', at, method: 'name', by: `phone ${device.slice(0, 8)}` };
+  const record = { meetingId: meeting.id, memberId: member.id, status: 'present', at, method: 'name', device: device.slice(0, 8), userAgent: String(userAgent).slice(0, 160), history: [entry] };
+  if (!(await withRetry(() => kv.set(KEYS.boardAttendance(meeting.id, member.id), record, { nx: true })))) {
+    // Give the phone back so its owner can still mark their own name.
+    if (String(await withRetry(() => kv.get(deviceKey))) === member.id) await kv.del(deviceKey).catch(() => {});
+    throw new BoardError(409, `${member.name} is already marked for this meeting. If that is you, tell the secretary.`, 'already_marked');
+  }
+  await kv.del(passKey).catch(() => {});
+  return { meeting: { id: meeting.id, title: meeting.title }, member: { id: member.id, name: member.name }, at };
+}
+
 /** The superadmin setting someone present, on leave or absent, with a reason. */
 export async function markBySecretary(meetingId, memberId, status, reason, { by = 'admin' } = {}) {
   if (!ATTENDANCE_STATUS.includes(status)) throw new BoardError(400, 'Status must be present, leave or absent.', 'invalid');

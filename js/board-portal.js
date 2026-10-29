@@ -1,12 +1,12 @@
 // js/board-portal.js
 // The board member's side of meeting attendance, at /board.
 //
-// Signed out: email → 6-digit code → signed in on this phone for 6 months.
-// Signed in: their profile, a "Scan meeting QR" button that marks them
-// present from the projector's code, and their attendance history.
+// No sign-in needed to mark attendance: scanning the projector QR with the
+// phone's camera opens /board?attend=…, which lists the board; the member
+// taps their name. Each phone gets one response per meeting.
 //
-// A QR opened with the phone's own camera app arrives as /board?attend=…;
-// it is marked straight after sign-in, so either way of scanning works.
+// Signing in (email → 6-digit code) is optional: a signed-in member's scan
+// marks them straight away, and they can see their attendance history.
 
 import { el, dayLabel, timeLabel } from './dom.js?v=1.0.0';
 import { QrScanner } from './qr-scanner.js?v=1.0.0';
@@ -17,6 +17,25 @@ const ATTEND_IN_TEXT = /[?&]attend=(MTG-\d{1,6})\.([A-Za-z0-9_-]{12})(?![A-Za-z0
 export function parseAttendQr(text) {
   const m = ATTEND_IN_TEXT.exec(String(text || ''));
   return m ? { meetingId: m[1], code: m[2] } : null;
+}
+
+const DEVICE_KEY = 'bcci_board_device';
+
+/**
+ * A random id for this browser, kept in localStorage, so the server can allow
+ * one response per phone per meeting. Null when storage is unavailable.
+ */
+function deviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9-]{20,64}$/.test(id)) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
 }
 
 const STATUS_CHIP = {
@@ -41,12 +60,96 @@ export class BoardPortal {
   async mount({ attend = null } = {}) {
     this.pendingAttend = attend;
     if (this.store.getBoardSession()) await this.showSignedIn();
+    else if (attend) await this.showNameList(attend);
     else this.showSignIn();
   }
 
   destroy() {
     this.scanner?.stop();
     this.scanner = null;
+  }
+
+  // ── Mark by name (no sign-in) ──────────────────────────────────
+
+  /** After a scan: the board's names, and one tap to mark yours present. */
+  async showNameList({ meetingId, code }) {
+    this.destroy();
+    const message = el('p', { className: 'board-message', role: 'status', 'aria-live': 'polite' });
+    const card = el('div', { className: 'board-card board-names' },
+      el('h2', { className: 'board-title', text: 'Mark your attendance' }),
+      el('p', { className: 'board-lead', text: 'Loading the meeting…' }));
+    this.root.replaceChildren(card);
+
+    const device = deviceId();
+    if (!device) {
+      card.replaceChildren(card.firstChild, el('p', { className: 'board-result board-result--error', text: 'This browser is blocking site storage (private mode?). Open the link in your normal browser, or sign in instead.' }), this.signInLink());
+      return;
+    }
+
+    let data;
+    try {
+      data = await this.store.apiCall('/api/board?action=names', { method: 'POST', body: { meetingId, code, deviceId: device } });
+    } catch (err) {
+      const text = err.data?.code === 'expired' ? 'This code has changed. Scan the QR on the screen again.' : (err.message || 'The meeting could not be loaded.');
+      card.replaceChildren(card.firstChild, el('p', { className: 'board-result board-result--error', role: 'alert', text }), this.signInLink());
+      return;
+    }
+
+    const when = [dayLabel(data.meeting.date), data.meeting.time].filter(Boolean).join(' · ');
+    const heading = el('p', { className: 'board-lead' }, el('strong', { text: data.meeting.title }), when ? ` — ${when}` : '');
+    if (data.markedByThisPhone) {
+      card.replaceChildren(card.firstChild, heading,
+        el('p', { className: 'board-result board-result--ok', role: 'status', text: `This phone has already marked ${data.markedByThisPhone} present. Each phone can mark one name.` }));
+      return;
+    }
+
+    const list = el('ul', { className: 'board-name-list', 'aria-label': 'Board members' });
+    for (const m of data.members) {
+      const btn = el('button', { type: 'button', className: 'board-name-btn', disabled: m.marked, 'aria-label': m.marked ? `${m.name}, already marked` : `Mark ${m.name} present` },
+        el('span', { text: m.name }), m.marked ? el('span', { className: 'board-chip board-chip--present', text: 'Marked' }) : null);
+      btn.addEventListener('click', () => this.confirmName(card, heading, data, m, device, message));
+      list.append(el('li', {}, btn));
+    }
+    card.replaceChildren(card.firstChild, heading,
+      el('p', { className: 'board-lead', text: 'Tap your name. This phone can mark only one name, once.' }),
+      list, message, this.signInLink());
+  }
+
+  confirmName(card, heading, data, member, device, message) {
+    const yes = el('button', { type: 'button', className: 'btn-primary board-wide-btn', text: `Yes, I am ${member.name}` });
+    const back = el('button', { type: 'button', className: 'board-link-btn', text: 'Back to the list' });
+    const panel = el('div', { className: 'board-form' },
+      el('p', { className: 'board-lead', text: `Mark ${member.name} present? This cannot be changed from this phone.` }), yes, back, message);
+    card.replaceChildren(card.firstChild, heading, panel);
+    yes.focus();
+    back.addEventListener('click', () => this.showNameList(this.pendingAttend));
+    yes.addEventListener('click', async () => {
+      yes.disabled = true;
+      yes.textContent = 'Marking…';
+      try {
+        const result = await this.store.apiCall('/api/board?action=mark-name', { method: 'POST', body: { pass: data.pass, memberId: member.id, deviceId: device } });
+        navigator.vibrate?.(150);
+        card.replaceChildren(card.firstChild, heading,
+          el('p', { className: 'board-result board-result--ok', role: 'status', text: `${result.member.name} is marked present at ${timeLabel(result.at)}. Thank you.` }));
+      } catch (err) {
+        const reason = err.data?.code;
+        if (reason === 'already_marked') {
+          // Someone has that name already; this phone can still pick its own.
+          await this.showNameList(this.pendingAttend);
+          const msg = this.root.querySelector('.board-message');
+          if (msg) this.say(msg, 'error', err.message);
+          return;
+        }
+        card.replaceChildren(card.firstChild, heading,
+          el('p', { className: 'board-result board-result--error', role: 'alert', text: reason === 'expired' ? 'This page has expired. Scan the QR on the screen again.' : err.message }));
+      }
+    });
+  }
+
+  signInLink() {
+    const link = el('button', { type: 'button', className: 'board-link-btn', text: 'Board member with an account? Sign in instead' });
+    link.addEventListener('click', () => this.showSignIn());
+    return link;
   }
 
   // ── Signed out ─────────────────────────────────────────────────
@@ -58,7 +161,7 @@ export class BoardPortal {
       el('h2', { className: 'board-title', text: 'BCCI Board Portal' }),
       el('p', { className: 'board-lead', text: this.pendingAttend
         ? 'Sign in to mark your attendance for this meeting.'
-        : 'Sign in with the email address the BCCI Secretariat registered for you.' }),
+        : 'To mark attendance, scan the QR on the meeting screen with your phone camera; no sign-in needed. Sign in here to see your attendance history.' }),
     );
 
     if (step === 'email') {

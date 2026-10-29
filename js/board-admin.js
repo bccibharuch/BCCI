@@ -63,7 +63,7 @@ export class BoardAdmin {
     this.root.replaceChildren(el('div', { className: 'board-admin' },
       el('div', { className: 'board-admin-head' },
         el('h3', { className: 'board-admin-title' }, el('i', { className: 'fas fa-user-tie', 'aria-hidden': 'true' }), ' Board & Meetings'),
-        el('p', { className: 'board-admin-lead', text: 'Create a profile for each board member. At a meeting, open attendance to show a QR code on the projector; members sign in to the Board Portal on their phones and scan it to be marked present.' })),
+        el('p', { className: 'board-admin-lead', text: 'Create a profile for each board member. At a meeting, open attendance to show a QR code on the projector; members scan it with their phone camera and tap their name to be marked present. Each phone can mark one name.' })),
       el('div', { className: 'board-admin-forms' },
         el('section', { className: 'board-admin-card' },
           el('h4', { className: 'board-admin-card-title', text: 'Add a board member' }),
@@ -114,7 +114,7 @@ export class BoardAdmin {
       el('div', { className: 'form-grid' },
         field(inputs.name.id, 'Full name', inputs.name),
         field(inputs.designation.id, 'Designation', inputs.designation),
-        field(inputs.email.id, 'Email', inputs.email, 'They sign in to the Board Portal with this address.'),
+        field(inputs.email.id, 'Email', inputs.email, 'Used for the welcome email and the optional Board Portal sign-in.'),
         field(inputs.mobile.id, 'Mobile', inputs.mobile),
         field(inputs.company.id, 'Company / firm', inputs.company)),
       el('div', { className: 'board-admin-form-actions' }, submit));
@@ -359,7 +359,7 @@ export class BoardAdmin {
         reason.focus();
       };
       showButtons();
-      const how = r.method === 'qr' ? 'Scanned QR' : r.method === 'secretary' ? `By secretary: ${r.reason || ''}` : '—';
+      const how = r.method === 'qr' ? 'Scanned QR' : r.method === 'name' ? 'Tapped name' : r.method === 'secretary' ? `By secretary: ${r.reason || ''}` : '—';
       return el('tr', {},
         el('td', {}, el('strong', { text: r.name }), el('small', { className: 'board-cell-sub', text: r.designation })),
         el('td', {}, chip(ATTEND_CHIP[r.status] || ATTEND_CHIP.absent)),
@@ -465,7 +465,7 @@ class Projector {
         el('div', { className: 'board-projector-left' },
           this.qrBox,
           el('div', { className: 'board-projector-bar-track' }, this.bar),
-          el('p', { className: 'board-projector-how', text: `Open ${location.host}/board on your phone, then tap "Scan meeting QR".` })),
+          el('p', { className: 'board-projector-how', text: 'Scan with your phone camera, then tap your name.' })),
         el('div', { className: 'board-projector-right' }, this.count, this.list)));
 
     document.body.append(this.overlay);

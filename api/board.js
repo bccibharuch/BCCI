@@ -3,6 +3,8 @@
 //
 // Board members (their own session, from an emailed sign-in code):
 //   POST request-code, verify-code, attend, sign-out      GET me
+// Anyone who scanned the projector QR (no session):
+//   POST names, mark-name
 // Superadmin (the existing admin session):
 //   GET  members, meetings, meeting, live, register
 //   POST member-save, member-status, member-welcome, meeting-save,
@@ -44,6 +46,8 @@ import {
   deleteMeeting,
   currentCode,
   markBySelf,
+  openNameMarking,
+  markByName,
   markBySecretary,
   meetingDetail,
   memberHistory,
@@ -215,6 +219,24 @@ async function signOut(req, res, { token }) {
   return res.status(200).json({ success: true });
 }
 
+// ── Mark by name (no sign-in) ──────────────────────────────────────
+
+async function nameList(req, res) {
+  const limit = await rateLimit(`board:names:ip:${clientIp(req)}`, { max: 60, windowSec: 60 });
+  if (!limit.ok) return tooManyRequests(res, limit.retryAfter, 'Too many scans. Wait a moment and scan again.');
+  const result = await openNameMarking(str(req.body?.meetingId, 20), str(req.body?.code, 20), str(req.body?.deviceId, 64));
+  return res.status(200).json({ success: true, ...result });
+}
+
+async function markName(req, res) {
+  const ip = clientIp(req);
+  const limit = await rateLimit(`board:markname:ip:${ip}`, { max: 60, windowSec: 60 });
+  if (!limit.ok) return tooManyRequests(res, limit.retryAfter, 'Too many attempts. Wait a moment and try again.');
+  const result = await markByName(str(req.body?.pass, 64), str(req.body?.memberId, 20), str(req.body?.deviceId, 64), { userAgent: req.headers['user-agent'] });
+  console.log(`[Board] ${result.member.id} present at ${result.meeting.id} (by name)`);
+  return res.status(200).json({ success: true, ...result });
+}
+
 // ── Superadmin actions ─────────────────────────────────────────────
 
 const deps = { cleanPhone, isEmail, str };
@@ -324,7 +346,7 @@ const admin = {
 };
 
 const ADMIN_GET = new Set(['members', 'meetings', 'meeting', 'live', 'register']);
-const member = { 'request-code': requestCode, 'verify-code': verifyCode };
+const member = { 'request-code': requestCode, 'verify-code': verifyCode, names: nameList, 'mark-name': markName };
 const signedIn = { me, attend, 'sign-out': signOut };
 const SIGNED_IN_GET = new Set(['me']);
 

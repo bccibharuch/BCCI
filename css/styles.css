@@ -3243,6 +3243,16 @@ body.modal-open {
   background: none; border: 0; padding: 0.4rem 0; color: var(--primary); font-weight: 600;
   text-decoration: underline; cursor: pointer; align-self: flex-start;
 }
+.board-name-list { display: grid; gap: 0.5rem; margin: 0.75rem 0; padding: 0; list-style: none; }
+.board-name-btn {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  width: 100%; min-height: 48px; padding: 0.75rem 1rem; text-align: left;
+  font: inherit; font-weight: 600; color: var(--black); background: #FFFFFF;
+  border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer;
+}
+.board-name-btn:hover:not(:disabled) { border-color: var(--primary); background: #F8FAFC; }
+.board-name-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.board-name-btn:disabled { cursor: default; color: #64748B; background: #F8FAFC; }
 .board-message { margin: 0.75rem 0 0; font-size: 0.9rem; }
 .board-message:empty { display: none; }
 .board-message--error { color: #B91C1C; }
