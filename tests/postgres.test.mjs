@@ -85,6 +85,18 @@ const pgStats = await lib.getApplicationStats({ recent: 1 });
 check('stats count by status', pgStats.total === 2 && pgStats.approved === 1 && pgStats.pending === 1 && pgStats.rejected === 0, JSON.stringify({ ...pgStats, recent: undefined }));
 check('stats recent is newest, without scans', pgStats.recent.length === 1 && pgStats.recent[0].id === 'PG-APP-3' && pgStats.recent[0].paymentProof === '[document]');
 
+// A rejected applicant's resubmission moves submittedAt; the list must follow
+// it (submitted_at is a column here, not only a field inside data).
+const resubmittedAt = new Date(Date.now() + 60_000).toISOString();
+await lib.updateApplication('PG-APP-1', (a) => ({ ...a, status: 'Pending', submittedAt: resubmittedAt }));
+check('a resubmission moves the application to the top of the list', (await lib.listApplications())[0]?.id === 'PG-APP-1', (await lib.listApplications()).map((a) => a.id).join(','));
+check('and to the top of the summaries', (await lib.listApplicationSummaries())[0]?.id === 'PG-APP-1');
+const col = await lib.query('SELECT submitted_at FROM applications WHERE id = $1', ['PG-APP-1']);
+check('the submitted_at column holds the new date', new Date(col.rows[0]?.submitted_at).toISOString() === resubmittedAt, String(col.rows[0]?.submitted_at));
+await lib.updateApplication('PG-APP-1', (a) => ({ ...a, submittedAt: 'not a date' }));
+const kept = await lib.query('SELECT submitted_at FROM applications WHERE id = $1', ['PG-APP-1']);
+check('an unusable date keeps the stored submitted_at', new Date(kept.rows[0]?.submitted_at).toISOString() === resubmittedAt, String(kept.rows[0]?.submitted_at));
+
 // ── Enquiries ────────────────────────────────────────────────────
 section('Postgres enquiries');
 
