@@ -1585,6 +1585,70 @@ console.log('\nFUNC-01  Public QR Verification Routing & UI');
 console.log('──────────────────────────────────────────────');
 ck('app.js includes verify in VIEW_PATHS', SRC.includes("verify: '/verify'"));
 ck('app.js includes verify in PAGE_TITLES', SRC.includes("verify: 'Member Verification — BCCI Bharuch'"));
+
+// Per-route head tags, run from the real source against a minimal <head>.
+{
+  const grabConst = (name) => {
+    const i = SRC.indexOf(`const ${name} = `);
+    const lineEnd = SRC.indexOf('\n', i);
+    const end = SRC.slice(i, lineEnd).trimEnd().endsWith('{') ? SRC.indexOf('\n};', i) + 3 : lineEnd;
+    return SRC.slice(i, end);
+  };
+  const tags = [];
+  const fakeHead = {
+    querySelector(sel) {
+      const [, tag, attr, val] = sel.match(/^(\w+)\[([\w:-]+)="([^"]+)"\]$/);
+      return tags.find((t) => t.tagName === tag && t.attrs[attr] === val) || null;
+    },
+    appendChild(t) { tags.push(t); },
+  };
+  const fakeDoc = {
+    title: '',
+    head: fakeHead,
+    createElement: (tagName) => ({ tagName, attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); } }),
+  };
+  // The page ships these in index.html; updatePageMeta must rewrite them.
+  for (const [tagName, attrs] of [
+    ['link', { rel: 'canonical', href: 'https://bccibharuch.in' }],
+    ['meta', { property: 'og:url', content: 'https://bccibharuch.in' }],
+    ['meta', { name: 'robots', content: 'index, follow' }],
+  ]) tags.push({ tagName, attrs: { ...attrs }, setAttribute(k, v) { this.attrs[k] = String(v); } });
+
+  const realDocument = globalThis.document;
+  globalThis.document = fakeDoc;
+  try {
+    const { updatePageMeta } = await import('data:text/javascript,' + encodeURIComponent([
+      grabConst('VIEW_PATHS'), grabConst('PAGE_TITLES'), grabConst('SITE_ORIGIN'),
+      grabConst('PAGE_DESCRIPTIONS'), grabConst('NOINDEX_VIEWS'),
+      grab('setHeadTag'), grab('updatePageMeta'), 'export { updatePageMeta };',
+    ].join('\n')));
+    const head = (sel) => fakeHead.querySelector(sel)?.attrs;
+
+    updatePageMeta('events');
+    ck('a route gets its own canonical URL', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/events', JSON.stringify(head('link[rel="canonical"]')));
+    ck('og:url follows the route', head('meta[property="og:url"]')?.content === 'https://bccibharuch.in/events');
+    ck('og:title and the document title follow the route',
+      head('meta[property="og:title"]')?.content === 'Events & Conclaves — BCCI Bharuch' && fakeDoc.title === 'Events & Conclaves — BCCI Bharuch');
+    ck('missing description and Twitter tags are created', /summits/.test(head('meta[name="description"]')?.content || '') && /summits/.test(head('meta[name="twitter:description"]')?.content || ''));
+    ck('a public route stays indexable', head('meta[name="robots"]')?.content === 'index, follow');
+
+    updatePageMeta('verify');
+    ck('verification canonicalises to /verify, never a member record', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/verify');
+    for (const view of ['verify', 'card', 'signin', 'admin', 'board']) {
+      updatePageMeta(view);
+      ck(`${view} is marked noindex`, head('meta[name="robots"]')?.content === 'noindex, nofollow');
+    }
+
+    updatePageMeta('home');
+    ck('home canonicalises to the site root and is indexable again',
+      head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/' && head('meta[name="robots"]')?.content === 'index, follow');
+    updatePageMeta('no-such-view');
+    ck('an unknown view falls back to the home tags', head('link[rel="canonical"]')?.href === 'https://bccibharuch.in/');
+    ck('tags are updated in place, never duplicated', tags.filter((t) => t.attrs.rel === 'canonical').length === 1 && tags.filter((t) => t.attrs.name === 'robots').length === 1);
+  } finally {
+    globalThis.document = realDocument;
+  }
+}
 ck('app.js routes /verify and /verify/* in viewFromLocation', SRC.includes("path === '/verify' || path.startsWith('/verify/')"));
 ck('index.html contains #view-verify section', indexHtml.includes('id="view-verify"'));
 ck('index.html contains #verificationContainer', indexHtml.includes('id="verificationContainer"'));

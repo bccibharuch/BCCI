@@ -120,6 +120,63 @@ const PAGE_TITLES = {
   board: 'Board Portal — BCCI Bharuch',
 };
 
+const SITE_ORIGIN = 'https://bccibharuch.in';
+
+// Share and search snippets, one per view; the copy is each view's own intro.
+const PAGE_DESCRIPTIONS = {
+  home: 'Official website of Bharuch Chamber of Commerce & Industry (BCCI) - Asia\'s largest industrial hub representing 12,000+ MSMEs and 625+ large industries. Apply for membership, access trade services, and connect with Bharuch\'s business community.',
+  about: 'Safeguarding, supporting, and scaling enterprise growth in Bharuch.',
+  services: 'Empowering member enterprises with regulatory, trade, and advisory solutions.',
+  events: 'Explore flagship industry summits, business roundtables, seminars, and networking forums hosted by the Bharuch Chamber of Commerce & Industry.',
+  gallery: 'Latest news releases, official conclaves, policy dialogues, and event coverage from BCCI Bharuch.',
+  qrcode: 'Scan to fill out the BCCI Membership Application Form or complete institutional payment transactions securely.',
+  enquiry: 'Have a question regarding trade services or membership? Send us a message.',
+  membership: 'Apply to join Bharuch\'s official Chamber of Commerce & Industry.',
+  card: 'Official BCCI digital membership card.',
+  signin: 'BCCI Secretariat sign-in.',
+  admin: 'BCCI Secretariat portal.',
+  verify: 'Public registry verification for Bharuch Chamber of Commerce & Industry credentials.',
+  board: 'BCCI Board Portal.',
+};
+
+// Personal or staff-only pages: never indexed. A member's /verify/<id> link
+// names their company, so verification stays out of search results too.
+const NOINDEX_VIEWS = new Set(['card', 'signin', 'admin', 'verify', 'board']);
+
+/** Sets the content of a <meta>/<link> in <head>, creating it if missing. */
+function setHeadTag(selector, create, attr, value) {
+  let tag = document.head.querySelector(selector);
+  if (!tag) {
+    tag = document.createElement(create.tag);
+    for (const [k, v] of Object.entries(create.attrs)) tag.setAttribute(k, v);
+    document.head.appendChild(tag);
+  }
+  tag.setAttribute(attr, value);
+}
+
+/**
+ * Keeps the title, canonical URL, robots rule and Open Graph / Twitter tags
+ * in step with the view. index.html ships the home page's values, so every
+ * route otherwise declared itself a duplicate of the home page.
+ */
+function updatePageMeta(viewId) {
+  const view = PAGE_TITLES[viewId] ? viewId : 'home';
+  const title = PAGE_TITLES[view];
+  const description = PAGE_DESCRIPTIONS[view];
+  // /verify/<id> canonicalises to /verify, never to one member's record.
+  const url = SITE_ORIGIN + (view === 'home' ? '/' : VIEW_PATHS[view]);
+
+  document.title = title;
+  setHeadTag('link[rel="canonical"]', { tag: 'link', attrs: { rel: 'canonical' } }, 'href', url);
+  setHeadTag('meta[name="description"]', { tag: 'meta', attrs: { name: 'description' } }, 'content', description);
+  setHeadTag('meta[name="robots"]', { tag: 'meta', attrs: { name: 'robots' } }, 'content', NOINDEX_VIEWS.has(view) ? 'noindex, nofollow' : 'index, follow');
+  setHeadTag('meta[property="og:url"]', { tag: 'meta', attrs: { property: 'og:url' } }, 'content', url);
+  setHeadTag('meta[property="og:title"]', { tag: 'meta', attrs: { property: 'og:title' } }, 'content', title);
+  setHeadTag('meta[property="og:description"]', { tag: 'meta', attrs: { property: 'og:description' } }, 'content', description);
+  setHeadTag('meta[name="twitter:title"]', { tag: 'meta', attrs: { name: 'twitter:title' } }, 'content', title);
+  setHeadTag('meta[name="twitter:description"]', { tag: 'meta', attrs: { name: 'twitter:description' } }, 'content', description);
+}
+
 /** Resolves the view for the current URL, tolerating the old #hash links. */
 function viewFromLocation() {
   const hash = (window.location.hash || '').toLowerCase().replace(/^#/, '');
@@ -1830,7 +1887,7 @@ class App {
         window.history.pushState({ view: viewId }, '', path);
       }
     }
-    document.title = PAGE_TITLES[viewId] || PAGE_TITLES.home;
+    updatePageMeta(viewId);
     // A screen reader gets no signal from a display:none swap, so say which
     // page this now is.
     this.announce(`${(PAGE_TITLES[viewId] || '').split('—')[0].trim()} page loaded`);

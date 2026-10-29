@@ -4,5 +4,7 @@ Disallow: /api/
 Disallow: /admin-bcci
 Disallow: /signin
 Disallow: /card
+Disallow: /board
+Disallow: /verify
 
 Sitemap: https://bccibharuch.in/sitemap.xml
