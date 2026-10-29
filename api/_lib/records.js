@@ -33,4 +33,5 @@ export {
   deleteCustomPlan,
   acquireLock,
   releaseLock,
+  fencedWrite,
 } from './redis.js';

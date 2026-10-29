@@ -67,6 +67,10 @@ async function waitForMigration(markerKey) {
     const status = await redis.get(markerKey);
     if (status === 'done' || !status) return;
   }
+  // Still running after 2 s: answering now would show an empty or partial
+  // list as if it were the whole one. withRetry tries again; then the caller
+  // gets a 503 and can retry.
+  throw Object.assign(new Error('Records are being upgraded. Please try again in a moment.'), { statusCode: 503 });
 }
 
 async function migrateLegacy({ legacyKey, indexKey, recordKey, emailKey, marker }) {
@@ -92,10 +96,13 @@ async function migrateLegacy({ legacyKey, indexKey, recordKey, emailKey, marker 
       for (const raw of legacy) {
         const record = emailKey ? normalizeApplication(raw) : raw;
         if (!record?.id) continue;
-        await redis.set(recordKey(record.id), record);
+        // Never overwrite: a record already under its own key is newer than
+        // the legacy copy (this runs again if the marker is ever deleted).
+        if (!(await redis.set(recordKey(record.id), record, { nx: true }))) continue;
         await redis.zadd(indexKey, { score: timeOf(record), member: record.id });
+        // Nor take an email over from an application filed since.
         if (emailKey && record.email) {
-          await redis.set(emailKey(record.email), record.id);
+          await redis.set(emailKey(record.email), record.id, { nx: true });
         }
       }
       console.log(`[Migration] ${marker}: moved ${legacy.length} records to per-record keys`);
@@ -276,17 +283,18 @@ export async function updateApplication(id, mutate) {
       const current = normalizeApplication(await redis.get(KEYS.app(id)));
       if (!current) return null;
       const next = normalizeApplication(mutate({ ...current }));
-      // One transaction, so the list summary can never disagree with the record.
-      const tx = redis
-        .multi()
-        .set(KEYS.app(id), next)
-        .set(KEYS.appSummary(id), summarizeApplication(next));
+      // One atomic, lock-checked write, so the list summary can never disagree
+      // with the record and a lapsed lock cannot overwrite a newer edit.
+      const ops = [
+        ['set', KEYS.app(id), next],
+        ['set', KEYS.appSummary(id), summarizeApplication(next)],
+      ];
       // A resubmission moves submittedAt; keep the list order in step. Records
       // without a usable date keep their slot rather than jumping to the top.
       const submitted = Date.parse(next.submittedAt || '');
-      if (Number.isFinite(submitted)) tx.zadd(KEYS.appIndex, { score: submitted, member: id });
-      await tx.exec();
-      if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
+      if (Number.isFinite(submitted)) ops.push(['zadd', KEYS.appIndex, submitted, id]);
+      if (next.email) ops.push(['set', KEYS.appByEmail(next.email), next.id]);
+      await fencedWrite(lockName, lock, ops);
       return next;
     } finally {
       await releaseLock(lockName, lock);
@@ -387,8 +395,11 @@ export async function deleteEvent(id) {
       throw Object.assign(new Error('This event is being updated. Try deleting it again in a moment.'), { statusCode: 409 });
     }
     try {
-      await redis.del(KEYS.event(id), KEYS.eventAttendees(id));
-      await redis.zrem(KEYS.eventIndex, id);
+      await fencedWrite(`eventreg:${id}`, lockToken, [
+        ['del', KEYS.event(id)],
+        ['del', KEYS.eventAttendees(id)],
+        ['zrem', KEYS.eventIndex, id],
+      ]);
       return true;
     } finally {
       await releaseLock(`eventreg:${id}`, lockToken);
@@ -500,8 +511,10 @@ export async function registerForEvent(id, attendee) {
       attendees.push(newAttendee);
       event.registeredCount = currentCount + 1;
 
-      await redis.set(KEYS.eventAttendees(id), attendees);
-      await redis.set(KEYS.event(id), event);
+      await fencedWrite(`eventreg:${id}`, lockToken, [
+        ['set', KEYS.eventAttendees(id), attendees],
+        ['set', KEYS.event(id), event],
+      ]);
 
       return { success: true, event, attendee: newAttendee, ticketId };
     } finally {
@@ -548,7 +561,7 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
           confirmedAt: new Date().toISOString(),
           confirmedBy,
         };
-        await redis.set(KEYS.eventAttendees(id), attendees);
+        await fencedWrite(`eventreg:${id}`, lockToken, [['set', KEYS.eventAttendees(id), attendees]]);
       }
 
       return {
@@ -601,7 +614,7 @@ export async function setAttendeeCheckIn(id, ticketId, { checkedIn = true, by = 
       if (!outcome.success) return outcome;
       if (outcome.changed) {
         attendees[idx] = outcome.attendee;
-        await redis.set(KEYS.eventAttendees(id), attendees);
+        await fencedWrite(`eventreg:${id}`, lockToken, [['set', KEYS.eventAttendees(id), attendees]]);
       }
       return { ...outcome, event };
     } finally {
@@ -645,8 +658,10 @@ export async function removeEventAttendee(id, ticketId) {
       const [removed] = attendees.splice(idx, 1);
       event.registeredCount = Math.max(0, (Number(event.registeredCount) || 0) - 1);
 
-      await redis.set(KEYS.eventAttendees(id), attendees);
-      await redis.set(KEYS.event(id), event);
+      await fencedWrite(`eventreg:${id}`, lockToken, [
+        ['set', KEYS.eventAttendees(id), attendees],
+        ['set', KEYS.event(id), event],
+      ]);
 
       return { success: true, event, attendee: removed };
     } finally {
@@ -660,7 +675,52 @@ export async function removeEventAttendee(id, ticketId) {
 // so a slow holder can never delete the next holder's lock after its own
 // TTL expired. Returns the token, or null when the lock stayed busy.
 
-export async function acquireLock(name, ttlSeconds = 5, waits = 25, waitMs = 40) {
+// A lock can expire while its holder is still working (a slow or retried
+// storage call). Every write made under a lock therefore goes through one
+// Lua script that checks the holder's token and applies all the writes
+// atomically, or none of them. A holder whose lock lapsed gets a clean 409
+// instead of overwriting whoever took the lock next.
+const FENCED_WRITE = `-- bcci-fenced-write
+if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end
+for i = 2, #KEYS do
+  local op = string.sub(ARGV[i], 1, 1)
+  local arg = string.sub(ARGV[i], 3)
+  if op == 'S' then redis.call('set', KEYS[i], arg)
+  elseif op == 'D' then redis.call('del', KEYS[i])
+  elseif op == 'Z' then
+    local sep = string.find(arg, ':', 1, true)
+    redis.call('zadd', KEYS[i], string.sub(arg, 1, sep - 1), string.sub(arg, sep + 1))
+  elseif op == 'R' then redis.call('zrem', KEYS[i], arg)
+  end
+end
+return 1`;
+
+/** Encodes a value exactly as the Upstash client does for SET. */
+const encodeValue = (v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v));
+
+/**
+ * Applies writes only while `token` still holds the lock `name`.
+ * ops: ['set', key, value] | ['del', key] | ['zadd', key, score, member] | ['zrem', key, member]
+ * Throws a 409 when the lock has passed to someone else.
+ */
+export async function fencedWrite(name, token, ops) {
+  const keys = [`bcci:lock:${name}`];
+  const args = [String(token || '')];
+  for (const [op, key, a, b] of ops) {
+    keys.push(key);
+    if (op === 'set') args.push(`S:${encodeValue(a)}`);
+    else if (op === 'del') args.push('D:');
+    else if (op === 'zadd') args.push(`Z:${Number(a)}:${b}`);
+    else if (op === 'zrem') args.push(`R:${a}`);
+    else throw new Error(`fencedWrite: unknown op ${op}`);
+  }
+  const applied = await redis.eval(FENCED_WRITE, keys, args);
+  if (Number(applied) !== 1) {
+    throw Object.assign(new Error('This record was being updated at the same time. Please try again.'), { statusCode: 409 });
+  }
+}
+
+export async function acquireLock(name, ttlSeconds = 15, waits = 25, waitMs = 40) {
   const key = `bcci:lock:${name}`;
   const token = crypto.randomUUID();
   for (let i = 0; i < waits; i++) {

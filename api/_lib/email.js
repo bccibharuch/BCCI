@@ -9,7 +9,7 @@
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { kv } from './kv.js';
-import { acquireLock, releaseLock } from './records.js';
+import { acquireLock, releaseLock, fencedWrite } from './records.js';
 import { esc } from './http.js';
 
 const LOG_KEY = 'bcci:email_log';
@@ -490,7 +490,7 @@ async function recordInAuditLog({ type, to, subject, result }) {
       provider: result.provider,
       sentAt: new Date().toISOString(),
     });
-    await kv.set(LOG_KEY, logs.slice(0, 300));
+    await fencedWrite('email_log', lock, [['set', LOG_KEY, logs.slice(0, 300)]]);
   } catch (err) {
     console.warn('[Email] audit log write failed:', err.message);
   } finally {

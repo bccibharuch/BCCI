@@ -39,6 +39,25 @@ ck('legacy enquiries migrated', enq.length === 1 && enq[0].id === 'ENQ-501', `go
 const again = await listApplications();
 ck('re-reading does not duplicate records', again.length === 3, `got ${again.length}`);
 
+// The migration runs again if its marker is ever deleted (purge:data does).
+// It must then leave newer data alone.
+await updateApplication('BCCI-1', (a) => ({ ...a, company: 'Alpha Chem Renamed' }));
+await redis.set(KEYS.appByEmail('c@x.com'), 'BCCI-NEWER');
+await redis.del(KEYS.migrated('applications'));
+const rerun = await listApplications();
+ck('a re-run does not duplicate records', rerun.length === 3, `got ${rerun.length}`);
+ck('a re-run does not overwrite a record edited since', rerun.find((a) => a.id === 'BCCI-1')?.company === 'Alpha Chem Renamed', rerun.find((a) => a.id === 'BCCI-1')?.company);
+ck('a re-run does not take over an email claimed since', (await redis.get(KEYS.appByEmail('c@x.com'))) === 'BCCI-NEWER');
+await redis.set(KEYS.appByEmail('c@x.com'), 'BCCI-3');
+await updateApplication('BCCI-1', (a) => ({ ...a, company: 'Alpha Chem' }));
+
+// Another cold start still migrating after the 2 s wait: fail with a retryable
+// 503 instead of answering with an empty or partial list.
+await redis.set(KEYS.migrated('applications'), 'running', { ex: 60 });
+const waited = await listApplications().then(() => null, (err) => err);
+ck('a migration still running after the wait → 503, not an empty list', waited?.statusCode === 503, String(waited?.message));
+await redis.set(KEYS.migrated('applications'), 'done');
+
 console.log('\nDATA-01 — concurrent writes no longer clobber each other');
 console.log('────────────────────────────────────────────────────────');
 

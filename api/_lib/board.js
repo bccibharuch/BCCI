@@ -18,7 +18,7 @@
 
 import crypto from 'node:crypto';
 import { kv, KEYS, withRetry } from './kv.js';
-import { acquireLock, releaseLock } from './records.js';
+import { acquireLock, releaseLock, fencedWrite } from './records.js';
 
 export const QR_WINDOW_MS = 20_000;
 const MEMBER_STATUS = ['active', 'inactive'];
@@ -314,7 +314,7 @@ export async function markBySelf(meetingId, member, code, { userAgent = '' } = {
     if (current?.status === 'present') return { meeting, record: current, alreadyMarked: true };
     // Marked on leave or absent by the secretary, but here in the room after all.
     const upgraded = { ...current, ...record, history: [...(current?.history || []), entry] };
-    await withRetry(() => kv.set(key, upgraded));
+    await fencedWrite(lockName, lock, [['set', key, upgraded]]);
     return { meeting, record: upgraded, alreadyMarked: false };
   } finally {
     await releaseLock(lockName, lock);
@@ -456,7 +456,7 @@ export async function markBySecretary(meetingId, memberId, status, reason, { by 
       reason: entry.reason,
       history: [...(current?.history || []), entry],
     };
-    await withRetry(() => kv.set(key, record));
+    await fencedWrite(lockName, lock, [['set', key, record]]);
     return { meeting, member, record };
   } finally {
     await releaseLock(lockName, lock);

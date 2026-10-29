@@ -170,6 +170,33 @@ ck('deleteEvent succeeds', deleted === true);
 const afterDelete = await getEvent('EVT-TEST-1');
 ck('deleted event is gone', afterDelete === null);
 
+// A lock that lapses mid-operation (a slow storage call) must not let the
+// late holder overwrite the next one: every locked write is token-checked.
+{
+  console.log('\nLock lapse: a late writer is refused');
+  const ev = await putEvent({ id: 'EVT-LAPSE', title: 'Lapse test', date: '2026-12-01', time: '10:00', capacity: 10, registeredCount: 0 });
+  const lockKey = 'bcci:lock:eventreg:EVT-LAPSE';
+  // Just before the registration reads the attendee list, its lock "expires"
+  // and another request takes it.
+  let stolen = false;
+  const steal = (cmd) => {
+    if (!stolen && String(cmd[0]).toUpperCase() === 'GET' && cmd[1] === 'bcci:event_attendees:EVT-LAPSE') {
+      stolen = true;
+      mock.store.set(lockKey, 'someone-else');
+    }
+  };
+  mock.beforeCommand.push(steal);
+  const late = await registerForEvent(ev.id, { name: 'Late Writer', email: 'late@example.com' }).then((r) => r, (e) => e);
+  mock.beforeCommand.splice(mock.beforeCommand.indexOf(steal), 1);
+  ck('the registration whose lock lapsed is refused (409)', late?.statusCode === 409, JSON.stringify(late?.message || late));
+  ck('…and wrote nothing: no attendee, count unchanged',
+    (await getEventAttendees(ev.id)).length === 0 && (await getEvent(ev.id)).registeredCount === 0);
+  ck("…and the other holder's lock is untouched", mock.store.get(lockKey) === 'someone-else');
+  mock.store.delete(lockKey);
+  const ok = await registerForEvent(ev.id, { name: 'On Time', email: 'ontime@example.com' });
+  ck('with the lock free, registration works normally', ok.success === true && (await getEvent(ev.id)).registeredCount === 1);
+}
+
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 mock.server.close();
 process.exit(fail ? 1 : 0);

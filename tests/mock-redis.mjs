@@ -111,16 +111,36 @@ function run(cmd) {
       return n;
     }
     case 'EVAL': {
-      // Only the token-checked lock release is supported: delete KEYS[1]
-      // when it still holds ARGV[1].
+      // Two scripts are supported, both from api/_lib/redis.js.
       const [script, numKeys, ...rest] = cmd.slice(1);
-      if (!/redis\.call\("get",KEYS\[1\]\)==ARGV\[1\]/.test(String(script)) || Number(numKeys) !== 1) {
+      const n = Number(numKeys);
+      const keys = rest.slice(0, n).map(String);
+      const args = rest.slice(n).map(String);
+      const lockHeld = alive(keys[0]) && store.get(keys[0]) === args[0];
+      if (String(script).startsWith('-- bcci-fenced-write')) {
+        // Apply every write only while KEYS[1] still holds ARGV[1].
+        if (!lockHeld) return 0;
+        for (let i = 1; i < keys.length; i++) {
+          const op = args[i][0];
+          const arg = args[i].slice(2);
+          if (op === 'S') { store.set(keys[i], arg); expiries.delete(keys[i]); }
+          else if (op === 'D') { store.delete(keys[i]); zsets.delete(keys[i]); expiries.delete(keys[i]); }
+          else if (op === 'Z') {
+            const sep = arg.indexOf(':');
+            if (!zsets.has(keys[i])) zsets.set(keys[i], new Map());
+            zsets.get(keys[i]).set(arg.slice(sep + 1), Number(arg.slice(0, sep)));
+          } else if (op === 'R') (zsets.get(keys[i]) || new Map()).delete(arg);
+          else throw new Error(`mock-redis: unknown fenced op ${op}`);
+        }
+        return 1;
+      }
+      // Token-checked lock release: delete KEYS[1] when it still holds ARGV[1].
+      if (!/redis\.call\("get",KEYS\[1\]\)==ARGV\[1\]/.test(String(script)) || n !== 1) {
         throw new Error('mock-redis: unsupported EVAL script');
       }
-      const [lockKey, token] = rest;
-      if (!alive(lockKey) || store.get(lockKey) !== String(token)) return 0;
-      store.delete(lockKey);
-      expiries.delete(lockKey);
+      if (!lockHeld) return 0;
+      store.delete(keys[0]);
+      expiries.delete(keys[0]);
       return 1;
     }
     default:
