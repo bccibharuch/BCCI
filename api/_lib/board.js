@@ -303,6 +303,8 @@ export async function markBySelf(meetingId, member, code, { userAgent = '' } = {
   // otherwise drop a history entry — serialize them.
   const lockName = `attendance:${key}`;
   const lock = await acquireLock(lockName);
+  // Without the lock a concurrent scan or override could drop a history entry.
+  if (!lock) throw new BoardError(409, 'This attendance record is being updated. Try again in a moment.', 'busy');
   try {
     const existing = await withRetry(() => kv.get(key));
     const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
@@ -312,7 +314,7 @@ export async function markBySelf(meetingId, member, code, { userAgent = '' } = {
     await withRetry(() => kv.set(key, upgraded));
     return { meeting, record: upgraded, alreadyMarked: false };
   } finally {
-    if (lock) await releaseLock(lockName, lock);
+    await releaseLock(lockName, lock);
   }
 }
 
@@ -339,6 +341,8 @@ export async function markBySecretary(meetingId, memberId, status, reason, { by 
   // same key cannot lose a history entry.
   const lockName = `attendance:${key}`;
   const lock = await acquireLock(lockName);
+  // Without the lock a concurrent scan or override could drop a history entry.
+  if (!lock) throw new BoardError(409, 'This attendance record is being updated. Try again in a moment.', 'busy');
   try {
     const existing = await withRetry(() => kv.get(key));
     const current = typeof existing === 'string' ? JSON.parse(existing) : existing;
@@ -354,7 +358,7 @@ export async function markBySecretary(meetingId, memberId, status, reason, { by 
     await withRetry(() => kv.set(key, record));
     return { meeting, member, record };
   } finally {
-    if (lock) await releaseLock(lockName, lock);
+    await releaseLock(lockName, lock);
   }
 }
 

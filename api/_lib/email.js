@@ -465,6 +465,40 @@ async function deliver({ to, subject, html }) {
 }
 
 /**
+ * Appends one send to the audit trail, capped so it cannot grow without
+ * bound. The read-modify-write is serialized so concurrent sends do not drop
+ * each other's entry; without the lock the entry is skipped rather than risk
+ * erasing others.
+ */
+async function recordInAuditLog({ type, to, subject, result }) {
+  const lock = await acquireLock('email_log').catch((err) => {
+    console.warn('[Email] audit log lock failed:', err?.message || err);
+    return null;
+  });
+  if (!lock) {
+    console.warn(`[Email] audit log busy; ${type} to ${to} was not recorded`);
+    return;
+  }
+  try {
+    const logs = (await kv.get(LOG_KEY)) || [];
+    logs.unshift({
+      id: `EMAIL-${crypto.randomUUID()}`,
+      type,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      success: result.success,
+      provider: result.provider,
+      sentAt: new Date().toISOString(),
+    });
+    await kv.set(LOG_KEY, logs.slice(0, 300));
+  } catch (err) {
+    console.warn('[Email] audit log write failed:', err.message);
+  } finally {
+    await releaseLock('email_log', lock);
+  }
+}
+
+/**
  * Renders and sends one notification. Never throws — a failed notification
  * must not roll back the action that triggered it.
  */
@@ -477,26 +511,7 @@ export async function sendEmail({ type, to, data }) {
     const { subject, html } = build(data || {});
     const result = await deliver({ to, subject, html });
 
-    // Audit trail, capped so it cannot grow without bound. The read-modify-
-    // write is serialized so concurrent sends do not drop each other's entry.
-    const lock = await acquireLock('email_log').catch(() => null);
-    try {
-      const logs = (await kv.get(LOG_KEY)) || [];
-      logs.unshift({
-        id: `EMAIL-${crypto.randomUUID()}`,
-        type,
-        to: Array.isArray(to) ? to : [to],
-        subject,
-        success: result.success,
-        provider: result.provider,
-        sentAt: new Date().toISOString(),
-      });
-      await kv.set(LOG_KEY, logs.slice(0, 300));
-    } catch (err) {
-      console.warn('[Email] audit log write failed:', err.message);
-    } finally {
-      if (lock) await releaseLock('email_log', lock);
-    }
+    await recordInAuditLog({ type, to, subject, result });
 
     if (result.success) console.log(`[Email] ${type} sent to ${to}`);
     return result;

@@ -323,6 +323,20 @@ ck('an override without a reason is refused', r.status === 400 && r.json?.code =
 r = await call('mark', { token: ADMIN, body: { meetingId: 'MTG-1', memberId: 'BM-2', status: 'leave', reason: 'Travelling, informed in advance' } });
 ck('superadmin grants leave with a reason', r.status === 200 && r.json?.record?.status === 'leave' && r.json?.record?.history?.length === 1);
 
+{
+  // A concurrent writer holds this record's lock: the override must refuse
+  // rather than write a history that could drop the other writer's entry.
+  const { acquireLock, releaseLock } = await import('../api/_lib/records.js');
+  const lockName = `attendance:${KEYS.boardAttendance('MTG-1', 'BM-2')}`;
+  const held = await acquireLock(lockName, 30);
+  r = await call('mark', { token: ADMIN, body: { meetingId: 'MTG-1', memberId: 'BM-2', status: 'absent', reason: 'Written while locked' } });
+  await releaseLock(lockName, held);
+  ck('an override that cannot get the record lock → 409 busy', r.status === 409 && r.json?.code === 'busy', JSON.stringify(r.json));
+  const kept = await kv.get(KEYS.boardAttendance('MTG-1', 'BM-2'));
+  const keptRecord = typeof kept === 'string' ? JSON.parse(kept) : kept;
+  ck('and the record keeps its leave mark and single history entry', keptRecord?.status === 'leave' && keptRecord?.history?.length === 1, JSON.stringify(keptRecord));
+}
+
 r = await call('member-status', { token: ADMIN, body: { id: 'BM-3', status: 'inactive' } });
 ck('superadmin deactivates a profile', r.status === 200 && r.json?.member?.status === 'inactive');
 r = await call('me', { method: 'GET', token: chiragToken });

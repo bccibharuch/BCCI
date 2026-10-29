@@ -170,11 +170,13 @@ export async function acquireLock(name, ttlSeconds = 5, waits = 30, waitMs = 40)
 }
 
 export async function releaseLock(name, token) {
-  if (token) {
-    await query('DELETE FROM locks WHERE name = $1 AND token = $2', [name, token]).catch(() => {});
-  } else {
-    await query('DELETE FROM locks WHERE name = $1', [name]).catch(() => {});
-  }
+  // Without the holder's token there is nothing of ours to release; deleting
+  // the row would free a lock someone else holds.
+  if (!token) return;
+  await query('DELETE FROM locks WHERE name = $1 AND token = $2', [name, token]).catch((err) => {
+    // The lock's expiry frees it shortly.
+    console.warn(`[Lock] release of ${name} failed:`, err?.message || err);
+  });
 }
 
 // ── Applications ─────────────────────────────────────────────────

@@ -268,6 +268,10 @@ export async function updateApplication(id, mutate) {
     await ensureAppsMigrated();
     const lockName = `application:${id}`;
     const lock = await acquireLock(lockName);
+    // Writing without the lock could overwrite a concurrent edit; refuse instead.
+    if (!lock) {
+      throw Object.assign(new Error('This application is being updated by someone else. Please try again.'), { statusCode: 409 });
+    }
     try {
       const current = normalizeApplication(await redis.get(KEYS.app(id)));
       if (!current) return null;
@@ -285,7 +289,7 @@ export async function updateApplication(id, mutate) {
       if (next.email) await redis.set(KEYS.appByEmail(next.email), next.id);
       return next;
     } finally {
-      if (lock) await releaseLock(lockName, lock);
+      await releaseLock(lockName, lock);
     }
   });
 }
@@ -657,19 +661,19 @@ export async function acquireLock(name, ttlSeconds = 5, waits = 25, waitMs = 40)
 }
 
 export async function releaseLock(name, token) {
+  // Without the holder's token there is nothing of ours to release; deleting
+  // the key would free a lock someone else holds.
+  if (!token) return;
   const key = `bcci:lock:${name}`;
   try {
-    if (token) {
-      await redis.eval(
-        'if redis.call("get",KEYS[1])==ARGV[1] then return redis.call("del",KEYS[1]) else return 0 end',
-        [key],
-        [token]
-      );
-    } else {
-      await redis.del(key);
-    }
-  } catch {
-    await redis.del(key).catch(() => {});
+    await redis.eval(
+      'if redis.call("get",KEYS[1])==ARGV[1] then return redis.call("del",KEYS[1]) else return 0 end',
+      [key],
+      [token]
+    );
+  } catch (err) {
+    // The lock's TTL frees it shortly; a blind DEL here could free the next holder's.
+    console.warn(`[Lock] release of ${name} failed:`, err?.message || err);
   }
 }
 

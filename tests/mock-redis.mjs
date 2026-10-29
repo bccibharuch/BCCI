@@ -110,6 +110,19 @@ function run(cmd) {
       for (const m of cmd.slice(2)) if (z.delete(String(m))) n++;
       return n;
     }
+    case 'EVAL': {
+      // Only the token-checked lock release is supported: delete KEYS[1]
+      // when it still holds ARGV[1].
+      const [script, numKeys, ...rest] = cmd.slice(1);
+      if (!/redis\.call\("get",KEYS\[1\]\)==ARGV\[1\]/.test(String(script)) || Number(numKeys) !== 1) {
+        throw new Error('mock-redis: unsupported EVAL script');
+      }
+      const [lockKey, token] = rest;
+      if (!alive(lockKey) || store.get(lockKey) !== String(token)) return 0;
+      store.delete(lockKey);
+      expiries.delete(lockKey);
+      return 1;
+    }
     default:
       throw new Error(`mock-redis: unsupported command ${op}`);
   }

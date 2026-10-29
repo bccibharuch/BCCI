@@ -506,6 +506,38 @@ for (let i = 0; i < 50; i++) {
 check('verify endpoint enforces rate limiting (429 on spam)', rateLimited);
 
 // ════════════════════════════════════════════════════════════════════
+section('Locks: no write without the lock, no release without the token');
+{
+  const { acquireLock, releaseLock, getApplication } = await import(`${BCCI}/_lib/records.js`);
+  const { sendEmail } = await import(`${BCCI}/_lib/email.js`);
+
+  // Another request holds the application's lock for longer than every retry waits.
+  const before = await getApplication(rejectAppId);
+  const held = await acquireLock(`application:${rejectAppId}`, 30);
+  check('test setup: the application lock is held', !!held);
+  r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: 'Rejected', reason: 'Written while locked' } });
+  check('an admin update that cannot get the lock → 409', r.statusCode === 409 && /being updated/.test(r.body?.error || ''), `${r.statusCode} ${JSON.stringify(r.body)}`);
+  const after = await getApplication(rejectAppId);
+  check('and the record is left untouched', after?.status === before?.status && after?.rejectionReason === before?.rejectionReason, `${before?.status} → ${after?.status}`);
+
+  await releaseLock(`application:${rejectAppId}`);
+  check('a release without the token leaves the holder\'s lock in place', (await acquireLock(`application:${rejectAppId}`, 5, 1, 0)) === null);
+  await releaseLock(`application:${rejectAppId}`, held);
+  r = await call(applications, { method: 'PATCH', token: adminToken, body: { id: rejectAppId, status: before?.status } });
+  check('once released, the update goes through', r.statusCode === 200, `got ${r.statusCode}`);
+
+  // The email audit log skips an entry rather than overwrite others' entries.
+  const logLength = async () => ((await mock.store.has('bcci:email_log')) ? JSON.parse(mock.store.get('bcci:email_log')).length : 0);
+  const logBefore = await logLength();
+  const logLock = await acquireLock('email_log', 30);
+  await sendEmail({ type: 'board_signin_code', to: 'audit-lock@example.com', data: { code: '123456', name: 'Audit Test' } });
+  check('a send while the audit log is locked does not write the log', (await logLength()) === logBefore, `${logBefore} → ${await logLength()}`);
+  await releaseLock('email_log', logLock);
+  await sendEmail({ type: 'board_signin_code', to: 'audit-lock@example.com', data: { code: '123456', name: 'Audit Test' } });
+  check('with the lock free, the send is logged', (await logLength()) === logBefore + 1, `${logBefore} → ${await logLength()}`);
+}
+
+// ════════════════════════════════════════════════════════════════════
 section('BUG-05  admin-stats is reachable again');
 
 r = await call(adminStats, { method: 'GET' });
