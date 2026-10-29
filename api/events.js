@@ -284,7 +284,8 @@ async function handler(req, res) {
       const body = req.body || {};
       const eventId = str(body.eventId, 100);
       const ticketId = str(body.ticketId, 100).toUpperCase();
-      const checkedIn = body.undo !== true;
+      // Form-encoded or hand-built clients send "true"; it must still mean undo.
+      const checkedIn = !(body.undo === true || body.undo === 'true');
       const method = body.method === 'manual' ? 'manual' : 'scan';
 
       if (!eventId) {
@@ -326,7 +327,8 @@ async function handler(req, res) {
 
       const body = req.body || {};
       const eventId = str(body.eventId || req.query?.eventId, 100);
-      const ticketId = str(body.ticketId || req.query?.ticketId, 100);
+      // Ticket IDs are issued in upper case; accept a hand-typed lower-case one.
+      const ticketId = str(body.ticketId || req.query?.ticketId, 100).toUpperCase();
       if (!eventId || !ticketId) {
         return res.status(400).json({ success: false, error: 'Event ID and Ticket ID are required.' });
       }
@@ -351,7 +353,8 @@ async function handler(req, res) {
 
       const body = req.body || {};
       const eventId = str(body.eventId || req.query?.eventId, 100);
-      const ticketId = str(body.ticketId || req.query?.ticketId, 100);
+      // Ticket IDs are issued in upper case; accept a hand-typed lower-case one.
+      const ticketId = str(body.ticketId || req.query?.ticketId, 100).toUpperCase();
       const adminEmail = await getAdminSession(req);
 
       if (!eventId || !ticketId) {
@@ -417,7 +420,8 @@ async function handler(req, res) {
     const venue = str(body.venue, 300);
     const pricingType = str(body.pricingType, 20).toLowerCase() === 'paid' ? 'paid' : 'free';
     const fee = pricingType === 'paid' ? Math.max(0, Number(body.fee) || 0) : 0;
-    const capacity = Math.max(1, parseInt(body.capacity, 10) || 100);
+    const capacityRaw = str(body.capacity, 10);
+    const capacity = capacityRaw ? Number(capacityRaw) : 100;
     const description = str(body.description, 4000);
 
     if (title.length < 3) {
@@ -426,11 +430,20 @@ async function handler(req, res) {
     if (!date) {
       return res.status(400).json({ success: false, error: 'Event date is required.' });
     }
+    // Stored as YYYY-MM-DD only: Redis and Postgres both sort on this string.
+    const [ey, em, ed] = date.split('-').map(Number);
+    const parsedDate = new Date(Date.UTC(ey, em - 1, ed));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || parsedDate.getUTCFullYear() !== ey || parsedDate.getUTCMonth() !== em - 1 || parsedDate.getUTCDate() !== ed) {
+      return res.status(400).json({ success: false, error: 'Event date must be a valid date (YYYY-MM-DD).' });
+    }
     if (!time) {
       return res.status(400).json({ success: false, error: 'Event time is required.' });
     }
     if (venue.length < 3) {
       return res.status(400).json({ success: false, error: 'Event venue or meeting link is required.' });
+    }
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      return res.status(400).json({ success: false, error: 'Capacity must be a whole number of seats (at least 1).' });
     }
     if (pricingType === 'paid' && fee <= 0) {
       return res.status(400).json({ success: false, error: 'Please specify a valid ticket fee for paid events.' });

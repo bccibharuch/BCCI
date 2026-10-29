@@ -322,6 +322,10 @@ export class BoardAdmin {
     const body = rows.map((r) => {
       const actionsCell = el('td', {});
       const showButtons = () => {
+        if (meeting.status !== 'open') {
+          actionsCell.replaceChildren(el('small', { className: 'board-cell-sub', text: meeting.status === 'closed' ? 'Reopen to change' : 'Open attendance first' }));
+          return;
+        }
         const actions = el('div', { className: 'board-actions' });
         for (const status of ['present', 'leave', 'absent']) {
           if (status === r.status) continue;

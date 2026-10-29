@@ -111,7 +111,7 @@ async function verifyCode(req, res) {
   }
 
   const triesKey = KEYS.boardOtpTries(email);
-  const tries = await withRetry(() => kv.incr(triesKey));
+  const tries = await withRetry(() => kv.incr(triesKey), 1); // not idempotent: never re-run
   if (tries === 1) await kv.expire(triesKey, OTP_TTL_SECONDS);
   if (tries > OTP_MAX_TRIES) {
     await kv.del(KEYS.boardOtp(email)).catch(() => {});

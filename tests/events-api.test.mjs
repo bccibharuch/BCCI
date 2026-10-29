@@ -365,6 +365,28 @@ let firstTicketId = null;
   await eventsHandler(attendeesView.req, attendeesView.res);
   const row = attendeesView.getJson()?.event?.attendees?.find(a => a.ticketId === confirmedTicket);
   ck('admin attendee list shows check-in time and method', !!row?.checkedInAt && row?.checkInMethod === 'manual');
+
+  const undoString = await checkIn({ eventId: createdEventId, ticketId: confirmedTicket, undo: 'true' });
+  ck('undo sent as the string "true" still clears the check-in', undoString.getStatus() === 200 && undoString.getJson()?.attendee?.checkedInAt === null, JSON.stringify(undoString.getJson()));
+
+  const confirmLower = mockReqRes({ method: 'POST', headers: { authorization: `Bearer ${adminToken}` },
+    body: { action: 'confirm-payment', eventId: createdEventId, ticketId: pendingTicket.toLowerCase() } });
+  await eventsHandler(confirmLower.req, confirmLower.res);
+  ck('confirm-payment accepts a lower-case ticket code', confirmLower.getStatus() === 200, JSON.stringify(confirmLower.getJson()));
+}
+
+// 7e. Event capacity is validated, not silently replaced
+{
+  const create = async (capacity) => {
+    const c = mockReqRes({ method: 'POST', headers: { authorization: `Bearer ${adminToken}` },
+      body: { title: 'Capacity Check', date: '2026-12-15', time: '05:00 PM', capacity, pricingType: 'free', mode: 'offline', venue: 'BCCI Hall' } });
+    await eventsHandler(c.req, c.res);
+    return c;
+  };
+  ck('a garbled capacity is refused (400)', (await create('abc')).getStatus() === 400);
+  ck('a zero capacity is refused (400)', (await create(0)).getStatus() === 400);
+  const blank = await create('');
+  ck('a blank capacity defaults to 100', blank.getStatus() === 201 && blank.getJson()?.event?.capacity === 100, JSON.stringify(blank.getJson()).slice(0, 160));
 }
 
 // 7c. Abuse limits: one network cannot fill an event, one address cannot be emailed endlessly

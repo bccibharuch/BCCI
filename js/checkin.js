@@ -244,7 +244,11 @@ export class CheckInDesk {
         }
       }
     }
-    writeQueue(remaining);
+    // Scans queued while this flush was awaiting the network are in storage
+    // but not in the snapshot; writing back only `remaining` would drop them.
+    const queueKey = (q) => `${q.eventId}|${q.ticketId}`;
+    const flushed = new Set(queue.map(queueKey));
+    writeQueue([...remaining, ...readQueue().filter((q) => !flushed.has(queueKey(q)))]);
     this.syncing = false;
     if (problems.length) this.show('error', `Offline scans that could not be checked in — ${problems.join('; ')}`);
     else if (synced) this.show('ok', `Synced ${synced} offline scan${synced === 1 ? '' : 's'}.`);

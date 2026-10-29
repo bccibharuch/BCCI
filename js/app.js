@@ -4620,7 +4620,9 @@ class App {
         const venue = document.getElementById('eventVenueInput')?.value?.trim();
         const pricingType = document.getElementById('eventPricingSelect')?.value;
         const fee = pricingType === 'paid' ? Number(document.getElementById('eventFeeInput')?.value) || 0 : 0;
-        const capacity = parseInt(document.getElementById('eventCapacityInput')?.value, 10) || 100;
+        // Sent as typed: the server defaults a blank to 100 and refuses anything
+        // that is not a whole number, rather than quietly turning it into 100.
+        const capacity = document.getElementById('eventCapacityInput')?.value?.trim() || '';
         const description = document.getElementById('eventDescInput')?.value?.trim();
 
         if (!title || title.length < 3) {
@@ -4687,6 +4689,10 @@ class App {
      ════════════════════════════════════════════════════════════════════ */
 
   setupPublicEventsHandlers() {
+    // Called from init and from renderEventsPage (which can run first when
+    // the site opens on /events); binding twice would double every filter.
+    if (this._eventsHandlersInitialized) return;
+    this._eventsHandlersInitialized = true;
     this._eventsFilter = 'all';
     this._eventsSearchQuery = '';
 
@@ -4716,10 +4722,7 @@ class App {
     const emptyState = document.getElementById('eventsEmptyState');
     if (!grid) return;
 
-    if (!this._eventsHandlersInitialized) {
-      this.setupPublicEventsHandlers();
-      this._eventsHandlersInitialized = true;
-    }
+    this.setupPublicEventsHandlers();
 
     grid.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem; color: #64748B;">
@@ -5025,7 +5028,8 @@ class App {
 
   showUniversalEventTicketModal(event, attendee, ticketId) {
     if (!event || !attendee) return;
-    const tktId = ticketId || attendee.ticketId || `TKT-${event.id.replace(/^EVT-/, '')}`;
+    // Only a stored ticket ID is shown: one made up here would not match the email.
+    const tktId = ticketId || attendee.ticketId || '';
     const isPending = attendee.status === 'pending' || attendee.paymentStatus === 'pending_verification';
 
     if (isPending) {
@@ -5045,7 +5049,7 @@ class App {
               <div style="margin-bottom: 0.4rem;"><strong>Delegate:</strong> ${escapeHtml(attendee.name)} (${escapeHtml(attendee.email)})</div>
               <div style="margin-bottom: 0.4rem;"><strong>Event:</strong> ${escapeHtml(event.title)}</div>
               <div style="margin-bottom: 0.4rem;"><strong>Date &amp; Time:</strong> ${escapeHtml(event.date)} &bull; ${escapeHtml(event.time)}</div>
-              <div><strong>Registration Ref:</strong> <code style="font-family: monospace; font-weight: 700;">${escapeHtml(tktId)}</code></div>
+              ${tktId ? `<div><strong>Registration Ref:</strong> <code style="font-family: monospace; font-weight: 700;">${escapeHtml(tktId)}</code></div>` : ''}
             </div>
             <p style="font-size: 0.85rem; color: #64748B; margin-bottom: 1.25rem;">
               Once the BCCI Secretariat verifies your payment reference, your confirmed admission pass and meeting credentials will be dispatched to <strong>${escapeHtml(attendee.email)}</strong>.

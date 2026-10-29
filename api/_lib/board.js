@@ -322,6 +322,11 @@ export async function markBySecretary(meetingId, memberId, status, reason, { by 
   if (String(reason || '').trim().length < 3) throw new BoardError(400, 'Give a short reason for the record, e.g. "No phone with them".', 'reason_required');
   const meeting = await getMeeting(meetingId);
   if (!meeting) throw new BoardError(404, 'Meeting not found.', 'not_found');
+  // A closed register is frozen (reopen it to correct a mark), and a mark on a
+  // meeting that never opened would make that meeting undeletable.
+  if (meeting.status !== 'open') {
+    throw new BoardError(409, meeting.status === 'closed' ? 'This meeting is closed. Reopen it to change attendance.' : 'Open attendance for this meeting before marking anyone.', 'not_open');
+  }
   const member = await getMember(memberId);
   if (!member) throw new BoardError(404, 'Board member not found.', 'not_found');
   const onRoster = Array.isArray(meeting.roster) ? meeting.roster.includes(member.id) : member.status === 'active';
