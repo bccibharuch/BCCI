@@ -2,8 +2,10 @@
 
 - **Date:** 2026-09-07
 - **Author:** Antigravity Engineering
-- **Status:** Approved / In Review
+- **Status:** Planned, not built — design only
 - **Target Release:** BCCI Bharuch Portal v5.1.0
+
+> **Status: planned, not built.** The endpoints and files specified here (`api/employee-auth.js`, `api/employees.js`, `api/expenses.js`) and the employee portal UI do not exist in the repository.
 
 ---
 

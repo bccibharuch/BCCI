@@ -1,5 +1,7 @@
 # Employee Expense Management System Implementation Plan
 
+> **Status: planned, not built.** No part of this plan is in the repository — `api/employees.js`, `api/expenses.js`, `api/employee-auth.js` and `api/_lib/expenses.js` do not exist. Treat it as a proposal, not a description of current behaviour.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement a secure, backward-compatible Employee Expense Management System in the BCCI Bharuch portal enabling employees to submit expense claims with PDF/image receipts and administrators to review, manually approve, manage employees, and generate reports.
