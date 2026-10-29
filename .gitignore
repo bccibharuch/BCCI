@@ -9,6 +9,7 @@ node_modules/
 .vercel/
 .freebuff/
 .superpowers/
+.commandcode/
 .DS_Store
 *.log
 .deploy.lock
