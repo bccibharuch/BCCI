@@ -292,6 +292,10 @@ export async function markBySelf(meetingId, member, code, { userAgent = '' } = {
     throw new BoardError(409, meeting.status === 'closed' ? 'Attendance for this meeting has closed.' : 'Attendance for this meeting has not opened yet.', 'not_open');
   }
   if (member.status !== 'active') throw new BoardError(403, 'Your board profile is not active.', 'inactive');
+  // A reopened meeting keeps the roster it closed with.
+  if (Array.isArray(meeting.roster) && !meeting.roster.includes(member.id)) {
+    throw new BoardError(403, 'You are not on the board for this meeting.', 'not_on_roster');
+  }
   if (!isCodeValid(meeting, code)) {
     throw new BoardError(410, 'This QR code has expired. Scan the code on the screen again.', 'expired');
   }
