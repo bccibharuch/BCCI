@@ -466,6 +466,57 @@ sec('Mark by name: scan, tap your name, one response per phone');
   ck('the secretary sees the name-tap marks', r.json?.rows?.filter((x) => x.method === 'name').length === 3, JSON.stringify(r.json?.rows?.map((x) => [x.memberId, x.status, x.method])));
 }
 
+// ════════════════════════════════════════════════════════════════════
+sec('Mark by name: a failed write leaves the phone free to try again');
+{
+  const PHONE = 'phone-e-' + crypto.randomUUID();
+  const hana = (await call('member-save', { token: ADMIN, body: { name: 'Hana Retry', designation: 'Director', email: 'hana.retry@example.com', mobile: '9825012364' } })).json?.member;
+  const mtg = (await call('meeting-save', { token: ADMIN, body: { title: 'Outage meeting', date: '2026-09-12', time: '11:00' } })).json?.meeting?.id;
+  await call('meeting-open', { token: ADMIN, body: { id: mtg } });
+  const code = (await call('live', { method: 'GET', token: ADMIN, query: { id: mtg } })).json?.code;
+  const passKey = (await call('names', { body: { meetingId: mtg, code, deviceId: PHONE } })).json?.pass;
+
+  const markKey = KEYS.boardAttendance(mtg, hana.id);
+  redis.failKeys.add(markKey);
+  let failed = false;
+  try {
+    r = await call('mark-name', { body: { pass: passKey, memberId: hana.id, deviceId: PHONE } });
+    failed = r.status >= 500;
+  } catch {
+    failed = true;
+  }
+  redis.failKeys.delete(markKey);
+  ck('a storage failure on the mark is an error, not a success', failed);
+
+  r = await call('names', { body: { meetingId: mtg, code, deviceId: PHONE } });
+  ck('…and the phone is not left claiming a name it never marked', r.status === 200 && r.json?.markedByThisPhone === null && typeof r.json?.pass === 'string', JSON.stringify(r.json));
+  r = await call('mark-name', { body: { pass: r.json?.pass, memberId: hana.id, deviceId: PHONE } });
+  ck('…so the same phone can mark the name once storage is back', r.status === 200 && r.json?.member?.name === 'Hana Retry', JSON.stringify(r.json));
+}
+
+// ════════════════════════════════════════════════════════════════════
+sec('Reopening a meeting keeps the roster it closed with');
+{
+  const ivan = (await call('member-save', { token: ADMIN, body: { name: 'Ivan Leaving', designation: 'Director', email: 'ivan.leaving@example.com', mobile: '9825012365' } })).json?.member;
+  const mtg = (await call('meeting-save', { token: ADMIN, body: { title: 'Reopen meeting', date: '2026-09-14', time: '11:00' } })).json?.meeting?.id;
+  await call('meeting-open', { token: ADMIN, body: { id: mtg } });
+  await call('meeting-close', { token: ADMIN, body: { id: mtg } });
+  const before = (await call('meeting', { method: 'GET', token: ADMIN, query: { id: mtg } })).json?.rows?.map((x) => x.memberId) || [];
+
+  await call('member-status', { token: ADMIN, body: { id: ivan.id, status: 'inactive' } });
+  const jaya = (await call('member-save', { token: ADMIN, body: { name: 'Jaya Joined', designation: 'Director', email: 'jaya.joined@example.com', mobile: '9825012366' } })).json?.member;
+  r = await call('meeting-reopen', { token: ADMIN, body: { id: mtg } });
+  ck('a closed meeting reopens', r.status === 200 && r.json?.meeting?.status === 'open', JSON.stringify(r.json));
+  const reopened = (await call('meeting', { method: 'GET', token: ADMIN, query: { id: mtg } })).json?.rows?.map((x) => x.memberId) || [];
+  ck('someone absent and since deactivated stays on the reopened register', before.includes(ivan.id) && reopened.includes(ivan.id), JSON.stringify(reopened));
+  ck('someone added after the meeting is not added to it', !reopened.includes(jaya.id));
+  r = await call('mark', { token: ADMIN, body: { meetingId: mtg, memberId: ivan.id, status: 'leave', reason: 'Correcting the record' } });
+  ck('the secretary can still correct that member on the reopened meeting', r.status === 200 && r.json?.record?.status === 'leave', JSON.stringify(r.json));
+  await call('meeting-close', { token: ADMIN, body: { id: mtg } });
+  const closedAgain = (await call('meeting', { method: 'GET', token: ADMIN, query: { id: mtg } })).json?.rows?.map((x) => x.memberId) || [];
+  ck('closing again keeps the same roster', closedAgain.join() === before.join(), `${closedAgain} vs ${before}`);
+}
+
 console.log(`${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 smtp.server.close();
 redis.server.close();

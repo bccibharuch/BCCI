@@ -243,7 +243,9 @@ export async function setMeetingStatus(id, action, { by = 'admin' } = {}) {
     updated = { ...meeting, status: 'closed', roster: roster.map((m) => m.id), closedAt: at, closedBy: by };
   } else if (action === 'reopen') {
     if (meeting.status !== 'closed') throw new BoardError(409, 'Only a closed meeting can be reopened.', 'not_closed');
-    updated = { ...meeting, status: 'open', roster: null, reopenedAt: at, reopenedBy: by };
+    // The roster stays frozen: reopening corrects marks, it does not let a
+    // profile change since the meeting rewrite who belonged.
+    updated = { ...meeting, status: 'open', reopenedAt: at, reopenedBy: by };
   } else {
     throw new BoardError(400, 'Unknown meeting action.', 'invalid');
   }
@@ -410,9 +412,20 @@ export async function markByName(pass, memberId, deviceId, { userAgent = '' } = 
   const at = nowIso();
   const entry = { status: 'present', at, method: 'name', by: `phone ${device.slice(0, 8)}` };
   const record = { meetingId: meeting.id, memberId: member.id, status: 'present', at, method: 'name', device: device.slice(0, 8), userAgent: String(userAgent).slice(0, 160), history: [entry] };
-  if (!(await withRetry(() => kv.set(KEYS.boardAttendance(meeting.id, member.id), record, { nx: true })))) {
-    // Give the phone back so its owner can still mark their own name.
-    if (String(await withRetry(() => kv.get(deviceKey))) === member.id) await kv.del(deviceKey).catch(() => {});
+  // Give the phone back so its owner can still mark their own name.
+  const releasePhone = async () => {
+    if (String(await withRetry(() => kv.get(deviceKey))) === member.id) await kv.del(deviceKey);
+  };
+  let written;
+  try {
+    written = await withRetry(() => kv.set(KEYS.boardAttendance(meeting.id, member.id), record, { nx: true }));
+  } catch (err) {
+    // Otherwise the phone would claim a name it never marked, for three days.
+    await releasePhone().catch((releaseErr) => console.warn('[Board] could not free the phone after a failed mark:', releaseErr.message));
+    throw err;
+  }
+  if (!written) {
+    await releasePhone().catch((releaseErr) => console.warn('[Board] could not free the phone after a refused mark:', releaseErr.message));
     throw new BoardError(409, `${member.name} is already marked for this meeting. If that is you, tell the secretary.`, 'already_marked');
   }
   await kv.del(passKey).catch(() => {});
