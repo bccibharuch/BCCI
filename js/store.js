@@ -659,6 +659,20 @@ export class Store {
         ],
       },
       {
+        name: 'MR. NIRMAL SHAH', role: 'Membership Drive', category: 'Executive Board', initials: 'NS', image: '/assets/nirmal-shah.webp',
+        bio: [
+          'Managing Director of V C Shahpatel Services Pvt. Ltd., a Bharuch group in business since 1990 and certified ISO 9001, 14001 and 45001. It supplies manpower and housekeeping services to industry, including Abbott, BASF, Asian Paints and UPL.',
+          'The group also runs staffing, car hire, Force Motors and Eicher dealerships, and vehicle fabrication.',
+        ],
+      },
+      {
+        name: 'DR. TRUPTI ALMOLA', role: 'Women Empowerment & Entrepreneurship', category: 'Executive Board', initials: 'TA', image: '/assets/trupti-almola.webp',
+        bio: [
+          'Dr. Trupti is a civil engineer (NIT Surat) with an MBA, a PG Diploma in HRD and a Ph.D. in Leadership. After 10 years in industry, she spent over 25 years in academics, rising to Director of Narmada College of Management and serving three terms as Dean, Faculty of Management, GTU.',
+          'She has run Dhwani School for the hearing impaired since 2007, is Vice Chairperson of ISTD Bharuch Chapter, a past President of Rotary Club of Bharuch, Narmada Nagari, and Professor and Director at UPL University of Sustainable Technology.',
+        ],
+      },
+      {
         name: 'MR. RAJESH MAKWANA', role: 'Regulatory & Finance', category: 'Executive Board', initials: 'RM', image: '/assets/rajesh-makwana.webp',
         bio: [
           'Senior finance and taxation professional with over 28 years in finance, taxation, treasury and compliance, and an MBA from IIM Kozhikode. Named among the "100 CFOs of India", he has held leadership roles at Zentiva (formerly Sanofi India), Gharda Chemicals and Cheminova India, and led the carve-out of Sanofi\'s Ankleshwar business into Zentiva.',
