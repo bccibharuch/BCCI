@@ -280,7 +280,7 @@ export class BoardAdmin {
         view.addEventListener('click', () => this.openAttendance(m.id));
         const reopen = button('Reopen');
         reopen.addEventListener('click', () => {
-          if (!confirm(`Reopen "${m.title}" for attendance? Its roster is recalculated from the current board until you close it again.`)) return;
+          if (!confirm(`Reopen "${m.title}" for attendance? Its roster stays as it was when the meeting closed.`)) return;
           this.runAction(reopen, () => this.api('meeting-reopen', { method: 'POST', body: { id: m.id } }), 'Meeting reopened.');
         });
         actions.append(view, reopen);
@@ -491,6 +491,11 @@ class Projector {
     } catch (err) {
       if (err.status === 409 || err.status === 404) {
         this.showClosed(err.message);
+        return;
+      }
+      if (err.status === 401) {
+        // Retrying cannot help once the admin session has ended.
+        this.showClosed('Your admin session has ended. Exit, sign in again and reopen the projector.');
         return;
       }
       this.banner.hidden = false;

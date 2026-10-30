@@ -76,7 +76,6 @@ export class BoardPortal {
   /** After a scan: the board's names, and one tap to mark yours present. */
   async showNameList({ meetingId, code }) {
     this.destroy();
-    const message = el('p', { className: 'board-message', role: 'status', 'aria-live': 'polite' });
     const card = el('div', { className: 'board-card board-names' },
       el('h2', { className: 'board-title', text: 'Mark your attendance' }),
       el('p', { className: 'board-lead', text: 'Loading the meeting…' }));
@@ -96,7 +95,15 @@ export class BoardPortal {
       card.replaceChildren(card.firstChild, el('p', { className: 'board-result board-result--error', role: 'alert', text }), this.signInLink());
       return;
     }
+    this.renderNameList(card, data, device);
+  }
 
+  /**
+   * The list from one scan. Going back to it reuses `data`: the projector
+   * code is dead within 40 seconds, but the pass lasts five minutes.
+   */
+  renderNameList(card, data, device, notice = '') {
+    const message = el('p', { className: 'board-message', role: 'status', 'aria-live': 'polite' });
     const when = [dayLabel(data.meeting.date), data.meeting.time].filter(Boolean).join(' · ');
     const heading = el('p', { className: 'board-lead' }, el('strong', { text: data.meeting.title }), when ? ` — ${when}` : '');
     if (data.markedByThisPhone) {
@@ -115,6 +122,7 @@ export class BoardPortal {
     card.replaceChildren(card.firstChild, heading,
       el('p', { className: 'board-lead', text: 'Tap your name. This phone can mark only one name, once.' }),
       list, message, this.signInLink());
+    if (notice) this.say(message, 'error', notice);
   }
 
   confirmName(card, heading, data, member, device, message) {
@@ -124,7 +132,7 @@ export class BoardPortal {
       el('p', { className: 'board-lead', text: `Mark ${member.name} present? This cannot be changed from this phone.` }), yes, back, message);
     card.replaceChildren(card.firstChild, heading, panel);
     yes.focus();
-    back.addEventListener('click', () => this.showNameList(this.pendingAttend));
+    back.addEventListener('click', () => this.renderNameList(card, data, device));
     yes.addEventListener('click', async () => {
       yes.disabled = true;
       yes.textContent = 'Marking…';
@@ -137,9 +145,8 @@ export class BoardPortal {
         const reason = err.data?.code;
         if (reason === 'already_marked') {
           // Someone has that name already; this phone can still pick its own.
-          await this.showNameList(this.pendingAttend);
-          const msg = this.root.querySelector('.board-message');
-          if (msg) this.say(msg, 'error', err.message);
+          member.marked = true;
+          this.renderNameList(card, data, device, err.message);
           return;
         }
         card.replaceChildren(card.firstChild, heading,

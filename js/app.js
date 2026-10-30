@@ -1959,7 +1959,7 @@ class App {
     let BoardPortal;
     let parseAttendQr;
     try {
-      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.1.1'));
+      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.1.2'));
     } catch (err) {
       root.textContent = 'The Board Portal could not load. Check your connection and reload the page.';
       console.error('[Board] portal failed to load:', err);
@@ -1985,7 +1985,7 @@ class App {
       return;
     }
     try {
-      const { BoardAdmin } = await import('./board-admin.js?v=1.1.2');
+      const { BoardAdmin } = await import('./board-admin.js?v=1.1.3');
       this._boardAdmin = new BoardAdmin({
         root,
         store: this.store,
