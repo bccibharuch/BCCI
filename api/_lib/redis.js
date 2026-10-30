@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import { Redis } from '@upstash/redis';
 import { summarizeApplication, newTicketId, applyCheckIn } from './record-fields.js';
 import { KEYS, withRetry } from './keys.js';
+import { emailIntentOps } from './email-intent.js';
 
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
@@ -270,7 +271,7 @@ export async function putApplication(app) {
  * and a per-id lock serializes those, so two admins acting at once can't
  * clobber each other.
  */
-export async function updateApplication(id, mutate) {
+export async function updateApplication(id, mutate, notificationFor = null) {
   return withRetry(async () => {
     await ensureAppsMigrated();
     const lockName = `application:${id}`;
@@ -289,6 +290,10 @@ export async function updateApplication(id, mutate) {
         ['set', KEYS.app(id), next],
         ['set', KEYS.appSummary(id), summarizeApplication(next)],
       ];
+      if (notificationFor) {
+        const intent = notificationFor(next, current);
+        if (intent) ops.push(...emailIntentOps(intent.id, intent.message));
+      }
       // A resubmission moves submittedAt; keep the list order in step. Records
       // without a usable date keep their slot rather than jumping to the top.
       const submitted = Date.parse(next.submittedAt || '');
@@ -560,8 +565,22 @@ export async function confirmEventPayment(id, ticketId, confirmedBy = 'admin') {
           paymentStatus: 'confirmed',
           confirmedAt: new Date().toISOString(),
           confirmedBy,
+          ticketEmailId: `ticket-${crypto.randomUUID()}`,
         };
-        await fencedWrite(`eventreg:${id}`, lockToken, [['set', KEYS.eventAttendees(id), attendees]]);
+        const attendee = attendees[idx];
+        await fencedWrite(`eventreg:${id}`, lockToken, [
+          ['set', KEYS.eventAttendees(id), attendees],
+          ...emailIntentOps(attendee.ticketEmailId, {
+            type: 'event_ticket', to: attendee.email,
+            context: { eventId: id, ticketId: attendee.ticketId },
+            data: {
+              ticketId: attendee.ticketId, eventTitle: event.title, date: event.date,
+              time: event.time, venue: event.venue, mode: event.mode,
+              pricingType: event.pricingType, fee: event.fee, paymentRef: attendee.paymentRef,
+              attendeeName: attendee.name, company: attendee.company, phone: attendee.phone, email: attendee.email,
+            },
+          }),
+        ]);
       }
 
       return {
@@ -747,4 +766,3 @@ export async function releaseLock(name, token) {
     console.warn(`[Lock] release of ${name} failed:`, err?.message || err);
   }
 }
-

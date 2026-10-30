@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const SUITES = [
+  { name: 'email-outbox', file: 'tests/email-outbox.test.mjs' },
   { name: 'e2e', file: 'tests/e2e.test.mjs' },
   { name: 'api', file: 'tests/api.test.mjs' },
   { name: 'data', file: 'tests/data.test.mjs' },

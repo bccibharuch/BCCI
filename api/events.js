@@ -28,6 +28,7 @@ import {
   withErrorHandling,
 } from './_lib/http.js';
 import { sendEmailWithin } from './_lib/email.js';
+import { deliverEmailIntent } from './_lib/email-outbox.js';
 
 function newEventId() {
   return `EVT-${Date.now().toString(36).toUpperCase()}-${crypto
@@ -367,32 +368,8 @@ async function handler(req, res) {
       }
 
       // Dispatch the confirmed official E-Ticket with real venue / meeting credentials only if not already confirmed
-      let emailSent = null;
-      if (!result.alreadyConfirmed) {
-        const mail = await sendEmailWithin({
-          type: 'event_ticket',
-          to: result.attendee.email,
-          data: {
-            ticketId: result.attendee.ticketId,
-            eventTitle: result.event.title,
-            date: result.event.date,
-            time: result.event.time,
-            venue: result.event.venue,
-            mode: result.event.mode,
-            pricingType: result.event.pricingType,
-            fee: result.event.fee,
-            paymentRef: result.attendee.paymentRef,
-            attendeeName: result.attendee.name,
-            company: result.attendee.company,
-            phone: result.attendee.phone,
-            email: result.attendee.email,
-          },
-        });
-        emailSent = mail.success;
-        if (!mail.success) {
-          console.warn('[BCCI Event] Failed to dispatch confirmed ticket email:', mail.error);
-        }
-      }
+      const mail = await deliverEmailIntent(result.attendee.ticketEmailId);
+      const emailSent = mail ? mail.success : null;
 
       console.log(`[BCCI Event] Payment confirmed for ticket ${ticketId} (${result.attendee.email}) on event ${eventId} (alreadyConfirmed: ${!!result.alreadyConfirmed})`);
       return res.status(200).json({

@@ -32,6 +32,37 @@ import { sendEmailWithin, adminRecipients } from './_lib/email.js';
 import { validateFileSignature } from './_lib/validation.js';
 import adminStatsHandler from './_lib/admin-stats.js';
 import { getMembershipFee } from './_lib/membership-plans.js';
+import { deliverEmailIntent } from './_lib/email-outbox.js';
+
+function decisionIntent(next, previous) {
+  if (!next.decisionEmailId || next.decisionEmailId === previous.decisionEmailId) return null;
+  return {
+    id: next.decisionEmailId,
+    message: {
+      type: next.status === STATUS.REJECTED ? 'application_declined' : 'application_approved',
+      to: next.email,
+      context: { applicationId: next.id, field: 'decisionEmailId', status: next.status },
+      data: { appId: next.id, company: next.company, repName: next.repName,
+        reason: next.rejectionReason || '',
+        validUntil: validUntil(next).toLocaleDateString('en-IN', INDIAN_DATE) },
+    },
+  };
+}
+
+function renewalIntent(next, previous) {
+  if (!next.renewalEmailId || next.renewalEmailId === previous.renewalEmailId) return null;
+  return {
+    id: next.renewalEmailId,
+    message: {
+      type: next.renewalStatus === 'Rejected' ? 'application_declined' : 'application_approved',
+      to: next.email,
+      context: { applicationId: next.id, field: 'renewalEmailId', renewalStatus: next.renewalStatus },
+      data: { appId: next.id, company: next.company, repName: next.repName,
+        reason: next.renewalRejectionReason || '',
+        validUntil: validUntil(next).toLocaleDateString('en-IN', INDIAN_DATE) },
+    },
+  };
+}
 
 // A receipt is base64 in the JSON body, so the cap has to leave room for it.
 const MAX_BODY_SIZE = 3.5 * 1024 * 1024;
@@ -708,22 +739,14 @@ async function handler(req, res) {
             expiresAt: renewedExpiry(app),
             lastRenewedAt: renewalRecord.renewedAt,
             renewalStatus: 'Approved',
+            renewalEmailId: `renewal-${crypto.randomUUID()}`,
             pendingRenewal: null,
             paymentRef,
             renewals,
           };
-        });
+        }, renewalIntent);
 
-        await sendEmailWithin({
-          type: 'application_approved',
-          to: updated.email,
-          data: {
-            appId: updated.id,
-            company: updated.company,
-            repName: updated.repName,
-            validUntil: validUntil(updated).toLocaleDateString('en-IN', INDIAN_DATE),
-          },
-        });
+        await deliverEmailIntent(updated.renewalEmailId);
 
         return res.status(200).json({
           success: true,
@@ -755,21 +778,13 @@ async function handler(req, res) {
         return {
           ...app,
           renewalStatus: 'Rejected',
+          renewalEmailId: `renewal-${crypto.randomUUID()}`,
           pendingRenewal: null,
           renewalRejectionReason: reason,
         };
-      });
+      }, renewalIntent);
 
-      await sendEmailWithin({
-        type: 'application_declined',
-        to: updated.email,
-        data: {
-          appId: updated.id,
-          company: updated.company,
-          repName: updated.repName,
-          reason,
-        },
-      });
+      await deliverEmailIntent(updated.renewalEmailId);
 
       return res.status(200).json({
         success: true,
@@ -793,10 +808,11 @@ async function handler(req, res) {
     const reason = str(req.body.reason, 1000);
     // Read under the record's lock, so of two simultaneous identical clicks
     // exactly one sees the change and sends the email.
-    let previousStatus = null;
     const updated = await updateApplication(id, (app) => {
-      previousStatus = app.status;
       const next = { ...app, status: nextStatus, reviewedAt: new Date().toISOString(), reviewedBy: adminEmail };
+      if (app.status !== nextStatus && [STATUS.APPROVED, STATUS.REJECTED].includes(nextStatus)) {
+        next.decisionEmailId = `decision-${crypto.randomUUID()}`;
+      }
       if (nextStatus === STATUS.APPROVED && !app.approvedAt) {
         next.approvedAt = new Date().toISOString();
       }
@@ -806,35 +822,14 @@ async function handler(req, res) {
         delete next.rejectionReason;
       }
       return next;
-    });
+    }, decisionIntent);
 
     if (!updated) return res.status(404).json({ error: 'Application not found' });
 
-    // Tell the applicant what was decided, once: repeating a decision
-    // already made (a double click, a retry) sends nothing.
-    const changed = previousStatus !== nextStatus;
-    if (changed && nextStatus === STATUS.APPROVED) {
-      await sendEmailWithin({
-        type: 'application_approved',
-        to: updated.email,
-        data: {
-          appId: updated.id,
-          company: updated.company,
-          repName: updated.repName,
-          validUntil: validUntil(updated).toLocaleDateString('en-IN', INDIAN_DATE),
-        },
-      });
-    } else if (changed && nextStatus === STATUS.REJECTED) {
-      await sendEmailWithin({
-        type: 'application_declined',
-        to: updated.email,
-        data: {
-          appId: updated.id,
-          company: updated.company,
-          repName: updated.repName,
-          reason,
-        },
-      });
+    // Identical decisions reuse the intent: failed sends can retry after
+    // backoff, while a completed send is never repeated.
+    if ([STATUS.APPROVED, STATUS.REJECTED].includes(nextStatus)) {
+      await deliverEmailIntent(updated.decisionEmailId);
     }
 
     return res.status(200).json({ success: true, application: updated });
