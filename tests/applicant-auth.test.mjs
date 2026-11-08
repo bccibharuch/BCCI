@@ -176,6 +176,23 @@ test('SEC-01: action "forgot-password-request" returns 200 without leaking accou
   assert.equal(stored, null);
 });
 
+test('SEC: applicant auth rejects emails that alias other keys', async () => {
+  for (const email of ['a,victim@example.com', 'reset:victim@example.com', 'Evil<victim@example.com>']) {
+    for (const action of ['login', 'register', 'forgot-password-request', 'reset-password']) {
+      const res = await call(applicantAuth, {
+        body: { action, email, code: '123456', password: 'SuperSecret123', newPassword: 'SuperSecret123' },
+        ip: '198.51.100.77',
+      });
+      assert.equal(res.statusCode, 400, `${action} ${email}`);
+    }
+  }
+  const ok = await call(applicantAuth, {
+    body: { action: 'forgot-password-request', email: 'First.Last+tag@Example.co.in' },
+    ip: '198.51.100.78',
+  });
+  assert.equal(ok.statusCode, 200);
+});
+
 test('action "login": returns 401 on wrong credentials', async () => {
   await saveAccount('existing@example.com', 'CorrectPassword123');
 

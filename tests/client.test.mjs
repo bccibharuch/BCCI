@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 const SRC = fs.readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
@@ -1863,6 +1864,15 @@ console.log('\nModal title safety and published leadership');
   const admin = fs.readFileSync(new URL('../js/board-admin.js', import.meta.url), 'utf8');
   ck('projector QR has no PIN in its payload', admin.includes('this.drawQr(`${location.origin}/board?attend=live`)') && !admin.includes('&pin='));
   ck('admin displays missing and inactive website profiles', admin.includes('rosterWarning()') && admin.includes("w.portalStatus !== 'active'"));
+}
+
+// jsQR is loaded at runtime from our own origin; its SRI hash must track the vendored file.
+{
+  const scanner = fs.readFileSync(new URL('../js/qr-scanner.js', import.meta.url), 'utf8');
+  const vendored = fs.readFileSync(new URL('../assets/vendor/jsqr/jsQR.js', import.meta.url));
+  const expected = 'sha512-' + crypto.createHash('sha512').update(vendored).digest('base64');
+  ck('qr-scanner.js pins jsQR with an SRI hash matching the vendored file', scanner.includes(`'${expected}'`) && scanner.includes('s.integrity = JSQR_INTEGRITY'));
+  ck('qr-scanner.js sets crossOrigin for the SRI check', scanner.includes("s.crossOrigin = 'anonymous'"));
 }
 
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);

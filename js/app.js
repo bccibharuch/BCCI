@@ -2049,7 +2049,7 @@ class App {
     let BoardPortal;
     let parseAttendQr;
     try {
-      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.1.6'));
+      ({ BoardPortal, parseAttendQr } = await import('./board-portal.js?v=1.1.7'));
     } catch (err) {
       root.textContent = 'The Board Portal could not load. Check your connection and reload the page.';
       console.error('[Board] portal failed to load:', err);
@@ -4603,7 +4603,7 @@ class App {
     try {
       [event, { CheckInDesk }] = await Promise.all([
         this.store.getEventWithAttendees(eventId),
-        import('./checkin.js?v=1.1.2'),
+        import('./checkin.js?v=1.1.3'),
       ]);
     } catch (err) {
       this.showToast(err.message || 'Could not open the check-in desk.', 'error');

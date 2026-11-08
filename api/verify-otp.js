@@ -11,7 +11,7 @@ import {
   tooManyRequests,
   safeEqual,
   str,
-  isEmail,
+  isSafeEmail,
   withErrorHandling,
 } from './_lib/http.js';
 
@@ -37,7 +37,7 @@ async function handler(req, res) {
   const code = str(req.body?.code, 12);
   const name = str(req.body?.name, 120);
 
-  if (!isEmail(email)) {
+  if (!isSafeEmail(email)) {
     return res.status(400).json({ success: false, error: 'A valid email address is required.' });
   }
   if (!code) {

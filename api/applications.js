@@ -24,6 +24,7 @@ import {
   clientIp,
   str,
   isEmail,
+  isSafeEmail,
   cleanPhone,
   withErrorHandling,
 } from './_lib/http.js';
@@ -328,7 +329,7 @@ async function handler(req, res) {
     if (!repMobile || !/^[6-9]\d{9}$/.test(repMobile)) {
       return res.status(400).json({ error: 'Enter a valid 10-digit representative mobile number.' });
     }
-    if (!repEmail || !isEmail(repEmail)) {
+    if (!repEmail || !isSafeEmail(repEmail)) {
       return res.status(400).json({ error: 'Enter a valid representative email address.' });
     }
     if (!company || company.length < 2) {
@@ -340,7 +341,7 @@ async function handler(req, res) {
     if (!isEmail(applicantEmail)) {
       return res.status(400).json({ error: 'Invalid email format.' });
     }
-    if (!isEmail(officialEmail)) {
+    if (!isSafeEmail(officialEmail)) {
       return res.status(400).json({ error: 'Enter a valid official email address.' });
     }
     if (!membershipType || membershipType.length < 2) {

@@ -236,6 +236,12 @@ export function str(value, maxLen = 500) {
 export const isEmail = (v) =>
   typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) && v.length <= 254;
 
+// isEmail accepts : < > , ; double quotes, brackets and backslashes, which Nodemailer
+// still delivers but which alias other Redis keys (e.g. `reset:victim@x.com`) when the
+// raw address is used in a key. Use this for any client-supplied address.
+// Apostrophes stay allowed: they are common in real addresses (o'brien@...).
+export const isSafeEmail = (v) => isEmail(v) && !/[<>,;:"()\[\]\\]/.test(v);
+
 /**
  * Normalises an Indian mobile number to 10 digits, stripping +91, 91, or leading 0 prefixes.
  */

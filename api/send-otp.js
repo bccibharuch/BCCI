@@ -11,7 +11,7 @@ import {
   tooManyRequests,
   clientIp,
   str,
-  isEmail,
+  isSafeEmail,
   esc,
   withErrorHandling,
 } from './_lib/http.js';
@@ -38,7 +38,7 @@ async function handler(req, res) {
   }
 
   const email = str(req.body?.email, 254).toLowerCase();
-  if (!isEmail(email)) {
+  if (!isSafeEmail(email)) {
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 

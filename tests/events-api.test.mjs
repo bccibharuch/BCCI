@@ -150,6 +150,17 @@ let onlineEventId = '';
   ck('Error mentions payment reference', getJson()?.error?.toLowerCase().includes('payment'));
 }
 
+// 5a. Emails that alias other Redis keys or mail routes are rejected
+{
+  const { req, res, getStatus } = mockReqRes({
+    method: 'POST',
+    query: { action: 'register' },
+    body: { eventId: createdEventId, name: 'Evil Person', email: 'a,victim@example.com', phone: '9825123456', company: 'Evil Ltd', paymentRef: 'UPI/123456789' },
+  });
+  await eventsHandler(req, res);
+  ck('Registration with an email containing a comma returns 400', getStatus() === 400);
+}
+
 // 5b. POST /api/events?action=register with paymentRef registers an attendee and generates ticket
 let firstTicketId = null;
 {

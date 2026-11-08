@@ -10,7 +10,7 @@
 // marks them straight away, and they can see their attendance history.
 
 import { el, dayLabel, timeLabel } from './dom.js?v=1.0.2';
-import { QrScanner } from './qr-scanner.js?v=1.0.1';
+import { QrScanner } from './qr-scanner.js?v=1.0.2';
 
 const ATTEND_IN_TEXT = /[?&]attend=live(?![A-Za-z0-9_-])/;
 const PIN_IN_TEXT = /[?&]pin=(\d{4})(?!\d)/;

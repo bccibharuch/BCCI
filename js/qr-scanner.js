@@ -11,6 +11,10 @@
 // settles, so a slow network call never stacks up duplicate scans.
 
 const JSQR_SRC = '/assets/vendor/jsqr/jsQR.js';
+// Subresource Integrity for the vendored decoder; tests/client.test.mjs fails
+// if jsQR.js changes without this hash being updated.
+const JSQR_INTEGRITY =
+  'sha512-+mRnO4g3gIOjI5DJ5QZZ9GeXdN2a5rSc4Vhgigowv88YJtHMWhxw8j+F8Z7K0uX+1D9J3iJsry4goCRMJV0ltA==';
 
 let jsQRLoading = null;
 function loadJsQR() {
@@ -19,6 +23,8 @@ function loadJsQR() {
     jsQRLoading = new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = JSQR_SRC;
+      s.integrity = JSQR_INTEGRITY;
+      s.crossOrigin = 'anonymous';
       s.onload = () => {
         if (window.jsQR) return resolve(window.jsQR);
         // Clear the cache before rejecting, or every later attempt hands back

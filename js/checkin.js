@@ -7,7 +7,7 @@
 // attendee names are typed in by the public.
 
 import { el, timeLabel as timeOf } from './dom.js?v=1.0.2';
-import { QrScanner } from './qr-scanner.js?v=1.0.1';
+import { QrScanner } from './qr-scanner.js?v=1.0.2';
 
 const QUEUE_KEY = 'bcci:checkin-queue';
 const RESCAN_COOLDOWN_MS = 3000;

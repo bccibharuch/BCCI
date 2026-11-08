@@ -31,6 +31,7 @@ import {
   safeEqual,
   str,
   isEmail,
+  isSafeEmail,
   cleanPhone,
   withErrorHandling,
 } from './_lib/http.js';
@@ -150,7 +151,7 @@ async function boardSession(req) {
 
 async function requestCode(req, res) {
   const email = str(req.body?.email, 254).toLowerCase();
-  if (!isEmail(email)) return res.status(400).json({ success: false, error: 'Enter the email address your board profile uses.' });
+  if (!isSafeEmail(email)) return res.status(400).json({ success: false, error: 'Enter the email address your board profile uses.' });
 
   const perAddress = await rateLimit(`board:code:addr:${email}`, { max: 1, windowSec: 60 });
   if (!perAddress.ok) return tooManyRequests(res, perAddress.retryAfter, 'A code was just sent. Wait a minute before asking for another.');
@@ -180,7 +181,7 @@ async function requestCode(req, res) {
 async function verifyCode(req, res) {
   const email = str(req.body?.email, 254).toLowerCase();
   const code = str(req.body?.code, 10).replace(/\s/g, '');
-  if (!isEmail(email) || !/^\d{6}$/.test(code)) {
+  if (!isSafeEmail(email) || !/^\d{6}$/.test(code)) {
     return res.status(400).json({ success: false, error: 'Enter your email and the 6-digit code from the email.' });
   }
 

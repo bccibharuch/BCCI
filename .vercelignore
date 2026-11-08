@@ -18,3 +18,10 @@ scripts/
 
 # VPS-only server scripts and templates
 deploy/
+
+# Repo/agent metadata and local env files — never serve these statically
+CLAUDE.md
+.gitattributes
+.claude/
+.env
+.env.*

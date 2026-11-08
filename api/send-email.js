@@ -77,8 +77,9 @@ async function handler(req, res) {
     });
   }
   // The transport would happily take a malformed recipient; check every one
-  // with the same validator the public forms use.
-  if (recipients.some((address) => !isEmail(address))) {
+  // with the same validator the public forms use. The length check comes first
+  // because isEmail runs its regex before its own length cap.
+  if (recipients.some((address) => address.length > 254 || !isEmail(address))) {
     return res.status(400).json({ success: false, error: 'Every recipient must be a valid email address.' });
   }
   if (!data) return res.status(400).json({ success: false, error: 'Email data is required.' });

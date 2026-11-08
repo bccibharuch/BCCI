@@ -137,6 +137,13 @@ ck('an unknown email gets the same answer', r.status === 200 && /If this email b
 await new Promise((res) => setTimeout(res, 150));
 ck('…and no email is sent to it', smtp.received.length === mails);
 
+for (const bad of ['reset:asha@example.com', 'a,asha@example.com']) {
+  r = await call('request-code', { body: { email: bad } });
+  ck(`request-code rejects ${bad}`, r.status === 400);
+  r = await call('verify-code', { body: { email: bad, code: '123456' } });
+  ck(`verify-code rejects ${bad}`, r.status === 400);
+}
+
 r = await call('request-code', { body: { email: 'asha@example.com' } });
 await waitMail(mails + 1);
 const code = String(await kv.get(KEYS.boardOtp('asha@example.com')));

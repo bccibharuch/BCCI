@@ -16,7 +16,7 @@ import {
   safeEqual,
   clientIp,
   str,
-  isEmail,
+  isSafeEmail,
   esc,
   withErrorHandling,
 } from './_lib/http.js';
@@ -82,7 +82,7 @@ async function handler(req, res) {
     }
     const password = passwordField.password;
 
-    if (!isEmail(email)) {
+    if (!isSafeEmail(email)) {
       return res.status(400).json({ success: false, error: 'A valid email address is required.' });
     }
     if (!password) {
@@ -156,7 +156,7 @@ async function handler(req, res) {
     }
     const password = passwordField.password;
 
-    if (!isEmail(email)) {
+    if (!isSafeEmail(email)) {
       return res.status(400).json({ success: false, error: 'A valid email address is required.' });
     }
     if (!code) {
@@ -242,7 +242,7 @@ async function handler(req, res) {
   // ── 3. FORGOT PASSWORD REQUEST ────────────────────────────────────────
   if (action === 'forgot-password-request') {
     const email = str(req.body?.email, 254).toLowerCase();
-    if (!isEmail(email)) {
+    if (!isSafeEmail(email)) {
       return res.status(400).json({ success: false, error: 'A valid email address is required.' });
     }
 
@@ -300,7 +300,7 @@ async function handler(req, res) {
     }
     const newPassword = passwordField.password;
 
-    if (!isEmail(email)) {
+    if (!isSafeEmail(email)) {
       return res.status(400).json({ success: false, error: 'A valid email address is required.' });
     }
     if (!code) {

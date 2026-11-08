@@ -11,7 +11,7 @@ import {
   tooManyRequests,
   clientIp,
   str,
-  isEmail,
+  isSafeEmail,
   cleanPhone,
   withErrorHandling,
 } from './_lib/http.js';
@@ -50,7 +50,7 @@ async function handler(req, res) {
     if (name.length < 2) {
       return res.status(400).json({ success: false, error: 'Full name is required (min 2 characters).' });
     }
-    if (!isEmail(email)) {
+    if (!isSafeEmail(email)) {
       return res.status(400).json({ success: false, error: 'Invalid email address format.' });
     }
     if (!/^[6-9]\d{9}$/.test(phone)) {
