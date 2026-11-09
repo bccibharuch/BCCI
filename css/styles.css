@@ -979,8 +979,7 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 }
 
 .team-badge { font-size: 0.75rem; color: var(--gray-500); }
-.team-category { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 0.35rem; }
-.team-category + .team-name { margin-bottom: var(--space-lg); }
+.team-category { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: var(--space-lg); }
 /* Portfolio name in the footer: takes the free width and wraps long titles. */
 .team-role { flex: 1 1 0; min-width: 5rem; font-size: 0.75rem; line-height: 1.35; color: var(--gray-600); overflow-wrap: anywhere; }
 .team-actions { display: inline-flex; align-items: center; gap: 0.6rem; margin-left: auto; }

@@ -68,12 +68,12 @@
     "sha256": "68432acd5e5c849f71d43bee3ceeef8a6d8700c0eeeb722476cb3772f290a675"
   },
   "css/styles.css": {
-    "version": "3.2.30",
-    "sha256": "1828bbfcf66c55dacad4c3cd6dc757c7117c6eaaa2a6968e1b4a0797c7ec68f3"
+    "version": "3.2.31",
+    "sha256": "fc2c1c924a0629d441413db67127e561aca9e4bb8075fab570036b33bfc9d55b"
   },
   "js/app.js": {
-    "version": "5.0.43",
-    "sha256": "683e296cf1ca58a38e01a8c8c77d2c226e60ec941bdae5da5ef9ee20fd63d4c7"
+    "version": "5.0.44",
+    "sha256": "6ab48d6fb8442828fa8585668a4bb6f20409f88c02500ca1f12d36eff4fbdad3"
   },
   "js/board-admin.js": {
     "version": "1.1.7",

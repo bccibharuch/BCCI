@@ -2106,7 +2106,7 @@ class App {
     const card = (m, i) => {
       const linkedin = safeHref(m.linkedin);
       // Office bearers keep the classic card; portfolio holders show their
-      // group under the photo and their portfolio in the footer.
+      // group under the name and their portfolio in the footer.
       const portfolio = !OFFICE_ROLES.has(m.role);
       return `
       <div class="team-card">
@@ -2118,8 +2118,8 @@ class App {
           <div class="team-avatar">${escapeHtml(m.initials)}</div>
         `}
         ${portfolio ? `
-          <div class="team-category">${escapeHtml(m.category)}</div>
           <h4 class="team-name">${escapeHtml(m.name)}</h4>
+          <div class="team-category">${escapeHtml(m.category)}</div>
         ` : `
           <h4 class="team-name">${escapeHtml(m.name)}</h4>
           <div class="team-title">${escapeHtml(m.role)}</div>
