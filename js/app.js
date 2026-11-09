@@ -2111,12 +2111,11 @@ class App {
         ` : `
           <div class="team-avatar">${escapeHtml(m.initials)}</div>
         `}
+        <div class="team-category">${escapeHtml(m.category)}</div>
         <h4 class="team-name">${escapeHtml(m.name)}</h4>
-        <div class="team-title">${escapeHtml(m.role)}</div>
         <!-- Every card gets the same footer so rows line up whether or not a
-             member has a bio or LinkedIn; missing actions simply aren't drawn. -->
+             member has a bio or LinkedIn; missing actions simply aren't drawn; the role stays right-aligned. -->
         <div class="team-footer">
-          <span class="team-badge">${escapeHtml(m.category)}</span>
           <span class="team-actions">
             ${m.bio ? `
               <button type="button" class="team-readmore-btn" data-leader="${i}" aria-haspopup="dialog">Read bio</button>
@@ -2127,6 +2126,7 @@ class App {
               </a>
             ` : ''}
           </span>
+          <span class="team-role">${escapeHtml(m.role)}</span>
         </div>
       </div>
     `;
