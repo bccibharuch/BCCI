@@ -71,6 +71,7 @@ import { LEADERSHIP } from '../js/leadership.js';
 
 const OTP_TTL_SECONDS = 600;
 const OTP_MAX_TRIES = 5;
+const OTP_MAX_TRIES_PER_EMAIL = 20;
 // A session lapses after 30 idle days and renews itself on use, but never
 // outlives 90 days from sign-in, so a stolen token cannot be kept alive.
 const SESSION_TTL_SECONDS = 30 * 24 * 3600;
@@ -168,7 +169,8 @@ async function requestCode(req, res) {
 
   const code = crypto.randomInt(100000, 1000000).toString();
   await withRetry(() => kv.set(KEYS.boardOtp(email), code, { ex: OTP_TTL_SECONDS }));
-  await kv.del(KEYS.boardOtpTries(email), KEYS.boardOtpClaim(email)).catch(() => {});
+  // Also the requester's own per-network counter, so the new code is usable.
+  await kv.del(KEYS.boardOtpTries(email), KEYS.boardOtpClaim(email), `bcci:rl:board:otpverify:${email}:${clientIp(req)}`).catch(() => {});
   const mail = await sendEmailWithin({ type: 'board_signin_code', to: email, data: { code, name: member.name } });
   if (!mail.success) {
     await kv.del(KEYS.boardOtp(email)).catch(() => {});
@@ -185,11 +187,16 @@ async function verifyCode(req, res) {
     return res.status(400).json({ success: false, error: 'Enter your email and the 6-digit code from the email.' });
   }
 
+  // Wrong codes are capped per (email, network), so a stranger cannot lock the
+  // member out, with a looser per-email ceiling against distributed guessing.
+  // A lockout never deletes the code: that would let anyone burn it.
+  const ipKey = `board:otpverify:${email}:${clientIp(req)}`;
+  const perIp = await rateLimit(ipKey, { max: OTP_MAX_TRIES, windowSec: OTP_TTL_SECONDS });
+  if (!perIp.ok) return tooManyRequests(res, perIp.retryAfter, 'Too many wrong codes. Ask for a new code.');
   const triesKey = KEYS.boardOtpTries(email);
   const tries = await withRetry(() => kv.incr(triesKey), 1); // not idempotent: never re-run
   if (tries === 1) await kv.expire(triesKey, OTP_TTL_SECONDS);
-  if (tries > OTP_MAX_TRIES) {
-    await kv.del(KEYS.boardOtp(email)).catch(() => {});
+  if (tries > OTP_MAX_TRIES_PER_EMAIL) {
     return res.status(429).json({ success: false, error: 'Too many wrong codes. Ask for a new code.' });
   }
 
@@ -202,7 +209,7 @@ async function verifyCode(req, res) {
   if (!(await kv.set(KEYS.boardOtpClaim(email), '1', { nx: true, ex: 60 }))) {
     return res.status(409).json({ success: false, error: 'This code was just used. Ask for a new one if you are not signed in.' });
   }
-  await kv.del(KEYS.boardOtp(email), triesKey).catch(() => {});
+  await kv.del(KEYS.boardOtp(email), triesKey, `bcci:rl:${ipKey}`).catch(() => {});
 
   const member = await getMemberByEmail(email);
   if (!member || member.status !== 'active') {

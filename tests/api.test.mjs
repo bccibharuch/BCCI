@@ -88,6 +88,20 @@ check('admin can list applications', r.statusCode === 200 && Array.isArray(r.bod
 r = await call(applications, { method: 'GET', token: 'not-a-real-token' });
 check('forged token → 401', r.statusCode === 401, `got ${r.statusCode}`);
 
+// Removing an administrator from ADMIN_EMAILS must end the sessions they already hold.
+process.env.ADMIN_EMAILS = 'admin@bccibharuch.in, Former@BCCIBharuch.in';
+r = await call(adminAuth, { method: 'POST', body: { username: 'former@bccibharuch.in', password: 'correct-horse-battery-staple' } });
+const formerToken = r.body?.session?.token;
+r = await call(applications, { method: 'GET', token: formerToken });
+check('a listed second admin can use their session', r.statusCode === 200, `got ${r.statusCode}`);
+process.env.ADMIN_EMAILS = 'admin@bccibharuch.in';
+r = await call(applications, { method: 'GET', token: formerToken });
+check('once removed from ADMIN_EMAILS, their existing session → 401', r.statusCode === 401, `got ${r.statusCode}`);
+r = await call(enquiries, { method: 'GET', token: formerToken });
+check('…on every admin route', r.statusCode === 401, `got ${r.statusCode}`);
+r = await call(applications, { method: 'GET', token: adminToken });
+check('an admin still on the list keeps their session', r.statusCode === 200, `got ${r.statusCode}`);
+
 // ════════════════════════════════════════════════════════════════════
 section('SEC-05  OTP issues a real server-side session');
 

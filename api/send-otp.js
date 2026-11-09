@@ -62,7 +62,10 @@ async function handler(req, res) {
 
   await withRetry(() => kv.set(`bcci:otp:${email}`, otp, { ex: OTP_TTL_SECONDS }));
   // A fresh code clears the failed-attempt counter for the previous one and any consumption lock.
-  await kv.del(`bcci:rl:otpverify:${email}`).catch(() => {});
+  await kv.del(`bcci:rl:otpverify:all:${email}`).catch(() => {});
+  // The requester's own per-network counter too, or the lockout that told them
+  // to request a new code would still refuse it.
+  await kv.del(`bcci:rl:otpverify:${email}:${clientIp(req)}`).catch(() => {});
   await kv.del(`bcci:otp:claimed:${email}`).catch(() => {});
 
   const result = await sendRaw({

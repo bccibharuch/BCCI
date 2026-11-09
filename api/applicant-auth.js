@@ -24,6 +24,7 @@ import {
 const SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 const OTP_TTL_SECONDS = 600; // 10 minutes
 const MAX_OTP_ATTEMPTS = 5;
+const MAX_OTP_ATTEMPTS_PER_EMAIL = 20;
 
 // Wrong sign-ins are counted per account *and* per network address, so a
 // shared or hostile network can never lock the real owner out of their own
@@ -166,10 +167,17 @@ async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Password must be at least 8 characters long.' });
     }
 
-    const attempt = await rateLimit(`otpverify:${email}`, { max: MAX_OTP_ATTEMPTS, windowSec: 600 });
+    // Per (email, IP) plus a looser per-email ceiling; a tripped limiter never
+    // deletes the pending code, so a stranger cannot burn the owner's OTP. The
+    // ceiling only counts requests the per-IP check let through.
+    const ipKey = `otpverify:${email}:${clientIp(req)}`;
+    const attempt = await rateLimit(ipKey, { max: MAX_OTP_ATTEMPTS, windowSec: 600 });
     if (!attempt.ok) {
-      await kv.del(`bcci:otp:${email}`).catch(() => {});
       return tooManyRequests(res, attempt.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
+    }
+    const ceiling = await rateLimit(`otpverify:all:${email}`, { max: MAX_OTP_ATTEMPTS_PER_EMAIL, windowSec: 600 });
+    if (!ceiling.ok) {
+      return tooManyRequests(res, ceiling.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
     }
 
     const storedOtp = await withRetry(() => kv.get(`bcci:otp:${email}`));
@@ -208,7 +216,8 @@ async function handler(req, res) {
 
     // Clean up OTP and rate limiter
     await kv.del(`bcci:otp:${email}`).catch(() => {});
-    await kv.del(`bcci:rl:otpverify:${email}`).catch(() => {});
+    await kv.del(`bcci:rl:otpverify:all:${email}`).catch(() => {});
+    await kv.del(`bcci:rl:${ipKey}`).catch(() => {});
 
     // Issue session token
     const token = crypto.randomUUID();
@@ -266,7 +275,8 @@ async function handler(req, res) {
     if (account || legacyApp) {
       const otp = crypto.randomInt(100000, 1000000).toString();
       await withRetry(() => kv.set(KEYS.otpReset(email), otp, { ex: OTP_TTL_SECONDS }));
-      await kv.del(`bcci:rl:otpresetverify:${email}`).catch(() => {});
+      await kv.del(`bcci:rl:otpresetverify:all:${email}`).catch(() => {});
+      await kv.del(`bcci:rl:otpresetverify:${email}:${clientIp(req)}`).catch(() => {});
       await kv.del(`bcci:otp:reset:claimed:${email}`).catch(() => {});
 
       const result = await sendRaw({
@@ -275,12 +285,12 @@ async function handler(req, res) {
         html: resetOtpEmail(otp),
       });
 
+      // A 502 here, and only for addresses with an account, would tell anyone
+      // which addresses are registered. The failure goes to the log instead and
+      // the caller gets the same answer as for an unknown address.
       if (!result.success) {
         await kv.del(KEYS.otpReset(email)).catch(() => {});
-        return res.status(502).json({
-          success: false,
-          error: 'We could not send the password reset email. Please try again in a moment.',
-        });
+        console.error(`[ApplicantAuth] password reset email to ${email} failed:`, result.error);
       }
     }
 
@@ -310,10 +320,14 @@ async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Password must be at least 8 characters long.' });
     }
 
-    const attempt = await rateLimit(`otpresetverify:${email}`, { max: MAX_OTP_ATTEMPTS, windowSec: 600 });
+    const ipKey = `otpresetverify:${email}:${clientIp(req)}`;
+    const attempt = await rateLimit(ipKey, { max: MAX_OTP_ATTEMPTS, windowSec: 600 });
     if (!attempt.ok) {
-      await kv.del(KEYS.otpReset(email)).catch(() => {});
       return tooManyRequests(res, attempt.retryAfter, 'Too many incorrect attempts. Please request a new reset code.');
+    }
+    const ceiling = await rateLimit(`otpresetverify:all:${email}`, { max: MAX_OTP_ATTEMPTS_PER_EMAIL, windowSec: 600 });
+    if (!ceiling.ok) {
+      return tooManyRequests(res, ceiling.retryAfter, 'Too many incorrect attempts. Please request a new reset code.');
     }
 
     const storedOtp = await withRetry(() => kv.get(KEYS.otpReset(email)));
@@ -348,7 +362,8 @@ async function handler(req, res) {
 
     // Clean up reset OTP and attempt counter
     await kv.del(KEYS.otpReset(email)).catch(() => {});
-    await kv.del(`bcci:rl:otpresetverify:${email}`).catch(() => {});
+    await kv.del(`bcci:rl:otpresetverify:all:${email}`).catch(() => {});
+    await kv.del(`bcci:rl:${ipKey}`).catch(() => {});
 
     // Issue session token
     const token = crypto.randomUUID();

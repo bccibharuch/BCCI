@@ -12,6 +12,7 @@ import {
   refundRateLimit,
   tooManyRequests,
   clientIp,
+  adminEmails,
   str,
   withErrorHandling,
 } from './_lib/http.js';
@@ -77,20 +78,17 @@ async function handler(req, res) {
     return tooManyRequests(res, byUsername.retryAfter, 'Too many sign-in attempts for this account. Please try again later.');
   }
 
-  const adminEmails = (process.env.ADMIN_EMAILS || process.env.ADMIN_USERNAME || '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
+  const admins = adminEmails();
   const adminPassword = process.env.ADMIN_PASSWORD;
 
-  if (!adminEmails.length || !adminPassword) {
+  if (!admins.length || !adminPassword) {
     console.error('[Admin Auth] ADMIN_EMAILS / ADMIN_PASSWORD are not configured');
     return res.status(503).json({ error: 'Admin sign-in is not configured.' });
   }
 
   // Evaluate both checks before branching, so a wrong username and a wrong
   // password take the same path.
-  const emailOk = adminEmails.includes(email);
+  const emailOk = admins.includes(email);
   const passwordOk = safeEqual(password, adminPassword);
   if (!emailOk || !passwordOk) {
     return res.status(401).json({ error: 'Invalid credentials' });

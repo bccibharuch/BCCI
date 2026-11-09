@@ -4,6 +4,8 @@ import { startMockRedis } from './mock-redis.mjs';
 const mock = await startMockRedis();
 process.env.UPSTASH_REDIS_REST_URL = mock.url;
 process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token';
+// Admin sessions are only honoured for addresses still on this list.
+process.env.ADMIN_EMAILS = 'admin@example.com';
 const { redis, updateApplication, putApplication, putEvent, registerForEvent, confirmEventPayment } = await import('../api/_lib/redis.js');
 const { emailIntentOps, outboxKey, OUTBOX_INDEX } = await import('../api/_lib/email-intent.js');
 const { deliverEmailIntent, listEmailIntents } = await import('../api/_lib/email-outbox.js');

@@ -2,6 +2,8 @@ import { startMockRedis } from './mock-redis.mjs';
 const mock = await startMockRedis();
 process.env.UPSTASH_REDIS_REST_URL = mock.url;
 process.env.UPSTASH_REDIS_REST_TOKEN = 't';
+// Admin sessions are only honoured for addresses still on this list.
+process.env.ADMIN_EMAILS = 'admin@bccibharuch.in';
 // Short email deadline so the hung-SMTP case below finishes quickly.
 process.env.EVENT_EMAIL_TIMEOUT_MS = '500';
 

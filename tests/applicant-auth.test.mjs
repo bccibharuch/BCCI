@@ -500,3 +500,160 @@ test('SEC-02: Account lookup failure fails closed instead of accepting the sessi
     mock.failKeys.clear();
   }
 });
+
+test('SEC: an attacker cannot burn a victim\'s pending OTP (verify-otp, register, reset-password)', async () => {
+  const verifyOtpHandler = (await import('../api/verify-otp.js')).default;
+  const attacker = '198.51.100.7';
+  const victimIp = '192.0.2.44';
+
+  const cases = [
+    {
+      label: 'verify-otp',
+      email: 'burn-verify@example.com',
+      key: (e) => `bcci:otp:${e}`,
+      run: (e, code, ip) => call(verifyOtpHandler, { body: { email: e, code }, ip }),
+    },
+    {
+      label: 'register',
+      email: 'burn-register@example.com',
+      key: (e) => `bcci:otp:${e}`,
+      run: (e, code, ip) => call(applicantAuth, { body: { action: 'register', email: e, code, password: 'SecurePassword123!' }, ip }),
+    },
+    {
+      label: 'reset-password',
+      email: 'burn-reset@example.com',
+      key: (e) => KEYS.otpReset(e),
+      run: (e, code, ip) => call(applicantAuth, { body: { action: 'reset-password', email: e, code, newPassword: 'SecurePassword123!' }, ip }),
+    },
+  ];
+
+  for (const c of cases) {
+    await redis.set(c.key(c.email), '123456', { ex: 600 });
+    const statuses = [];
+    for (let i = 0; i < 6; i++) statuses.push((await c.run(c.email, '000000', attacker)).statusCode);
+    assert.equal(statuses[5], 429, `${c.label}: attacker is rate limited on the 6th wrong code`);
+    assert.equal(String(await redis.get(c.key(c.email))), '123456', `${c.label}: tripping the limiter must not delete the pending code`);
+
+    const ok = await c.run(c.email, '123456', victimIp);
+    assert.ok(ok.statusCode === 200 || ok.statusCode === 201, `${c.label}: victim from another IP still verifies (got ${ok.statusCode})`);
+  }
+});
+
+test('SEC: per-email ceiling still blocks distributed guessing without deleting the code', async () => {
+  const email = 'ceiling-reset@example.com';
+  await redis.set(KEYS.otpReset(email), '123456', { ex: 600 });
+  const body = { action: 'reset-password', email, code: '000000', newPassword: 'SecurePassword123!' };
+
+  for (let i = 0; i < 20; i++) {
+    const r = await call(applicantAuth, { body, ip: `10.9.${Math.floor(i / 250)}.${i % 250}` });
+    assert.equal(r.statusCode, 400, `guess ${i + 1} from a fresh IP is an ordinary wrong code`);
+  }
+  const blocked = await call(applicantAuth, { body, ip: '10.9.9.9' });
+  assert.equal(blocked.statusCode, 429);
+  assert.equal(String(await redis.get(KEYS.otpReset(email))), '123456');
+});
+
+test('SEC: one attacker IP cannot trip the per-email ceiling and lock the owner out', async () => {
+  const verifyOtpHandler = (await import('../api/verify-otp.js')).default;
+  const attacker = '198.51.100.8';
+  const victimIp = '192.0.2.45';
+
+  const cases = [
+    {
+      label: 'verify-otp',
+      email: 'ceiling-verify@example.com',
+      key: (e) => `bcci:otp:${e}`,
+      run: (e, code, ip) => call(verifyOtpHandler, { body: { email: e, code }, ip }),
+    },
+    {
+      label: 'register',
+      email: 'ceiling-register@example.com',
+      key: (e) => `bcci:otp:${e}`,
+      run: (e, code, ip) => call(applicantAuth, { body: { action: 'register', email: e, code, password: 'SecurePassword123!' }, ip }),
+    },
+    {
+      label: 'reset-password',
+      email: 'ceiling-one-ip@example.com',
+      key: (e) => KEYS.otpReset(e),
+      run: (e, code, ip) => call(applicantAuth, { body: { action: 'reset-password', email: e, code, newPassword: 'SecurePassword123!' }, ip }),
+    },
+  ];
+
+  for (const c of cases) {
+    await redis.set(c.key(c.email), '123456', { ex: 600 });
+    // Requests the per-IP limiter already refuses must not keep counting toward the ceiling.
+    for (let i = 0; i < 40; i++) await c.run(c.email, '000000', attacker);
+    const ok = await c.run(c.email, '123456', victimIp);
+    assert.ok(ok.statusCode === 200 || ok.statusCode === 201, `${c.label}: owner still verifies after 40 refused guesses from one IP (got ${ok.statusCode})`);
+  }
+});
+
+test('SEC: after a lockout, a newly requested code can be used from the same network', async () => {
+  const sendOtpHandler = (await import('../api/send-otp.js')).default;
+  const verifyOtpHandler = (await import('../api/verify-otp.js')).default;
+  const ip = '192.0.2.60';
+
+  // verify-otp: the lockout message says "request a new verification code".
+  const email = 'relock-verify@example.com';
+  assert.equal((await call(sendOtpHandler, { body: { email }, ip })).statusCode, 200);
+  for (let i = 0; i < 5; i++) await call(verifyOtpHandler, { body: { email, code: '000000' }, ip });
+  assert.equal((await call(verifyOtpHandler, { body: { email, code: '000000' }, ip })).statusCode, 429);
+  await redis.del(`bcci:rl:otp:addr:${email}`); // the one-a-minute resend wait has passed
+  assert.equal((await call(sendOtpHandler, { body: { email }, ip })).statusCode, 200);
+  const code = String(await redis.get(`bcci:otp:${email}`));
+  const ok = await call(verifyOtpHandler, { body: { email, code }, ip });
+  assert.equal(ok.statusCode, 200, `a fresh code works after a lockout (got ${ok.statusCode}: ${ok.body?.error})`);
+
+  // reset-password: same promise, "request a new reset code".
+  const resetEmail = 'relock-reset@example.com';
+  await saveAccount(resetEmail, 'OriginalPassword1!');
+  const resetBody = (c) => ({ action: 'reset-password', email: resetEmail, code: c, newPassword: 'SecurePassword123!' });
+  assert.equal((await call(applicantAuth, { body: { action: 'forgot-password-request', email: resetEmail }, ip })).statusCode, 200);
+  for (let i = 0; i < 5; i++) await call(applicantAuth, { body: resetBody('000000'), ip });
+  assert.equal((await call(applicantAuth, { body: resetBody('000000'), ip })).statusCode, 429);
+  await redis.del(`bcci:rl:otpreset:addr:${resetEmail}`);
+  assert.equal((await call(applicantAuth, { body: { action: 'forgot-password-request', email: resetEmail }, ip })).statusCode, 200);
+  const resetCode = String(await redis.get(KEYS.otpReset(resetEmail)));
+  const reset = await call(applicantAuth, { body: resetBody(resetCode), ip });
+  assert.equal(reset.statusCode, 200, `a fresh reset code works after a lockout (got ${reset.statusCode}: ${reset.body?.error})`);
+});
+
+test('SEC: the per-email ceiling is 20 guesses for verify-otp and register too', async () => {
+  const verifyOtpHandler = (await import('../api/verify-otp.js')).default;
+  const runs = {
+    'verify-otp': (e, ip) => call(verifyOtpHandler, { body: { email: e, code: '000000' }, ip }),
+    register: (e, ip) => call(applicantAuth, { body: { action: 'register', email: e, code: '000000', password: 'SecurePassword123!' }, ip }),
+  };
+  for (const [label, run] of Object.entries(runs)) {
+    const email = `ceiling20-${label}@example.com`;
+    await redis.set(`bcci:otp:${email}`, '123456', { ex: 600 });
+    for (let i = 0; i < 20; i++) {
+      const r = await run(email, `10.20.0.${i + 1}`);
+      assert.equal(r.statusCode, 400, `${label}: guess ${i + 1} from a fresh IP is an ordinary wrong code`);
+    }
+    assert.equal((await run(email, '10.20.1.1')).statusCode, 429, `${label}: the 21st guess is refused`);
+    assert.equal(String(await redis.get(`bcci:otp:${email}`)), '123456', `${label}: the code survives`);
+  }
+});
+
+test('SEC-01: forgot-password-request answers identically when the reset email cannot be sent', async () => {
+  const existing = 'smtp-down-account@example.com';
+  await saveAccount(existing, 'OriginalPassword1!');
+  const saved = process.env.SMTP_TRANSPORT;
+  delete process.env.SMTP_TRANSPORT; // no SMTP credentials in tests: every send fails
+  const errors = [];
+  const realError = console.error;
+  console.error = (...args) => { errors.push(args.join(' ')); };
+  try {
+    const known = await call(applicantAuth, { body: { action: 'forgot-password-request', email: existing }, ip: '192.0.2.90' });
+    const unknown = await call(applicantAuth, { body: { action: 'forgot-password-request', email: 'smtp-down-nobody@example.com' }, ip: '192.0.2.91' });
+    assert.equal(known.statusCode, unknown.statusCode);
+    assert.deepEqual(known.body, unknown.body);
+    assert.equal(known.statusCode, 200);
+    assert.equal(await redis.get(KEYS.otpReset(existing)), null, 'a code that was never delivered is not left behind');
+    assert.ok(errors.some((line) => /reset/i.test(line) && line.includes(existing)), 'the send failure is logged server-side');
+  } finally {
+    console.error = realError;
+    process.env.SMTP_TRANSPORT = saved;
+  }
+});

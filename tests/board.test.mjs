@@ -17,6 +17,8 @@ Object.assign(process.env, {
   SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtp.port), SMTP_SECURE: 'false',
   SMTP_USER: 'portal@bccibharuch.in', SMTP_PASS: 'pw', EMAIL_FROM: 'BCCI <portal@bccibharuch.in>',
   ALLOWED_ORIGIN: 'https://bccibharuch.in',
+  // Admin sessions are only honoured for addresses still on this list.
+  ADMIN_EMAILS: 'secretariat@bccibharuch.in',
 });
 
 const board = (await import('../api/board.js')).default;
@@ -167,6 +169,21 @@ await call('request-code', { body: { email: 'chirag@example.com' } });
 let last;
 for (let i = 0; i < 6; i++) last = await call('verify-code', { body: { email: 'chirag@example.com', code: '000000' } });
 ck('six wrong guesses lock the code out', last.status === 429);
+for (let i = 0; i < 40; i++) await call('verify-code', { body: { email: 'chirag@example.com', code: '000000' } });
+ck('a lockout does not delete the member\'s pending code', Boolean(await kv.get(KEYS.boardOtp('chirag@example.com'))));
+r = await call('verify-code', { ip: '192.0.2.77', body: { email: 'chirag@example.com', code: String(await kv.get(KEYS.boardOtp('chirag@example.com'))) } });
+ck('a stranger\'s wrong guesses from one network cannot lock the member out', r.status === 200, `${r.status} ${r.json?.error}`);
+await kv.del('bcci:rl:board:code:addr:chirag@example.com');
+await call('request-code', { body: { email: 'chirag@example.com' } });
+r = await call('verify-code', { body: { email: 'chirag@example.com', code: String(await kv.get(KEYS.boardOtp('chirag@example.com'))) } });
+ck('after a lockout, a new code works from the same network', r.status === 200, `${r.status} ${r.json?.error}`);
+await kv.del('bcci:rl:board:code:addr:chirag@example.com');
+await call('request-code', { body: { email: 'chirag@example.com' } });
+const spread = [];
+for (let i = 0; i < 20; i++) spread.push((await call('verify-code', { ip: `10.30.0.${i + 1}`, body: { email: 'chirag@example.com', code: '000000' } })).status);
+r = await call('verify-code', { ip: '10.30.1.1', body: { email: 'chirag@example.com', code: '000000' } });
+ck('20 wrong codes spread over many networks are allowed, the 21st is refused', spread.every((s) => s === 400) && r.status === 429, `${spread.join()} then ${r.status}`);
+ck('…and the code survives the ceiling', Boolean(await kv.get(KEYS.boardOtp('chirag@example.com'))));
 
 r = await call('me', { method: 'GET', token: ashaToken });
 ck('a signed-in member sees their own profile', r.status === 200 && r.json?.member?.name === 'Asha Patel' && r.json?.member?.email === 'asha@example.com');

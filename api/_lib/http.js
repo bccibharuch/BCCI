@@ -50,12 +50,29 @@ export function bearerToken(req) {
   return header.slice(7).trim();
 }
 
-/** Returns the admin's email, or null. */
+/** The administrators' addresses, lower-cased, as sign-in and every session check read them. */
+export function adminEmails(env = process.env) {
+  return (env.ADMIN_EMAILS || env.ADMIN_USERNAME || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Returns the admin's email, or null. An address taken off ADMIN_EMAILS ends
+ * the sessions it already holds: they are deleted and treated as expired.
+ */
 export async function getAdminSession(req) {
   const token = bearerToken(req);
   if (!token) return null;
   const email = await withRetry(() => kv.get(KEYS.adminSession(token)));
-  return email || null;
+  if (!email) return null;
+  if (!adminEmails().includes(String(email).trim().toLowerCase())) {
+    // The session is refused either way; a failed delete only leaves a key that expires on its own.
+    await kv.del(KEYS.adminSession(token)).catch((err) => console.error('[admin] could not delete revoked session:', err));
+    return null;
+  }
+  return email;
 }
 
 /** Returns the applicant's verified email, or null. */

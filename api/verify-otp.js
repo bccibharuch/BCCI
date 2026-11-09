@@ -8,6 +8,7 @@ import {
   handlePreflight,
   bearerToken,
   rateLimit,
+  clientIp,
   tooManyRequests,
   safeEqual,
   str,
@@ -16,6 +17,7 @@ import {
 } from './_lib/http.js';
 
 const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS_PER_EMAIL = 20;
 const SESSION_TTL_SECONDS = 24 * 60 * 60;
 
 async function handler(req, res) {
@@ -46,11 +48,19 @@ async function handler(req, res) {
 
   // The counter's TTL is set only when it is created, so repeated wrong
   // guesses can no longer keep extending their own window.
-  const attempt = await rateLimit(`otpverify:${email}`, { max: MAX_ATTEMPTS, windowSec: 600 });
+  // Per (email, IP) so one caller cannot lock the real owner out, plus a looser
+  // per-email ceiling that keeps distributed guessing bounded. A tripped limiter
+  // never deletes the pending code: that would let anyone burn a victim's OTP.
+  // The ceiling is consulted only once the per-IP check passes, so requests one
+  // network is already refused cannot keep counting toward everyone's limit.
+  const ipKey = `otpverify:${email}:${clientIp(req)}`;
+  const attempt = await rateLimit(ipKey, { max: MAX_ATTEMPTS, windowSec: 600 });
   if (!attempt.ok) {
-    // Burn the code as well, so a lockout genuinely forces a new one.
-    await kv.del(`bcci:otp:${email}`).catch(() => {});
     return tooManyRequests(res, attempt.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
+  }
+  const ceiling = await rateLimit(`otpverify:all:${email}`, { max: MAX_ATTEMPTS_PER_EMAIL, windowSec: 600 });
+  if (!ceiling.ok) {
+    return tooManyRequests(res, ceiling.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
   }
 
   const storedOtp = await withRetry(() => kv.get(`bcci:otp:${email}`));
@@ -82,7 +92,8 @@ async function handler(req, res) {
 
   // Success — clear the code and the attempt counter.
   await kv.del(`bcci:otp:${email}`).catch(() => {});
-  await kv.del(`bcci:rl:otpverify:${email}`).catch(() => {});
+  await kv.del(`bcci:rl:otpverify:all:${email}`).catch(() => {});
+  await kv.del(`bcci:rl:${ipKey}`).catch(() => {});
 
   // Issue an opaque server-side token. The old response was an unsigned JSON
   // object the browser simply stored, so anyone could hand-write one in the
