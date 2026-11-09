@@ -958,10 +958,11 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
 }
 
 .team-avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
-.team-category { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 0.35rem; }
-.team-name { font-size: 1rem; margin-bottom: var(--space-lg); line-height: 1.3; }
+.team-name { font-size: 1rem; margin-bottom: 0.35rem; line-height: 1.3; }
+/* Room for two lines, so footers line up across a row. */
+.team-title { font-size: 0.82rem; line-height: 1.4; color: var(--gray-600); min-height: 2.8em; margin-bottom: var(--space-lg); }
 
-/* Same footer on every card: actions on the left, role on the right. */
+/* Same footer on every card: group on the left, whatever actions exist on the right. */
 .team-footer {
   margin: auto calc(-1 * var(--card-pad-x)) 0;
   width: calc(100% + 2 * var(--card-pad-x));
@@ -977,14 +978,19 @@ body.admin-area footer .footer-grid > div:has(.footer-links a) h4 {
   text-align: left;
 }
 
-.team-actions { display: inline-flex; align-items: center; gap: 0.6rem; }
-/* Takes the remaining width and wraps long roles; stays right-aligned even with no actions. */
-.team-role { flex: 1 1 0; min-width: 5rem; font-size: 0.78rem; line-height: 1.35; color: var(--gray-600); text-align: right; overflow-wrap: anywhere; }
+.team-badge { font-size: 0.75rem; color: var(--gray-500); }
+.team-category { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 0.35rem; }
+.team-category + .team-name { margin-bottom: var(--space-lg); }
+/* Portfolio name in the footer: takes the free width and wraps long titles. */
+.team-role { flex: 1 1 0; min-width: 5rem; font-size: 0.75rem; line-height: 1.35; color: var(--gray-600); overflow-wrap: anywhere; }
+.team-actions { display: inline-flex; align-items: center; gap: 0.6rem; margin-left: auto; }
 
-/* Narrow cards: stack actions above the role, centred. */
+/* Narrow cards: stack group above actions, centred. The fixed height fits
+   label + action row, so footers without actions still line up. */
 @container (max-width: 210px) {
   .team-footer { flex-direction: column; justify-content: flex-start; min-height: 5.25rem; text-align: center; }
-  .team-role { flex: 0 0 auto; min-width: 0; text-align: center; }
+  .team-actions { margin-left: 0; }
+  .team-role { flex: 0 0 auto; min-width: 0; }
 }
 
 .team-readmore-btn {
@@ -2362,8 +2368,10 @@ footer h4 {
   .team-avatar,
   .team-avatar-img-wrap { width: 104px; height: 104px; font-size: 1.2rem; }
   .team-name { font-size: 0.85rem; }
+  .team-title { font-size: 0.72rem; }
+  .team-badge { font-size: 0.68rem; }
   .team-category { font-size: 0.62rem; }
-  .team-role { font-size: 0.7rem; }
+  .team-role { font-size: 0.68rem; }
   .team-readmore-btn { font-size: 0.74rem; }
   .team-linkedin-btn { font-size: 0.62rem; padding: 0.3rem 0.7rem; }
 

@@ -170,6 +170,9 @@ const PAGE_DESCRIPTIONS = {
 // names their company, so verification stays out of search results too.
 const NOINDEX_VIEWS = new Set(['card', 'signin', 'admin', 'verify', 'board']);
 
+// Leadership cards for these roles keep the classic layout; everyone else is a portfolio holder.
+const OFFICE_ROLES = new Set(['President', 'Joint Vice President', 'Secretary', 'Executive Secretary', 'Hon. Treasurer']);
+
 /** Sets the content of a <meta>/<link> in <head>, creating it if missing. */
 function setHeadTag(selector, create, attr, value) {
   let tag = document.head.querySelector(selector);
@@ -2102,6 +2105,9 @@ class App {
     const leaders = this.store.getLeadership();
     const card = (m, i) => {
       const linkedin = safeHref(m.linkedin);
+      // Office bearers keep the classic card; portfolio holders show their
+      // group under the photo and their portfolio in the footer.
+      const portfolio = !OFFICE_ROLES.has(m.role);
       return `
       <div class="team-card">
         ${m.image ? `
@@ -2111,11 +2117,19 @@ class App {
         ` : `
           <div class="team-avatar">${escapeHtml(m.initials)}</div>
         `}
-        <div class="team-category">${escapeHtml(m.category)}</div>
-        <h4 class="team-name">${escapeHtml(m.name)}</h4>
+        ${portfolio ? `
+          <div class="team-category">${escapeHtml(m.category)}</div>
+          <h4 class="team-name">${escapeHtml(m.name)}</h4>
+        ` : `
+          <h4 class="team-name">${escapeHtml(m.name)}</h4>
+          <div class="team-title">${escapeHtml(m.role)}</div>
+        `}
         <!-- Every card gets the same footer so rows line up whether or not a
-             member has a bio or LinkedIn; missing actions simply aren't drawn; the role stays right-aligned. -->
+             member has a bio or LinkedIn; missing actions simply aren't drawn. -->
         <div class="team-footer">
+          ${portfolio
+            ? `<span class="team-role">${escapeHtml(m.role)}</span>`
+            : `<span class="team-badge">${escapeHtml(m.category)}</span>`}
           <span class="team-actions">
             ${m.bio ? `
               <button type="button" class="team-readmore-btn" data-leader="${i}" aria-haspopup="dialog">Read bio</button>
@@ -2126,7 +2140,6 @@ class App {
               </a>
             ` : ''}
           </span>
-          <span class="team-role">${escapeHtml(m.role)}</span>
         </div>
       </div>
     `;
