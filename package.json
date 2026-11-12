@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@upstash/redis": "^1.40.0",
-    "nodemailer": "^10.2.1"
+    "nodemailer": "^10.4.0"
   },
   "engines": {
     "node": "24.x"
