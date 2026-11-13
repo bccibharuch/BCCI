@@ -8,6 +8,7 @@ import {
   handlePreflight,
   bearerToken,
   rateLimit,
+  refundRateLimit,
   clientIp,
   tooManyRequests,
   safeEqual,
@@ -18,6 +19,7 @@ import {
 
 const MAX_ATTEMPTS = 5;
 const MAX_ATTEMPTS_PER_EMAIL = 20;
+const MAX_WRONG_CODES_PER_DAY = 30;
 const SESSION_TTL_SECONDS = 24 * 60 * 60;
 
 async function handler(req, res) {
@@ -63,8 +65,19 @@ async function handler(req, res) {
     return tooManyRequests(res, ceiling.retryAfter, 'Too many incorrect attempts. Please request a new verification code.');
   }
 
+  // Wrong guesses per address per day. The limits above start afresh with every
+  // new code, and ten codes a day would otherwise allow about 200 guesses at a
+  // six-digit code. Counted up front so parallel guesses cannot slip past, and
+  // given back unless the guess was actually wrong.
+  const dailyKey = `otpfail:daily:${email}`;
+  const daily = await rateLimit(dailyKey, { max: MAX_WRONG_CODES_PER_DAY, windowSec: 86400 });
+  if (!daily.ok) {
+    return tooManyRequests(res, daily.retryAfter, 'Too many incorrect codes for this address today. Please try again tomorrow.');
+  }
+
   const storedOtp = await withRetry(() => kv.get(`bcci:otp:${email}`));
   if (!storedOtp) {
+    await refundRateLimit(dailyKey);
     return res.status(400).json({
       success: false,
       error: 'That code has expired or was already used. Please request a new one.',
@@ -80,6 +93,8 @@ async function handler(req, res) {
         : 'Too many incorrect attempts. Please request a new verification code.',
     });
   }
+
+  await refundRateLimit(dailyKey);
 
   // Atomic single-use claim: only the first concurrent request can claim this OTP
   const claimed = await kv.set(`bcci:otp:claimed:${email}`, '1', { nx: true, ex: 60 });

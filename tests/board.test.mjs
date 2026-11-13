@@ -184,6 +184,22 @@ for (let i = 0; i < 20; i++) spread.push((await call('verify-code', { ip: `10.30
 r = await call('verify-code', { ip: '10.30.1.1', body: { email: 'chirag@example.com', code: '000000' } });
 ck('20 wrong codes spread over many networks are allowed, the 21st is refused', spread.every((s) => s === 400) && r.status === 429, `${spread.join()} then ${r.status}`);
 ck('…and the code survives the ceiling', Boolean(await kv.get(KEYS.boardOtp('chirag@example.com'))));
+{
+  // A resent code clears the per-code count; wrong guesses still add up over the day.
+  const email = 'chirag@example.com';
+  const right = String(await kv.get(KEYS.boardOtp(email)));
+  const wrong = right === '000000' ? '111111' : '000000';
+  await kv.del('bcci:rl:board:otpfail:daily:' + email);
+  const statuses = [];
+  for (let i = 0; i < 30; i++) {
+    await kv.del(KEYS.boardOtpTries(email));
+    statuses.push((await call('verify-code', { ip: `10.31.0.${i + 1}`, body: { email, code: wrong } })).status);
+  }
+  await kv.del(KEYS.boardOtpTries(email));
+  r = await call('verify-code', { ip: '10.31.1.1', body: { email, code: right } });
+  ck('30 wrong board codes in a day are allowed; after that even the right code is refused', statuses.every((s) => s === 400) && r.status === 429 && /today/.test(r.json?.error || ''), `${statuses.join()} then ${r.status}`);
+  await kv.del('bcci:rl:board:otpfail:daily:' + email, KEYS.boardOtpTries(email));
+}
 
 r = await call('me', { method: 'GET', token: ashaToken });
 ck('a signed-in member sees their own profile', r.status === 200 && r.json?.member?.name === 'Asha Patel' && r.json?.member?.email === 'asha@example.com');

@@ -636,6 +636,47 @@ test('SEC: the per-email ceiling is 20 guesses for verify-otp and register too',
   }
 });
 
+test('SEC: wrong codes are capped at 30 per address per day, across resent codes', async () => {
+  const verifyOtpHandler = (await import('../api/verify-otp.js')).default;
+  const flows = {
+    'verify-otp': {
+      seed: (e) => redis.set(`bcci:otp:${e}`, '123456', { ex: 600 }),
+      run: (e, code, ip) => call(verifyOtpHandler, { body: { email: e, code }, ip }),
+      ceiling: 'otpverify:all', daily: 'otpfail:daily',
+    },
+    register: {
+      seed: (e) => redis.set(`bcci:otp:${e}`, '123456', { ex: 600 }),
+      run: (e, code, ip) => call(applicantAuth, { body: { action: 'register', email: e, code, password: 'SecurePassword123!' }, ip }),
+      ceiling: 'otpverify:all', daily: 'otpfail:daily',
+    },
+    'reset-password': {
+      seed: (e) => redis.set(KEYS.otpReset(e), '123456', { ex: 600 }),
+      run: (e, code, ip) => call(applicantAuth, { body: { action: 'reset-password', email: e, code, newPassword: 'SecurePassword123!' }, ip }),
+      ceiling: 'otpresetverify:all', daily: 'otpresetfail:daily',
+    },
+  };
+  for (const [label, flow] of Object.entries(flows)) {
+    const email = `daily30-${label}@example.com`;
+    await flow.seed(email);
+    for (let i = 0; i < 30; i++) {
+      // A resent code clears the per-code ceiling; the daily count must not follow it.
+      if (i === 20) await redis.del(`bcci:rl:${flow.ceiling}:${email}`);
+      const r = await flow.run(email, '000000', `10.40.0.${i + 1}`);
+      assert.equal(r.statusCode, 400, `${label}: wrong guess ${i + 1} is an ordinary wrong code`);
+    }
+    const refused = await flow.run(email, '123456', '10.40.1.1');
+    assert.equal(refused.statusCode, 429, `${label}: after 30 wrong guesses even the right code is refused`);
+    assert.match(refused.body?.error || '', /today/, `${label}: the refusal names the daily limit`);
+
+    // A correct code is not a wrong guess: it leaves nothing on the daily count.
+    const clean = `daily30-clean-${label}@example.com`;
+    await flow.seed(clean);
+    assert.equal((await flow.run(clean, '000000', '10.40.2.1')).statusCode, 400);
+    assert.ok((await flow.run(clean, '123456', '10.40.2.2')).statusCode < 300, `${label}: the right code still works`);
+    assert.equal(Number(await redis.get(`bcci:rl:${flow.daily}:${clean}`)), 1, `${label}: only the wrong guess was counted`);
+  }
+});
+
 test('SEC-01: forgot-password-request answers identically when the reset email cannot be sent', async () => {
   const existing = 'smtp-down-account@example.com';
   await saveAccount(existing, 'OriginalPassword1!');

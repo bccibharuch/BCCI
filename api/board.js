@@ -72,6 +72,7 @@ import { LEADERSHIP } from '../js/leadership.js';
 const OTP_TTL_SECONDS = 600;
 const OTP_MAX_TRIES = 5;
 const OTP_MAX_TRIES_PER_EMAIL = 20;
+const OTP_MAX_WRONG_PER_DAY = 30;
 // A session lapses after 30 idle days and renews itself on use, but never
 // outlives 90 days from sign-in, so a stolen token cannot be kept alive.
 const SESSION_TTL_SECONDS = 30 * 24 * 3600;
@@ -200,11 +201,25 @@ async function verifyCode(req, res) {
     return res.status(429).json({ success: false, error: 'Too many wrong codes. Ask for a new code.' });
   }
 
+  // Wrong guesses per address per day. The limits above start afresh with every
+  // new code, and ten codes a day would otherwise allow about 200 guesses at a
+  // six-digit code. Counted up front so parallel guesses cannot slip past, and
+  // given back unless the guess was actually wrong.
+  const dailyKey = `board:otpfail:daily:${email}`;
+  const daily = await rateLimit(dailyKey, { max: OTP_MAX_WRONG_PER_DAY, windowSec: 86400 });
+  if (!daily.ok) {
+    return tooManyRequests(res, daily.retryAfter, 'Too many wrong codes for this address today. Try again tomorrow.');
+  }
+
   const stored = await withRetry(() => kv.get(KEYS.boardOtp(email)));
-  if (!stored) return res.status(400).json({ success: false, error: 'This code has expired. Ask for a new one.' });
+  if (!stored) {
+    await refundRateLimit(dailyKey);
+    return res.status(400).json({ success: false, error: 'This code has expired. Ask for a new one.' });
+  }
   if (!safeEqual(code, String(stored))) {
     return res.status(400).json({ success: false, error: 'That code is not right. Use the latest email and try again.' });
   }
+  await refundRateLimit(dailyKey);
   // Two taps on "Sign in" race here; only one becomes a session.
   if (!(await kv.set(KEYS.boardOtpClaim(email), '1', { nx: true, ex: 60 }))) {
     return res.status(409).json({ success: false, error: 'This code was just used. Ask for a new one if you are not signed in.' });
