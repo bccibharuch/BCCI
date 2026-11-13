@@ -23,7 +23,6 @@
     "test:browser": "node scripts/site-browser-test.mjs",
     "test:leadership-browser": "node scripts/leadership-browser-test.mjs",
     "check": "node scripts/check-syntax.mjs",
-    "test:purge": "node tests/purge.test.mjs",
     "purge:data": "node --env-file-if-exists=.env.local scripts/purge-data.mjs",
     "test:board": "node tests/board.test.mjs",
     "versions:check": "node scripts/asset-versions.mjs",

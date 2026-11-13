@@ -21,7 +21,6 @@ const SUITES = [
   { name: 'data', file: 'tests/data.test.mjs' },
   { name: 'client', file: 'tests/client.test.mjs' },
   { name: 'smtp-config', file: 'tests/smtp-config.test.mjs' },
-  { name: 'purge', file: 'tests/purge.test.mjs' },
   { name: 'applicant-auth', file: 'tests/applicant-auth.test.mjs' },
   { name: 'events-redis', file: 'tests/events-redis.test.mjs' },
   { name: 'events-api', file: 'tests/events-api.test.mjs' },

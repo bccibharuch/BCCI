@@ -46,10 +46,10 @@ Sessions are opaque server-side tokens. Rate limits apply per email and per netw
 
 ```bash
 npm run check   # syntax check
-npm test        # 12 suites, no network or credentials needed
+npm test        # 11 suites, no network or credentials needed
 ```
 
-Run one suite with `npm run test:api`, `test:data`, `test:client`, `test:auth`, `test:events`, `test:board`, `test:purge`, `test:e2e`, `test:email` or `test:smtp`.
+Run one suite with `npm run test:api`, `test:data`, `test:client`, `test:auth`, `test:events`, `test:board`, `test:e2e`, `test:email` or `test:smtp`.
 
 **Changing a JS or CSS file:** bump its `?v=` wherever it is loaded (`index.html` or the importing module), then run `npm run versions:update`. `npm test` fails if a file changed without a version bump.
 
