@@ -133,6 +133,14 @@ let onlineEventId = '';
   const adminEv = adminGet.getJson()?.events?.find(e => e.id === onlineEventId);
   ck('SEC-05: Admin GET reveals real virtual meeting URL', adminEv?.venue === 'https://meet.google.com/audit-secret-room');
 }
+{
+  // The address typed into the form is unverified: the link goes to that inbox only.
+  const r = mockReqRes({ method: 'POST', query: { action: 'register' }, headers: { 'x-forwarded-for': '192.0.2.61' },
+    body: { eventId: onlineEventId, name: 'Link Hunter', email: 'link-hunter@example.com', phone: '9825012345' } });
+  await eventsHandler(r.req, r.res);
+  ck('Free online registration succeeds with a ticket', r.getStatus() === 200 && /^TKT-/.test(r.getJson()?.ticketId || ''), JSON.stringify(r.getJson()).slice(0, 160));
+  ck('Free online registration response does not carry the meeting link', !JSON.stringify(r.getJson()).includes('meet.google.com'));
+}
 
 // 5. POST /api/events?action=register on paid event requires paymentRef
 {
@@ -429,6 +437,14 @@ let firstTicketId = null;
   const sameAddress = [];
   for (let i = 1; i <= 6; i++) sameAddress.push(await reg('target@example.com', `192.0.2.${100 + i}`));
   ck('one address gets at most five attempts a day, the sixth is 429', sameAddress[5] === 429 && sameAddress[0] === 200, JSON.stringify(sameAddress));
+
+  // Hours apart in real life: clear the burst and hourly counters, keep the daily one.
+  const overTheDay = [];
+  for (let i = 1; i <= 31; i++) {
+    await redis.del('bcci:rl:eventreg:ip:192.0.2.70', `bcci:rl:eventreg:ip:192.0.2.70:event:${openId}`);
+    overTheDay.push(await reg(`daily${i}@example.com`, '192.0.2.70'));
+  }
+  ck('one network gets at most thirty seats at an event in a day, the 31st is 429', overTheDay.slice(0, 30).every(s => s === 200) && overTheDay[30] === 429, JSON.stringify(overTheDay));
 }
 
 // 8a. Deleting waits its turn behind registration: while a registration (or

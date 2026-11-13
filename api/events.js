@@ -166,6 +166,12 @@ async function handler(req, res) {
       if (!eventIpLimit.ok) {
         return tooManyRequests(res, eventIpLimit.retryAfter, 'Too many registrations for this event from your network. Please try again later.');
       }
+      // The hourly allowance alone would let one network take a 100-seat event
+      // in an afternoon with made-up addresses; a day's worth is capped as well.
+      const eventIpDaily = await rateLimit(`eventreg:ip:${ip}:event:${eventId}:daily`, { max: 30, windowSec: 86400 });
+      if (!eventIpDaily.ok) {
+        return tooManyRequests(res, eventIpDaily.retryAfter, 'Too many registrations for this event from your network today. Please contact the BCCI Secretariat to register more delegates.');
+      }
       const recipientLimit = await rateLimit(`eventreg:email:${email}`, { max: 5, windowSec: 86400 });
       if (!recipientLimit.ok) {
         return tooManyRequests(res, recipientLimit.retryAfter, 'This email address has reached today\'s registration limit. Please try again tomorrow.');
@@ -268,14 +274,21 @@ async function handler(req, res) {
         console.warn('[BCCI Event] Failed to dispatch ticket email:', mail.error);
       }
 
+      // The address typed in is not verified, so a meeting link the public
+      // listing hides goes only to that inbox, never back in this response.
+      const linkWithheld = getPublicVenue(result.event, false) !== result.event.venue;
+      const shownEvent = linkWithheld
+        ? { ...result.event, venue: 'The joining link is in the E-Ticket sent to your email.' }
+        : result.event;
+
       console.log(`[BCCI Event] Registered ${email} for event ${eventId} (Ticket: ${ticketId})`);
       return res.status(200).json({
         success: true,
         emailSent: mail.success,
         message: mail.success
           ? 'Registration confirmed! Your official E-Ticket has been sent to your email.'
-          : `Registration confirmed, but we could not confirm the E-Ticket email was sent. Please keep your ticket ID (${ticketId}) for entry.`,
-        event: result.event,
+          : `Registration confirmed, but we could not confirm the E-Ticket email was sent. Please keep your ticket ID (${ticketId}) for entry${linkWithheld ? ' and contact the BCCI Secretariat for the joining link' : ''}.`,
+        event: shownEvent,
         attendee: result.attendee,
         ticketId,
       });
