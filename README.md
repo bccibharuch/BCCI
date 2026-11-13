@@ -20,8 +20,8 @@ No credentials? `npm run dev:sandbox` runs the full app on in-memory Redis and a
 
 `.env.example` lists every variable; [`DEPLOYMENT.md`](DEPLOYMENT.md) explains them.
 
-- **Required:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `ADMIN_EMAILS`, `ADMIN_PASSWORD`, `SMTP_USER`, `SMTP_PASS`
-- **Recommended:** `ALLOWED_ORIGIN`, `EMAIL_FROM`, `INTERNAL_API_SECRET`
+- **Required:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `ADMIN_PASSWORD`
+- **Recommended:** `ADMIN_EMAILS`, `SMTP_USER`, `SMTP_PASS`, `ALLOWED_ORIGIN`, `EMAIL_FROM`, `INTERNAL_API_SECRET`
 
 SMTP mode follows `SMTP_PORT` (465 = implicit TLS, 587 = STARTTLS, required for remote hosts). Check it with `npm run mail:test` (sends nothing) or `npm run mail:test -- you@example.com`.
 
@@ -70,7 +70,7 @@ curl -i https://<domain>/api/applications   # expect 401
 
 ```
 api/        one handler per route; _lib/ holds shared code
-js/         browser code (app.js, store.js, board-*.js, checkin.js)
+js/         browser code (app.js, store.js, dom.js, board-*.js, checkin.js, leadership.js, qr-scanner.js)
 css/        styles
 scripts/    dev sandbox, mail test, test runner, data purge
 tests/      suites plus mock Redis and SMTP
