@@ -3829,6 +3829,19 @@ class App {
     );
 
     // ── Approved members ───────────────────────────────────────────
+    // The console is where the Secretariat chases renewals, so each member
+    // carries the date their year ends, not only the date it began.
+    const expiryOf = (app) => {
+      const validity = this.store.getMembershipValidity(app);
+      if (!validity || validity.state === 'UNKNOWN') return { date: 'Unknown', color: '#64748B', badge: 'badge-approved', icon: 'fa-check-circle', label: 'Active' };
+      if (validity.state === 'EXPIRED') return { date: validity.validUntilDate, color: '#B91C1C', badge: 'badge-rejected', icon: 'fa-times-circle', label: 'Expired' };
+      if (validity.state === 'RENEWAL_DUE') return { date: validity.validUntilDate, color: '#B45309', badge: 'badge-pending', icon: 'fa-clock', label: 'Renewal due' };
+      return { date: validity.validUntilDate, color: '#64748B', badge: 'badge-approved', icon: 'fa-check-circle', label: 'Active' };
+    };
+    const expiryBadge = (app) => {
+      const e = expiryOf(app);
+      return `<span class="badge-status ${e.badge}"><i class="fas ${e.icon}"></i> ${e.label}</span>`;
+    };
     fill(
       'approvedAppsBody',
       'approvedAppsCards',
@@ -3839,8 +3852,8 @@ class App {
           <td>${membershipPlanChip(app)}</td>
           <td>${escapeHtml(app.repName)}<br/><small style="color: #64748B;">${escapeHtml(app.repDesignation || 'Applicant')}</small></td>
           <td>${escapeHtml(app.email)}<br/><small style="color: #64748B;">${escapeHtml(app.phone || '')}</small></td>
-          <td><span class="badge-status badge-approved"><i class="fas fa-check-circle"></i> Active</span></td>
-          <td>${escapeHtml(app.approvedAt ? formatDate(app.approvedAt) : 'Active')}</td>
+          <td>${expiryBadge(app)}</td>
+          <td>${escapeHtml(app.approvedAt ? formatDate(app.approvedAt) : 'Active')}<br/><small style="color: ${expiryOf(app).color};">Expires ${escapeHtml(expiryOf(app).date)}</small></td>
           <td>
             <button class="btn-secondary" data-inspect-id="${escapeAttr(app.id)}" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" aria-label="Inspect application ${escapeAttr(app.id)}"><i class="fas fa-eye"></i> Full Info</button>
           </td>
@@ -3855,8 +3868,9 @@ class App {
           <div class="admin-card-meta">
             <div><strong>Rep:</strong> ${escapeHtml(app.repName)}</div>
             <div><strong>Sector:</strong> ${escapeHtml(app.businessServices || 'N/A')}</div>
-            <div><strong>Status:</strong> <span class="badge-status badge-approved"><i class="fas fa-check-circle"></i> Active</span></div>
+            <div><strong>Status:</strong> ${expiryBadge(app)}</div>
             <div><strong>Approved:</strong> ${escapeHtml(app.approvedAt ? formatDate(app.approvedAt) : 'Active')}</div>
+            <div><strong>Expires:</strong> <span style="color: ${expiryOf(app).color};">${escapeHtml(expiryOf(app).date)}</span></div>
           </div>
           <div class="admin-card-actions" style="margin-top: 0.75rem;">
             <button class="btn-secondary" data-inspect-id="${escapeAttr(app.id)}" style="width: 100%; justify-content: center;"><i class="fas fa-eye"></i> Full Info</button>
@@ -4205,6 +4219,8 @@ class App {
           : '<span style="color: #94A3B8;">No UTR Reference entered</span>';
         const approvedField = app.approvedAt ? field('Approved Date', formatDate(app.approvedAt)) : '';
         const reviewerField = app.reviewedBy ? field('Reviewed By', app.reviewedBy) : '';
+        const dossierValidity = this.store.getMembershipValidity(app);
+        const expiryField = dossierValidity ? field('Valid Until', dossierValidity.validUntilDate) : '';
         const termField = app.renewalYears ? field('Membership Term', `${app.renewalYears} Year(s)`) : '';
         const lastRenewedField = app.lastRenewedAt ? field('Last Renewal', formatDate(app.lastRenewedAt)) : '';
         const rejectedField = (app.status === 'Rejected' && app.reviewedAt) ? field('Decision Date', formatDate(app.reviewedAt)) : '';
@@ -4306,6 +4322,7 @@ class App {
                     <strong>UPI / Bank UTR Reference:</strong> ${utrHtml}
                   </div>
                   ${approvedField}
+                  ${expiryField}
                   ${reviewerField}
                   ${termField}
                   ${app.membershipPlan ? field('Membership Plan', membershipPlanLabel(app)) : ''}

@@ -1875,5 +1875,13 @@ console.log('\nModal title safety and published leadership');
   ck('qr-scanner.js sets crossOrigin for the SRI check', scanner.includes("s.crossOrigin = 'anonymous'"));
 }
 
+// The admin console must show when each membership ends, not only when it began.
+{
+  ck('admin approved list shows the expiry date', SRC.includes('<small style="color: ${expiryOf(app).color};">Expires ${escapeHtml(expiryOf(app).date)}</small>'));
+  ck('admin mobile card shows the expiry date', SRC.includes('<div><strong>Expires:</strong>'));
+  ck('admin dossier shows Valid Until', SRC.includes("field('Valid Until', dossierValidity.validUntilDate)") && SRC.includes('${expiryField}'));
+  ck('an expired member is not badged Active', SRC.includes("validity.state === 'EXPIRED'") && SRC.includes("label: 'Expired'"));
+}
+
 console.log(`\n${'═'.repeat(52)}\n  ${pass} passed, ${fail} failed\n${'═'.repeat(52)}`);
 process.exit(fail?1:0);
