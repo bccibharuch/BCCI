@@ -317,7 +317,7 @@ async function syncApplicationEmailIndex(id, current, next) {
     // Another application still uses this address: keep the old lookup rather
     // than leave this record unreachable by email.
     if (!claim.ok) {
-      console.warn(`[Applications] ${id}: the email lookup for ${newEmail} is held by ${claim.holder || 'another submission'}; keeping ${oldEmail || 'its previous one'}`);
+      console.warn(`[Applications] ${id}: its new email lookup is held by ${claim.holder || 'another submission'}; keeping ${oldEmail ? 'the previous one' : 'none'}`);
       return;
     }
   }

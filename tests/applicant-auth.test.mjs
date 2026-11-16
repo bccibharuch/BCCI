@@ -692,7 +692,8 @@ test('SEC-01: forgot-password-request answers identically when the reset email c
     assert.deepEqual(known.body, unknown.body);
     assert.equal(known.statusCode, 200);
     assert.equal(await redis.get(KEYS.otpReset(existing)), null, 'a code that was never delivered is not left behind');
-    assert.ok(errors.some((line) => /reset/i.test(line) && line.includes(existing)), 'the send failure is logged server-side');
+    assert.ok(errors.some((line) => /reset/i.test(line)), 'the send failure is logged server-side');
+    assert.ok(!errors.some((line) => line.includes(existing)), 'the log never names the address');
   } finally {
     console.error = realError;
     process.env.SMTP_TRANSPORT = saved;

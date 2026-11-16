@@ -483,6 +483,43 @@ let firstTicketId = null;
   ck('Deleted event no longer in list', !ev);
 }
 
+// 9a. Function logs are kept by the host: registering and confirming a payment
+// must log ticket and event IDs, never the attendee's address.
+{
+  const admin = { authorization: `Bearer ${adminToken}` };
+  const make = async (body) => {
+    const r = mockReqRes({ method: 'POST', headers: admin, body: { date: '2026-12-21', time: '11:00 AM', capacity: 5, mode: 'offline', venue: 'BCCI Hall', ...body } });
+    await eventsHandler(r.req, r.res);
+    return r.getJson()?.event?.id;
+  };
+  const freeId = await make({ title: 'Log Check Free', pricingType: 'free' });
+  const paidId = await make({ title: 'Log Check Paid', pricingType: 'paid', fee: 500 });
+
+  const logged = [];
+  const originals = { log: console.log, warn: console.warn, error: console.error };
+  for (const level of Object.keys(originals)) console[level] = (...args) => logged.push(args.join(' '));
+  let confirmStatus;
+  try {
+    const free = mockReqRes({ method: 'POST', query: { action: 'register' }, headers: { 'x-forwarded-for': '192.0.2.88' },
+      body: { eventId: freeId, name: 'Log Free', email: 'log-free@example.com', phone: '9825077777' } });
+    await eventsHandler(free.req, free.res);
+    const paid = mockReqRes({ method: 'POST', query: { action: 'register' }, headers: { 'x-forwarded-for': '192.0.2.88' },
+      body: { eventId: paidId, name: 'Log Paid', email: 'log-paid@example.com', phone: '9825088888', paymentRef: 'UPI/LOGCHECK1' } });
+    await eventsHandler(paid.req, paid.res);
+    const list = mockReqRes({ method: 'GET', headers: admin, query: { id: paidId, includeAttendees: 'true' } });
+    await eventsHandler(list.req, list.res);
+    const ticketId = list.getJson()?.event?.attendees?.[0]?.ticketId;
+    const confirm = mockReqRes({ method: 'POST', headers: admin, body: { action: 'confirm-payment', eventId: paidId, ticketId } });
+    await eventsHandler(confirm.req, confirm.res);
+    confirmStatus = confirm.getStatus();
+  } finally {
+    Object.assign(console, originals);
+  }
+  const leaked = logged.find((l) => /log-(free|paid)@example\.com/.test(l));
+  ck('Log check: the paid ticket was confirmed', confirmStatus === 200, `got ${confirmStatus}`);
+  ck('Registering and confirming a payment logs no attendee address', logged.length > 0 && !leaked, leaked);
+}
+
 // 10. A hung SMTP server must not hold the response past the email deadline:
 // the attendee is already stored and needs their ticket ID back.
 {

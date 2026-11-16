@@ -119,7 +119,7 @@ async function handler(req, res) {
     kv.set(KEYS.applicantSession(token), sessionData, { ex: SESSION_TTL_SECONDS })
   );
 
-  console.log(`[OTP] verified ${email}`);
+  console.log('[OTP] code verified');
 
   return res.status(200).json({
     success: true,

@@ -486,7 +486,7 @@ async function recordInAuditLog({ type, to, subject, result }) {
     return null;
   });
   if (!lock) {
-    console.warn(`[Email] audit log busy; ${type} to ${to} was not recorded`);
+    console.warn(`[Email] audit log busy; a ${type} email was not recorded`);
     return;
   }
   try {
@@ -523,7 +523,7 @@ export async function sendEmail({ type, to, data }) {
 
     await recordInAuditLog({ type, to, subject, result });
 
-    if (result.success) console.log(`[Email] ${type} sent to ${to}`);
+    if (result.success) console.log(`[Email] ${type} sent`);
     return result;
   } catch (err) {
     console.error('[Email] unexpected failure:', err.message);

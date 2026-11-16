@@ -122,6 +122,23 @@ r = await call(verifyOtp, { method: 'POST', body: { email: 'applicant@example.co
 check('correct OTP → 200 with a session token', r.statusCode === 200 && !!r.body?.session?.token, JSON.stringify(r.body));
 const applicantToken = r.body?.session?.token;
 
+// Function logs are kept by the host, so an address must never be written there.
+{
+  const logged = [];
+  const originals = { log: console.log, warn: console.warn, error: console.error };
+  for (const level of Object.keys(originals)) console[level] = (...args) => logged.push(args.join(' '));
+  try {
+    await call(sendOtp, { method: 'POST', body: { email: 'log-check@example.com' }, ip: '203.0.113.77' });
+    const code = JSON.parse(mock.store.get('bcci:otp:log-check@example.com'));
+    r = await call(verifyOtp, { method: 'POST', body: { email: 'log-check@example.com', code }, ip: '203.0.113.77' });
+  } finally {
+    Object.assign(console, originals);
+  }
+  check('OTP sign-in for the log check succeeds', r.statusCode === 200, `got ${r.statusCode}`);
+  check('sending and verifying a code logs no email address', logged.length > 0 && !logged.some((l) => l.includes('log-check@example.com')),
+    logged.find((l) => l.includes('log-check@example.com')));
+}
+
 // ════════════════════════════════════════════════════════════════════
 section('SEC  OTP emails cannot alias other Redis keys');
 

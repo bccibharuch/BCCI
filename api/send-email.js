@@ -89,7 +89,7 @@ async function handler(req, res) {
   if (!result.success) {
     // The SMTP reason can name an internal host, port or credential. Keep it
     // in the log and hand the caller a generic failure.
-    console.error(`[SendEmail] ${type} to ${recipients.join(', ')} failed:`, result.error);
+    console.error(`[SendEmail] ${type} to ${recipients.length} recipient(s) failed:`, result.error);
     return res.status(502).json({ success: false, error: 'The email could not be sent.' });
   }
   return res.status(200).json({ success: true, message: 'Email sent.' });

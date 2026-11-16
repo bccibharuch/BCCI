@@ -304,7 +304,7 @@ async function handler(req, res) {
       // the caller gets the same answer as for an unknown address.
       if (!result.success) {
         await kv.del(KEYS.otpReset(email)).catch(() => {});
-        console.error(`[ApplicantAuth] password reset email to ${email} failed:`, result.error);
+        console.error('[ApplicantAuth] password reset email failed:', result.error);
       }
     }
 

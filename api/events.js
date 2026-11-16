@@ -219,7 +219,7 @@ async function handler(req, res) {
           console.warn('[BCCI Event] Failed to dispatch registration pending email:', mail.error);
         }
 
-        console.log(`[BCCI Event] Registered ${email} (pending verification) for event ${eventId}`);
+        console.log(`[BCCI Event] Registered ticket ${ticketId} (pending verification) for event ${eventId}`);
         return res.status(200).json({
           success: true,
           emailSent: mail.success,
@@ -281,7 +281,7 @@ async function handler(req, res) {
         ? { ...result.event, venue: 'The joining link is in the E-Ticket sent to your email.' }
         : result.event;
 
-      console.log(`[BCCI Event] Registered ${email} for event ${eventId} (Ticket: ${ticketId})`);
+      console.log(`[BCCI Event] Registered ticket ${ticketId} for event ${eventId}`);
       return res.status(200).json({
         success: true,
         emailSent: mail.success,
@@ -396,7 +396,7 @@ async function handler(req, res) {
       const mail = await deliverEmailIntent(result.attendee.ticketEmailId);
       const emailSent = mail ? mail.success : null;
 
-      console.log(`[BCCI Event] Payment confirmed for ticket ${ticketId} (${result.attendee.email}) on event ${eventId} (alreadyConfirmed: ${!!result.alreadyConfirmed})`);
+      console.log(`[BCCI Event] Payment confirmed for ticket ${ticketId} on event ${eventId} (alreadyConfirmed: ${!!result.alreadyConfirmed})`);
       return res.status(200).json({
         success: true,
         message: result.alreadyConfirmed

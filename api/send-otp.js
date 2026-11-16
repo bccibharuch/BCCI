@@ -82,7 +82,7 @@ async function handler(req, res) {
     });
   }
 
-  console.log(`[OTP] sent to ${email}`);
+  console.log('[OTP] code sent');
   return res.status(200).json({ success: true, message: 'Verification code sent to your email.' });
 }
 
