@@ -38,7 +38,8 @@ SMTP mode follows `SMTP_PORT` (465 = implicit TLS, 587 = STARTTLS, required for 
 | `/api/membership-plans` | public GET, admin write |
 | `/api/events` | public read/register, admin write |
 | `/api/board` | board members via OTP, plus admin actions |
-| `/api/send-email`, `/api/email-retries` | internal secret or admin |
+| `/api/send-email` | internal secret or admin |
+| `/api/email-retries` | admin |
 
 Sessions are opaque server-side tokens. Rate limits apply per email and per network.
 
