@@ -446,6 +446,22 @@ check('SEC-03: renewalStatus becomes Rejected', rReject.body?.application?.renew
 const rResurrect = await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, action: 'approve-renewal', paymentRef: 'UPI/TO_BE_REJECTED' } });
 check('SEC-03: approve-renewal on rejected renewal returns 409 Conflict', rResurrect.statusCode === 409);
 
+// Two renewal requests with different payments at once: the pending check must
+// hold under the record's lock, or the second silently replaces the first.
+const [rRace1, rRace2] = await Promise.all([
+  call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/RACE_A1' } }),
+  call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/RACE_B2' } }),
+]);
+const raceCodes = [rRace1.statusCode, rRace2.statusCode].sort().join(',');
+check('concurrent renewals with different payments → one 200, one 409', raceCodes === '200,409', `got ${raceCodes}`);
+const raceWinner = rRace1.statusCode === 200 ? 'UPI/RACE_A1' : 'UPI/RACE_B2';
+const raceLoser = rRace1.statusCode === 200 ? rRace2 : rRace1;
+check('the refused concurrent renewal says why', raceLoser.body?.code === 'renewal_pending', `got ${raceLoser.body?.code}`);
+const raceStored = await call(applications, { method: 'GET', token: adminToken, query: { email: 'applicant@example.com' } });
+check('the pending renewal keeps the payment that was accepted', raceStored.body?.application?.pendingRenewal?.paymentRef === raceWinner,
+  `got ${raceStored.body?.application?.pendingRenewal?.paymentRef}`);
+await call(applications, { method: 'PATCH', token: adminToken, body: { id: appId, action: 'reject-renewal', reason: 'Race test' } });
+
 // Member submits another renewal for concurrent approval testing
 await call(applications, { method: 'PATCH', token: applicantToken, body: { id: appId, action: 'renew', paymentRef: 'UPI/CONCURRENT1' } });
 

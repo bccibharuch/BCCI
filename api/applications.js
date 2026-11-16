@@ -687,6 +687,9 @@ async function handler(req, res) {
       // Member self-service renewal request: requires Secretariat approval
       if (!adminEmail) {
         const updated = await updateApplication(id, (app) => {
+          // Checked again under the record's lock: a request racing this one
+          // may have filed its own payment since the read above.
+          if (app.renewalStatus === 'Pending Verification' && app.pendingRenewal) return app;
           return {
             ...app,
             renewalStatus: 'Pending Verification',
@@ -697,6 +700,12 @@ async function handler(req, res) {
             },
           };
         });
+        if (updated?.pendingRenewal?.paymentRef !== paymentRef) {
+          return res.status(409).json({
+            error: 'A renewal payment is already awaiting Secretariat verification. The Secretariat must reject that request before a different payment reference can be submitted.',
+            code: 'renewal_pending',
+          });
+        }
         return res.status(200).json({
           success: true,
           application: updated,
