@@ -1017,7 +1017,7 @@ function createTestApp(dom, testStore) {
   app.updateNavAuthUI = () => { app.navAuthUpdated++; };
   app.applicantAuthUpdated = 0;
   app.updateApplicantAuthUI = async () => { app.applicantAuthUpdated++; };
-  app.callOtpApi = async (endpoint, payload) => {
+  app.callOtpApi = async () => {
     return { success: true, message: 'Code sent successfully.' };
   };
   app.announce = () => {};
@@ -1641,7 +1641,7 @@ console.log('──────────────────────�
 {
   const app = Object.create(App.prototype);
   app.store = {
-    getMembershipValidity: (memberApp) => ({
+    getMembershipValidity: () => ({
       state: 'ACTIVE',
       validUntilDate: '31 Mar 2027',
       approvedDate: '01 Apr 2026',
