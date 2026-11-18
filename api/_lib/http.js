@@ -148,6 +148,8 @@ export async function requireAdmin(req, res) {
  * the last one — written by our own proxy — can be trusted.
  */
 export function clientIp(req) {
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) return realIp.trim();
   const fwd = req.headers['x-forwarded-for'];
   if (typeof fwd === 'string' && fwd.length) {
     const hops = fwd.split(',').map((h) => h.trim()).filter(Boolean);

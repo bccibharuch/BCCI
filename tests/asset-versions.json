@@ -72,8 +72,8 @@
     "sha256": "fc2c1c924a0629d441413db67127e561aca9e4bb8075fab570036b33bfc9d55b"
   },
   "js/app.js": {
-    "version": "5.0.45",
-    "sha256": "880de402e1819e65acf190b1d84b03bf6226164d57c9f3f5eefcd7c8367bdb6b"
+    "version": "5.0.46",
+    "sha256": "e12138d86c40a37b17c3bb05484e4eaaa2d1fa68e583770c38c385bf4a1be23a"
   },
   "js/board-admin.js": {
     "version": "1.1.7",
